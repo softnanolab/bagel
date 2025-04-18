@@ -1,12 +1,12 @@
 [project]
-name = "desprot"
+name = "bricklane"
 version = "0.1.0"
 authors = [
   {name = "Ayham Al-Saffar", email = "ayham.saffar@gmail.com"},
   {name = "Jakub Lála", email = "jakublala@gmail.com"},
   {name = "Stefano Angioletti-Uberti"},
 ]
-description = "Multiple state optimizing protein design library"
+description = "Protein Engineering through Monte Carlo Optimization"
 readme = "README.md"
 license = "MIT"
 license_files = "LICENSE"
@@ -34,8 +34,8 @@ dev = [
 
 [project.urls]
 Documentation = "coming soon"
-Repository = "https://github.com/softnanolab/desprot.git"
-Issues = "https://github.com/softnanolab/desprot/issues"
+Repository = "https://github.com/softnanolab/briclane.git"
+Issues = "https://github.com/softnanolab/bricklane/issues"
 
 [tool.mypy]
 strict = true
