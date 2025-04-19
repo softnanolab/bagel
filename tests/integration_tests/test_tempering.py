@@ -1,28 +1,27 @@
 import pathlib as pl
-import desprot as dp
-import desprot.energies as dpe
+import bricklane as bl
 
 
 # ? Could this not just be a mutation unit test?
 def test_tempering_does_not_mutate_immutable_residues(
-    folder: dp.folding.ESMFolder, test_output_folder: pl.Path
+    folder: bl.folding.ESMFolder, test_output_folder: pl.Path
 ) -> None:
     mutability = [False, True, False]
-    residues = [dp.Residue(name='G', chain_ID='C-A', index=i, mutable=mut) for i, mut in enumerate(mutability)]
+    residues = [bl.Residue(name='G', chain_ID='C-A', index=i, mutable=mut) for i, mut in enumerate(mutability)]
 
-    state = dp.State(
-        chains=[dp.Chain(residues)],
-        energy_terms=[dpe.PTMEnergy(), dpe.OverallPLDDTEnergy(), dpe.HydrophobicEnergy()],
+    state = bl.State(
+        chains=[bl.Chain(residues)],
+        energy_terms=[bl.energies.PTMEnergy(), bl.energies.OverallPLDDTEnergy(), bl.energies.HydrophobicEnergy()],
         energy_terms_weights=[1.0, 1.0, 5.0],
         state_ID='state_A',
         verbose=True,
     )
 
-    test_system = dp.System(states=[state], output_folder=test_output_folder, name='test_tempering2')
+    test_system = bl.System(states=[state], output_folder=test_output_folder, name='test_tempering2')
 
-    minimizer = dp.minimizer.SimulatedTempering(
+    minimizer = bl.minimizer.SimulatedTempering(
         folder=folder,
-        mutator=dp.mutation.Canonical(),
+        mutator=bl.mutation.Canonical(),
         high_temperature=1000.0,  # Ensures any mutation is accepted
         low_temperature=0.001,
         n_steps_high=3,
@@ -38,13 +37,13 @@ def test_tempering_does_not_mutate_immutable_residues(
 
 
 def test_tempering_does_not_raise_exceptions_with_nominal_inputs(
-    simple_state: dp.State, folder: dp.folding.ESMFolder, test_output_folder: pl.Path
+    simple_state: bl.State, folder: bl.folding.ESMFolder, test_output_folder: pl.Path
 ) -> None:
-    test_system = dp.System(states=[simple_state], output_folder=test_output_folder, name='test_tempering')
+    test_system = bl.System(states=[simple_state], output_folder=test_output_folder, name='test_tempering')
 
-    minimizer = dp.minimizer.SimulatedTempering(
+    minimizer = bl.minimizer.SimulatedTempering(
         folder=folder,
-        mutator=dp.mutation.Canonical(),
+        mutator=bl.mutation.Canonical(),
         high_temperature=1,
         low_temperature=0.1,
         n_steps_high=3,

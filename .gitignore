@@ -1,0 +1,28 @@
+# Python specific
+__pycache__
+*.py[cod]
+*$py.class
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.coverage
+.coverage.*
+
+# Virtual environments
+.env
+.venv
+env
+venv
+
+# Build and distribution
+*.egg-info
+dist
+build
+
+# IDE specific
+.vscode
+.idea
+
+# Project specific
+data
+logs_step_*

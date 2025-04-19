@@ -101,6 +101,9 @@ class SimulatedAnnealing(Minimizer):
     def __post_init__(self) -> None:
         self.temperatures = np.linspace(start=self.initial_temperature, stop=self.final_temperature, num=self.n_steps)
 
+    def dump_logs(self, output_folder: pl.Path, experiment_name: str, step: int, **kwargs: Any) -> None:
+        super().dump_logs(output_folder, experiment_name, step, **kwargs)
+
     def minimize_system(self, system: System) -> System:
         best_system = system.__copy__()
         best_system.get_total_energy(self.folder)  # update the energy internally

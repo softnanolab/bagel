@@ -1,0 +1,48 @@
+repos:
+
+  - repo: local
+    hooks:
+
+    - id: mypy
+      name: mypy
+      entry: bash -c 'uv run mypy'
+      language: system
+      require_serial: true
+
+    - id: ruff lint
+      name: ruff lint
+      entry: bash -c 'uv run ruff check'
+      language: system
+      require_serial: true
+
+    - id: ruff format
+      name: ruff format
+      entry: bash -c 'uv run ruff format'
+      language: system
+      require_serial: true
+
+    - id: pytest
+      name: pytest
+      entry: bash -c 'uv run pytest --folding skip'
+      language: system
+      require_serial: true
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: &exclude_patterns |
+          (?x)^.*\.pdb$|
+          ^.*\.ipynb$|
+          ^\.vscode/.*$
+      - id: end-of-file-fixer
+        exclude: *exclude_patterns
+      - id: check-yaml
+        exclude: *exclude_patterns
+      - id: check-json
+        exclude: *exclude_patterns
+      - id: check-added-large-files
+        exclude: *exclude_patterns
+      - id: detect-aws-credentials
+        args: ["--allow-missing-credentials"]
+        exclude: *exclude_patterns
