@@ -1,5 +1,5 @@
 """
-DesProt
+Bricklane
 -------
 
 Protein design library used to find the amino acid sequences that give rise to structures that meet the given design

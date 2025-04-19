@@ -1,6 +1,6 @@
 # test add_chain
 
-import desprot as dp
+import bricklane as bl
 import pandas as pd
 import pathlib as pl
 import shutil
@@ -9,7 +9,7 @@ from biotite.structure.io.pdbx import CIFFile, get_structure
 import numpy as np
 
 
-def test_system_dump_config_file_is_correct(mixed_system: dp.System) -> None:
+def test_system_dump_config_file_is_correct(mixed_system: bl.System) -> None:
     mock_output_folder = pl.Path(__file__).resolve().parent.parent / 'data' / mixed_system.name
     mixed_system.output_folder = mock_output_folder
     mock_experiment = test_system_dump_config_file_is_correct.__name__
@@ -40,7 +40,7 @@ def test_system_dump_config_file_is_correct(mixed_system: dp.System) -> None:
     shutil.rmtree(experiment_folder)
 
 
-def test_system_dump_logs_folder_is_correct(mixed_system: dp.System) -> None:
+def test_system_dump_logs_folder_is_correct(mixed_system: bl.System) -> None:
     mock_step = 8
     mock_output_folder = pl.Path(__file__).resolve().parent.parent / 'data' / mixed_system.name
     mixed_system.output_folder = mock_output_folder

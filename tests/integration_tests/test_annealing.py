@@ -1,15 +1,15 @@
 import pathlib as pl
-import desprot as dp
+import bricklane as bl
 
 
 def test_annealing_raises_no_errors_for_nomial_inputs(
-    simple_state: dp.State, folder: dp.folding.ESMFolder, test_output_folder: pl.Path
+    simple_state: bl.State, folder: bl.folding.ESMFolder, test_output_folder: pl.Path
 ) -> None:
-    test_system = dp.System(states=[simple_state], output_folder=test_output_folder, name='test_annealing')
+    test_system = bl.System(states=[simple_state], output_folder=test_output_folder, name='test_annealing')
 
-    minimizer = dp.minimizer.SimulatedAnnealing(
+    minimizer = bl.minimizer.SimulatedAnnealing(
         folder=folder,
-        mutator=dp.mutation.Canonical(),
+        mutator=bl.mutation.Canonical(),
         initial_temperature=1.0,
         final_temperature=0.001,
         n_steps=5,

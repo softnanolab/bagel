@@ -1,5 +1,6 @@
 """Top level object defining the input for a protein design pipeline"""
 
+from biotite.structure.io.pdbx import CIFFile, set_structure
 from collections import OrderedDict
 from .state import State
 from .chain import Chain, Residue

@@ -4,7 +4,7 @@
 
 1. Clone the repo.
 
-        git clone https://github.com/softnanolab/desprot
+        git clone https://github.com/softnanolab/bricklane-wip
 
 2. Install `uv`
 
@@ -12,7 +12,7 @@
 
 3. Set directory to repo.
 
-        cd desprot
+        cd bricklane
 
 4. Download the environment.
 
