@@ -4,10 +4,10 @@ import bricklane as bl
 
 
 def test_grandcanonical_does_not_change_chain_length_when_mutator_not_allowed_to_remove_or_add(
-    simple_state: bl.State, folder: bl.folding.ESMFolder, test_output_folder: pl.Path
+    simple_state: bl.State, folder: bl.folding.ESMFolder, test_log_path
 ) -> None:
     starting_chain_length = len(simple_state.chains[0].residues)
-    test_system = bl.System(states=[simple_state], output_folder=test_output_folder, name='test_grandcanonical')
+    test_system = bl.System(states=[simple_state], name='test_grandcanonical')
 
     minimizer = bl.minimizer.SimulatedAnnealing(
         folder=folder,
@@ -18,6 +18,7 @@ def test_grandcanonical_does_not_change_chain_length_when_mutator_not_allowed_to
         final_temperature=0.001,
         n_steps=5,
         log_frequency=1,
+        log_path=test_log_path,
     )
 
     minimizer.minimize_system(test_system)
@@ -26,10 +27,10 @@ def test_grandcanonical_does_not_change_chain_length_when_mutator_not_allowed_to
 
 
 def test_grandcanonical_does_not_increase_chain_length_when_mutator_not_allowed_to_add(
-    simple_state: bl.State, folder: bl.folding.ESMFolder, test_output_folder: pl.Path
+    simple_state: bl.State, folder: bl.folding.ESMFolder, test_log_path: pl.Path
 ) -> None:
     starting_chain_length = len(simple_state.chains[0].residues)
-    test_system = bl.System(states=[simple_state], output_folder=test_output_folder, name='test_grandcanonical')
+    test_system = bl.System(states=[simple_state], name='test_grandcanonical')
 
     minimizer = bl.minimizer.SimulatedAnnealing(
         folder=folder,
@@ -40,6 +41,7 @@ def test_grandcanonical_does_not_increase_chain_length_when_mutator_not_allowed_
         final_temperature=0.001,
         n_steps=5,
         log_frequency=1,
+        log_path=test_log_path,
     )
 
     minimizer.minimize_system(test_system)
@@ -48,10 +50,10 @@ def test_grandcanonical_does_not_increase_chain_length_when_mutator_not_allowed_
 
 
 def test_grandcanonical_does_not_zero_chain_length_when_mutator_only_allowed_to_remove(
-    simple_state: bl.State, folder: bl.folding.ESMFolder, test_output_folder: pl.Path
+    simple_state: bl.State, folder: bl.folding.ESMFolder, test_log_path: pl.Path
 ) -> None:
     starting_chain_length = len(simple_state.chains[0].residues)
-    test_system = bl.System(states=[simple_state], output_folder=test_output_folder, name='test_grandcanonical')
+    test_system = bl.System(states=[simple_state], name='test_grandcanonical')
 
     minimizer = bl.minimizer.SimulatedAnnealing(
         folder=folder,
@@ -62,6 +64,7 @@ def test_grandcanonical_does_not_zero_chain_length_when_mutator_only_allowed_to_
         final_temperature=0.001,
         n_steps=starting_chain_length + 1,
         log_frequency=1,
+        log_path=test_log_path,
     )
 
     minimizer.minimize_system(test_system)

@@ -9,8 +9,9 @@ from typing import Callable, Any
 from dataclasses import dataclass, field
 import numpy as np
 
+import inspect
 import csv
-import os
+import shutil
 import logging
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,12 @@ class Minimizer(ABC):
     folder: FoldingAlgorithm
     experiment_name: str
     log_frequency: int
+    log_path: pl.Path | str | None = None
+
+    def __post_init__(self) -> None:
+        self.log_path: pl.Path = self.initialise_log_path(self.log_path)
+        logger.debug(f'Logging path: {self.log_path}')
+        logger.debug(f'Experiment name: {self.experiment_name}')
 
     @abstractmethod
     def minimize_system(self, system: System) -> System:
@@ -58,9 +65,33 @@ class Minimizer(ABC):
             return mutated_system
         return system
 
-    @abstractmethod
+    def initialise_log_path(self, log_path: None | str | pl.Path) -> pl.Path:
+        """
+        Creates folder next to the .py script run named the <self.experiment_name>. Said folder cannot already exist.
+        Also copies the .py script run into that folder.
+        """
+        if isinstance(log_path, pl.Path):
+            log_path = log_path / self.experiment_name
+            log_path.mkdir(parents=True, exist_ok=True)
+            return log_path
+        elif isinstance(log_path, str):
+            log_path = pl.Path(log_path) / self.experiment_name
+            log_path.mkdir(parents=True, exist_ok=True)
+            return log_path
+        elif log_path is None:
+            executed_py_file_path = inspect.stack()[-1][1]
+            log_path = pl.Path(executed_py_file_path).resolve().parent / self.experiment_name
+            # TODO: let's not use this right now, as we are not fully implementing this
+            # assert not log_path.is_dir(), f'file already exists at {log_path}. Select new experiment_name'
+            # log_path.mkdir()
+            # logger.debug(f'Saving all log files into {log_path}:')
+            # shutil.copy(executed_py_file_path, log_path / 'origional_script.py')
+            return log_path
+        else:
+            raise ValueError(f'log_path must be a Path or str, not {type(log_path)}')
+
     def dump_logs(self, output_folder: pl.Path, experiment_name: str, step: int, **kwargs: Any) -> None:
-        output_file = output_folder / f'{experiment_name}.log'
+        output_file = output_folder / f'optimization.log'
 
         # Check if file exists to determine if we need to write headers
         file_exists = output_file.exists()
@@ -77,14 +108,15 @@ class Minimizer(ABC):
             row = [step] + list(kwargs.values())
             writer.writerow(row)
 
-    def logging_step(self, step: int, system: System, best_system: System, **kwargs: Any) -> None:
-        # TODO: this should be more elegant in terms of the output folder
-        if step % self.log_frequency == 0:
-            logger.info(f'Step={step} - ' + ' - '.join(f'{k}={v}' for k, v in kwargs.items()))
-            system.dump_logs(self.experiment_name, step)
-            best_system.dump_logs(f'{self.experiment_name}_BEST', step)
-            assert system.output_folder is not None, 'System output folder is not set'
-            self.dump_logs(system.output_folder, self.experiment_name, step, **kwargs)
+    def logging_step(self, step: int, system: System, best_system: System, new_best: bool, **kwargs: Any) -> None:
+        """Dumps logs for the minimizer, current and best systems as well as printing summary results to the terminal"""
+        logger.info(f'Step={step} - ' + ' - '.join(f'{k}={v}' for k, v in kwargs.items()))
+        assert isinstance(self.log_path, pl.Path), f'log_path must be a Path, not {type(self.log_path)}'
+        if step == 0:
+            system.dump_config(self.log_path)
+        system.dump_logs(step, self.log_path / 'current', save_structure=step % self.log_frequency == 0)
+        best_system.dump_logs(step, self.log_path / 'best', save_structure=new_best)
+        self.dump_logs(self.log_path, self.experiment_name, step, **kwargs)
 
 
 @dataclass
@@ -97,11 +129,16 @@ class SimulatedAnnealing(Minimizer):
     log_frequency: int = 100
     # ? move this into MutationProtocol (as that is the design)?
     experiment_name: str = field(default_factory=lambda: f'simulated_annealing_{time_stamp()}')
+    log_path: pl.Path | str | None = None
 
     def __post_init__(self) -> None:
+        super().__post_init__()
         self.temperatures = np.linspace(start=self.initial_temperature, stop=self.final_temperature, num=self.n_steps)
+        self.acceptance: list[bool] = []
 
     def dump_logs(self, output_folder: pl.Path, experiment_name: str, step: int, **kwargs: Any) -> None:
+        self.acceptance.append(kwargs['accept'])
+        kwargs['acceptance_rate'] = sum(self.acceptance) / len(self.acceptance)
         super().dump_logs(output_folder, experiment_name, step, **kwargs)
 
     def minimize_system(self, system: System) -> System:
@@ -109,11 +146,15 @@ class SimulatedAnnealing(Minimizer):
         best_system.get_total_energy(self.folder)  # update the energy internally
         assert best_system.total_energy is not None, 'Cannot preserve best system before energy is calculated'
         for step in range(self.n_steps):
+            new_best = False
             system = self.minimize_one_step(self.temperatures[step], system)
             assert system.total_energy is not None, 'Cannot minimize system before energy is calculated'
+            accept = False
             if system.total_energy < best_system.total_energy:
                 best_system = system.__copy__()  # This automatically records the energy in best_system.total_energy
-            self.logging_step(step, system, best_system, temperature=self.temperatures[step])
+                new_best = True
+                accept = True
+            self.logging_step(step, system, best_system, new_best, temperature=self.temperatures[step], accept=accept)
 
         assert best_system.total_energy is not None, f'{best_system=} energy cannot be None!'
         return best_system
@@ -131,11 +172,14 @@ class SimulatedTempering(Minimizer):
     preserve_best_system: bool = False
     log_frequency: int = 1000
     experiment_name: str = field(default_factory=lambda: f'simulated_tempering_{time_stamp()}')
+    log_path: pl.Path | str | None = None
+
     """
     We start with a high temperature and then move to a low temperature.
     """
 
     def __post_init__(self) -> None:
+        super().__post_init__()
         cycle_temperatures = np.concat(
             [
                 np.full(shape=self.n_steps_low, fill_value=self.low_temperature),
@@ -161,6 +205,7 @@ class SimulatedTempering(Minimizer):
         best_system.get_total_energy(self.folder)  # update the energy internally
         assert best_system.total_energy is not None, 'Cannot preserve best system before energy is calculated'
         for step, temperature in enumerate(self.temperatures):
+            new_best = False
             system = self.minimize_one_step(temperature, system)
             assert system.total_energy is not None, 'Cannot minimize system before energy is calculated'
 
@@ -168,8 +213,9 @@ class SimulatedTempering(Minimizer):
             if system.total_energy < best_system.total_energy:
                 accept = True
                 best_system = system.__copy__()  # This automatically records the energy in best_system.total_energy
+                new_best = True
 
-            self.logging_step(step, system, best_system, temperature=temperature, accept=accept)
+            self.logging_step(step, system, best_system, new_best, temperature=temperature, accept=accept)
 
             if self.preserve_best_system and step % self.n_steps_cycle == 0:
                 logger.debug(f'Starting new cycle with best system from previous cycle')
@@ -187,18 +233,23 @@ class FlexibleMinimiser(Minimizer):
     n_steps: int
     log_frequency: int = 100
     experiment_name: str = field(default_factory=lambda: f'flexible_minimiser_{time_stamp()}')
+    log_path: pl.Path | str | None = None
 
     def minimize_system(self, system: System) -> System:
         best_system = system
         best_energy = system.get_total_energy(folding_algorithm=self.folder_schedule(0))
         for step in range(self.n_steps):
+            new_best = False
             temperature = self.temperature_schedule(step)
             self.folder = self.folder_schedule(step)
             system = self.minimize_one_step(temperature, system)
             assert system.total_energy is not None, 'Cannot minimize system before energy is calculated'
+            accept = False
             if system.total_energy < best_energy:
+                new_best = True
+                accept = True
                 best_system = system.__copy__()  # This automatically records the energy in best_system.total_energy
-            self.logging_step(step, system, best_system, temperature=temperature)
+            self.logging_step(step, system, best_system, new_best, temperature=temperature, accept=accept)
 
         assert best_system.total_energy is not None, f'Best energy {best_energy} cannot be None!'
         return best_system

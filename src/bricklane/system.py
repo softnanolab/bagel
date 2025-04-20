@@ -26,114 +26,94 @@ class System:
     states: list[State]
     name: str | None = None
     total_energy: float | None = None
-    output_folder: pl.Path | None = None
     # ! Removing because this below is never used
     # _old_energy: float | None = None
 
-    def __post_init__(self) -> None:
-        if self.output_folder is None:
-            self.output_folder = pl.Path(__file__).resolve().parent.parent / 'data' / f'{self.name}'
-        self.output_folder.mkdir(parents=True, exist_ok=True)
-
     def __copy__(self) -> 'System':
         """Copy the system object, setting the energy to None"""
-        return System(states=deepcopy(self.states), total_energy=self.total_energy)
+        return System(
+            states=deepcopy(self.states),
+            total_energy=self.total_energy,
+            name=self.name,
+        )
 
     def get_total_energy(self, folding_algorithm: FoldingAlgorithm) -> float:
         if self.total_energy is None:
             self.total_energy = np.mean([state.get_energy(folding_algorithm) for state in self.states])  # type: ignore
         return self.total_energy  # type: ignore
 
-    def dump_logs(self, experiment: str, step: int) -> None:
+    def dump_logs(self, step: int, path: pl.Path, save_structure: bool = True) -> None:
         r"""
-        Saves logging information for the system into a folder named "logs step \<step\>". This folder contains:
-        - a FASTA file named "sequences". Each header is the corresponding chain ID.
-        - a PDB file for the structure of each state. Each file is named "structure \<state_ID\>".
-        - a CSV file named "energies". Columns include 'state_ID', 'energy_name', and 'energy_value'.
-        - a TXT file named "total_weighted_energy" that only includes a single floating point number.
+        Saves logging information for the system under the given directory path. This folder contains:
+
+        - a CSV file named 'energies.csv'. Columns include 'step', '\<state.name\>_\<energy.name\>' for all energies,
+          '\<state.name\>_chemical_potential_energy', '\<state.name\>_energy' and 'system_energy'. Note the final
+          column is the sum of the mean weighted energies and the chemical potential energies of each state.
+        - a FASTA file for all sequences named '\<state.name\>.fasta'. Each header is the sequence's step and each
+          sequence is a string of amino acid letters with : seperating each chain.
+        - a further directory named 'structures' containing all CIF files. Files are named '\<state.name>_\<step>.cif'
+          for all states.
+
         Expects the energies of the system to already be calculated.
 
         Parameters
         ----------
         step : int
             The index of the current optimisation step.
-        file_path: str | None, default=None
-            The directory in which the log folder will be created. By default, this is set to the current working
-            directory (the path the console is at when it runs the file).
+        path: pl.Path
+            The directory in which the log files will be saved into.
+        save_structure: bool, default=True
+            Whether to save the CIF file of each state.
         """
-        # TODO: this might be better to just take a filepath as input and the naming being taken care of in Minimiser
-        # but leave it like this for now
-        assert self.total_energy is not None, 'Cannot dump logs before system energies are calculated'
-        assert self.output_folder is not None, 'Cannot dump logs before output folder is set'
-        current_output_folder = self.output_folder / experiment
-        current_output_folder.mkdir(parents=True, exist_ok=True)
+        assert self.total_energy is not None, 'System energy not calculated. Call get_total_energy() first.'
 
-        sequences: dict[str, str] = {}
-        energies: OrderedDict[str, float] = OrderedDict({'step': step})
+        structure_path = path / 'structures'
+        if step == 0:
+            structure_path.mkdir(parents=True)
+
+        assert path.exists(), 'Path does not exist. Please create the directory first.'
+        assert structure_path.exists(), 'Structure path does not exist. Please create the directory first.'
+
+        energies: dict[str, int | float] = {'step': step}  #  order of insertion consistent in every dump_logs call
         for state in self.states:
-            assert state.to_cif(current_output_folder / 'CIF' / f'{state.state_ID}_{step}.cif'), (
-                f'Structure file for {state.state_ID} was not created'
-            )
-            sequences[state.state_ID] = ':'.join(state.total_sequence)
-
             for energy in state.energy_terms:
-                # "state_ID:energy_name" - energy_value
-                energies[f'{state.state_ID}:{energy.name}'] = energy.value
+                energies[f'{state.name}:{energy.name}'] = energy.value
+            assert state._energy is not None, 'State energy not calculated. Call get_energy() first.'
+            energies[f'{state.name}:state_energy'] = state._energy  # HACK
 
-        for state in self.states:
-            assert state._energy is not None, 'Cannot dump logs before state energies are calculated'
-            energies[f'{state.state_ID}:total_energy'] = state._energy  # HACK: as this is not 'public' effectivelly
-        energies['total_energy'] = self.total_energy
+            with open(path / f'{state.name}.fasta', mode='a') as file:
+                file.write(f'>{step}\n')
+                file.write(f'{":".join(state.total_sequence)}\n')
 
-        # make output file if it doesn't exist
-        energy_file = current_output_folder / 'energies.csv'
-        if not energy_file.exists():
-            with open(energy_file, 'w') as f:  # write headers
-                for i, item in enumerate(energies.keys()):
-                    if i < len(energies.keys()) - 1:
-                        f.write(f'{item},')
-                    else:
-                        f.write(f'{item}')
-                f.write('\n')
+            if save_structure:
+                file = CIFFile()
+                set_structure(file, state._structure)  # HACK
+                file.write(structure_path / f'{state.name}_{step}.cif')  # type: ignore
 
-        # write Step and also name
-        with open(energy_file, 'a') as f:
-            values = list(energies.values())
-            for i, value in enumerate(values):
-                if i < len(values) - 1:
-                    f.write(f'{value},')
-                else:
-                    f.write(f'{value}')
-            f.write('\n')
+        energies['system_energy'] = self.total_energy
 
-        # open the fasta file and write the sequences
-        for state_ID, sequence in sequences.items():
-            with open(current_output_folder / f'{state_ID}.fasta', 'a') as f:
-                f.write(f'>{step}\n{sequence}\n')
+        energies_path = path / 'energies.csv'
+        with open(energies_path, mode='a') as file:
+            if step == 0:
+                file.write(','.join(energies.keys()) + '\n')
+            file.write(','.join([str(energy) for energy in energies.values()]) + '\n')
 
-    def dump_config(self, experiment: str) -> None:
+    def dump_config(self, path: pl.Path) -> None:
         """
-        Saves information about how each energy term was configured in a csv file named "config". Columns include
-        'state_ID', 'energy_name', and 'weight'.
+        Saves information about how each energy term was configured in a csv file named "config.csv". Columns include
+        'state_name', 'energy_name', and 'weight'.
 
         Parameters
         ----------
-        file_path: str | None, default=None
-            The directory in which the config file will be created. By default, this is set to the current working
-            directory (the path the console is at when it runs the file).
+        path: pl.Path
+            The directory in which the config.csv file will be created.
         """
-        assert self.output_folder is not None, 'Cannot dump config before output folder is set'
-        # TODO: this might be better to just take a filepath as input and the naming being taken care of in Minimiser
-        # but leave it like this for now
-        energy_terms: list[dict[str, str | float]] = []
-        for state in self.states:
-            for energy in state.energy_terms:
-                # energy_terms.append({"state_ID": state.state_ID, "energy_name": energy.name, "weight": energy.weight})
-                energy_terms.append({'state_ID': state.state_ID, 'energy_name': energy.name})
-
-        experiment_folder = self.output_folder / experiment
-        experiment_folder.mkdir(parents=True, exist_ok=True)
-        pd.DataFrame(energy_terms).to_csv(experiment_folder / 'config.csv')
+        assert path.exists(), 'Path does not exist. Please create the directory first.'
+        with open(path / 'config.csv', mode='w') as file:
+            file.write('state,energy,weight\n')
+            for state in self.states:
+                for i, term in enumerate(state.energy_terms):
+                    file.write(f'{state.name},{term.name},{state.energy_terms_weights[i]}\n')
 
     def add_chain(self, sequence: str, mutability: list[int], chain_ID: str, state_index: list[int]) -> None:
         """

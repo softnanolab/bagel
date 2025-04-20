@@ -102,7 +102,7 @@ def small_structure_state(
         chains=small_structure_chains,
         energy_terms=energy_terms,
         energy_terms_weights=[1.0 for term in energy_terms],
-        state_ID='small',
+        name='small',
     )
     state._energy = -0.5
     state._structure = small_structure
@@ -190,7 +190,7 @@ def mixed_structure_state(
         chains=line_structure_chains + square_structure_chains,
         energy_terms=energy_terms,
         energy_terms_weights=[1.0 for term in energy_terms],
-        state_ID='mixed',
+        name='mixed',
     )
     state._energy = 0.1
     state._structure = concatenate((line_structure, square_structure))
@@ -207,7 +207,6 @@ def mixed_system(small_structure_state: bl.State, mixed_structure_state: bl.Stat
     system = bl.System(
         states=[small_structure_state, mixed_structure_state],
         name='mixed_system',
-        output_folder=pl.Path(__file__).resolve().parent / 'data' / 'mixed_system',
     )
     system._old_energy = 0.67
     system.total_energy = -0.4
@@ -215,9 +214,9 @@ def mixed_system(small_structure_state: bl.State, mixed_structure_state: bl.Stat
 
 
 @pytest.fixture
-def test_output_folder() -> pl.Path:
-    num = np.random.randint(low=0, high=999_999)  # ensures multiple folders can be created at the same time
-    path = pl.Path(__file__).resolve().parent / f'{num} data'
+def test_log_path(request) -> pl.Path:
+    test_name = request.node.name
+    path = pl.Path(__file__).resolve().parent / 'data' / test_name
     yield path
     shutil.rmtree(path)
 
@@ -235,7 +234,7 @@ def simple_state() -> bl.State:
         chains=[bl.Chain(residues)],
         energy_terms=[bl.energies.PTMEnergy(), bl.energies.OverallPLDDTEnergy(), bl.energies.HydrophobicEnergy()],
         energy_terms_weights=[1.0, 1.0, 5.0],
-        state_ID='state_A',
+        name='state_A',
         verbose=True,
     )
     return state

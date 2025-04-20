@@ -8,7 +8,7 @@ state = bl.State(
     chains = [bl.Chain(residues)],
     energy_terms = [bl.energies.PTMEnergy(), bl.energies.OverallPLDDTEnergy(), bl.energies.HydrophobicEnergy()],
     energy_terms_weights = [1.0, 1.0, 1.0],
-    state_ID = "state_A",
+    name = "state_A",
     verbose = True
 )
 
