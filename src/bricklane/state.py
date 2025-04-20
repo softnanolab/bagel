@@ -21,7 +21,7 @@ class State:
     chains: List[Chain]  # This is a list of single monomeric chains
     energy_terms: List[EnergyTerm]
     energy_terms_weights: List[float]
-    state_ID: str
+    name: str
     chemical_potential: Optional[float] = None
     _energy: Optional[float] = field(default=None, init=False)
     _structure: AtomArray = field(default=None, init=False)
@@ -65,7 +65,7 @@ class State:
         self._energy = total_energy / sum(self.energy_terms_weights)  # returns average so value ~ between 0 and 1
 
         if self.verbose:
-            print(f'**Weighted** energy for state {self.state_ID} is {self._energy}')
+            print(f'**Weighted** energy for state {self.name} is {self._energy}')
 
         return self._energy
 
@@ -73,7 +73,7 @@ class State:
         filepath.parent.mkdir(parents=True, exist_ok=True)
         structure_file = CIFFile()
         set_structure(structure_file, self._structure)
-        logger.debug(f'Writing CIF structure of {self.state_ID} to {filepath}')
+        logger.debug(f'Writing CIF structure of {self.name} to {filepath}')
         structure_file.write(filepath)
         if not filepath.exists():
             raise FileNotFoundError(f'Structure file {filepath} was not created')

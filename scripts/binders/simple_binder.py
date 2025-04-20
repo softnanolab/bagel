@@ -61,7 +61,7 @@ with modal.enable_output():
         chains=[binder_chain, target_chain],
         energy_terms=energy_terms,
         energy_terms_weights=energy_terms_weights,
-        state_ID='state_A',
+        name='state_A',
     )
 
     # Now define the system

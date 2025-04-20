@@ -16,7 +16,7 @@ state = bl.State(
         bl.energies.SecondaryStructureEnergy([residues[(i*50)+5 : (i*50)+35] for i in range(4)], 'beta-sheet'),
     ],
     energy_terms_weights=[1.0, 1.0, 3.0, 1.0, 1.0],
-    state_ID='state_A',
+    name='state_A',
     verbose=True,
 )
 
