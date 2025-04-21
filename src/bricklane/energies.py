@@ -258,8 +258,8 @@ class HydrophobicEnergy(EnergyTerm):
         Parameters
         ----------
         residues: list[Residue] or None, default=None
-            Which residues to include in the calculation. Considers all residues by default.
-        inheritbale: bool, default=True
+            Which residues to include in the calculation. If not set, simply considers **all** residues by default.
+        inheritable: bool, default=True
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
         surface_only: bool
@@ -289,7 +289,7 @@ class HydrophobicEnergy(EnergyTerm):
         return self.value
 
 
-class AlignmentErrorEnergy(EnergyTerm):
+class PAEEnergy(EnergyTerm):
     """
     Energy that drives down the uncertainty in the predicted distances between two groups of residues. This uncertainty
     is measured by calculating the average normalised predicted alignment error of all the relevant residue pairs.
@@ -347,7 +347,7 @@ class AlignmentErrorEnergy(EnergyTerm):
         return self.value
 
 
-class AlignmentErrorEnergyV2(EnergyTerm):
+class PAEEnergyV2(EnergyTerm):
     """
     Energy that drives down the uncertainty in the predicted distances between two groups of residues. This uncertainty
     is measured by calculating the average normalised predicted alignment error of all the relevant residue pairs.
