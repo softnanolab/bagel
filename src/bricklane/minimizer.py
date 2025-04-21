@@ -175,7 +175,7 @@ class SimulatedTempering(Minimizer):
     log_path: pl.Path | str | None = None
 
     """
-    We start with a high temperature and then move to a low temperature.
+    Cycling between low and high temperatures.
     """
 
     def __post_init__(self) -> None:
