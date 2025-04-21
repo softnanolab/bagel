@@ -2,7 +2,7 @@ import pathlib as pl
 import bricklane as bl
 
 
-def test_annealing_raises_no_errors_for_nomial_inputs(
+def test_annealing_raises_no_errors_for_nominal_inputs(
     simple_state: bl.State, folder: bl.folding.ESMFolder, test_log_path: pl.Path
 ) -> None:
     test_system = bl.System(states=[simple_state], name='test_annealing')

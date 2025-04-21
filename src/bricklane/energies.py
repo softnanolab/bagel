@@ -514,8 +514,8 @@ class RingSymmetryEnergy(EnergyTerm):
 
 class SeparationEnergy(EnergyTerm):
     """
-    Energy that minimizes the distance between two groups of atoms. The position of each group of atoms is found by
-    calculating the centroid of the backbone of that group.
+    Energy that minimizes the distance between two groups of residues. The position of each group is 
+    defined as the centroid of the backbone atoms of the residues belonging of that group.
     """
 
     def __init__(
@@ -565,8 +565,10 @@ class SeparationEnergy(EnergyTerm):
 
 class GlobularEnergy(EnergyTerm):
     """
-    Energy that drives the the structure's backbone to become spherical so it is more compact. This is done by
-    penalising backbone atoms that are not equally spaced from the structure's centroid.
+    Energy proportional to the moment of inertia of the structure around its centroid. This energy is minimized when 
+    the atoms belonging to a structure have the lowest possible distance from the centre, and, due to excluded volume
+    effects that prevent collapse to a single point, helps forcing structures to 
+    be as close as possible to a spherically distributed cloud of points. 
     """
 
     def __init__(self, residues: list[Residue] | None = None, normalize: bool = True, inheritable: bool = True) -> None:
@@ -607,8 +609,8 @@ class GlobularEnergy(EnergyTerm):
 
 class TemplateMatchEnergy(EnergyTerm):
     """
-    Energy that drives the structure to match a template. This is measured by translating and rotating the template
-    until it lines up on top of the structure. The separation between the two groups of atoms can then be calculated.
+    Energy that drives the structure to match an input-provided template. The difference with the template is always calculated
+    by automatically considering the rotation and translation that best maximize the overlap with the template.
     """
 
     def __init__(
@@ -778,14 +780,14 @@ class EllipsoidEnergy(EnergyTerm):
 
 class CuboidEnergy(EnergyTerm):
     """
-    Energy that drives the overall shape of the structure towards an cuboid of given dimensions. This is found by
-    finding the principle cartesian axes of the backbone atoms using principle component analysis. The positions of the
+    Energy that drives the overall shape of the structure towards an supercube of given dimensions. This is found by
+    finding the principle cartesian axes of the backbone atoms using principal component analysis. The positions of the
     atoms in this new basis are then inserted into the standard equation of a cuboid ((x/a)^2n + (y/b)^2n + (z/c)^2n - 1
     = 0, where a, b,and c are the ideal length, width, and depth of the desired cuboid with a volume equal to a sphere
     with a radius equal to the radius of gyration and n is the vertex sharpness). If the atoms lie outside of this
     cuboid (the left hand side is greater than 0), the atoms experience a spring force type energy that attracts them
-    back into the cuboid. All atoms also experience a recipricol exponential type repulsive energy that evenly
-    distributes them inside the volume.
+    back into the cuboid. All atoms also experience a pairwise exponential type repulsive energy that disfavours atoms 
+    to be too close to each other, so that they should evenly distributes them inside the supercube volume.
     """
 
     def __init__(

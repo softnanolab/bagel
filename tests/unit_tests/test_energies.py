@@ -117,21 +117,21 @@ def test_HydrophobicEnergy(
     assert np.isclose(energy.value, 2 / 4)  # 4 atoms in given residues, only 2 are part of hydrophobic residue
 
 
-def test_AlignmentErrorEnergy_with_cross_term_only(mixed_structure_state: bl.State) -> None:
+def test_PAEEnergy_with_cross_term_only(mixed_structure_state: bl.State) -> None:
     mock_folding_metrics = Mock(bl.folding.FoldingMetrics)
     mock_folding_metrics.pae = np.arange(7**2).reshape((1, 7, 7))
     residues = sum([chain.residues for chain in mixed_structure_state.chains], start=[])
-    energy = bl.energies.AlignmentErrorEnergy(group_1_residues=residues[1:6:2], group_2_residues=residues[2:7:2])
+    energy = bl.energies.PAEEnergy(group_1_residues=residues[1:6:2], group_2_residues=residues[2:7:2])
     energy.compute(structure=mixed_structure_state._structure, folding_metrics=mock_folding_metrics)
     relevant_PAEs = [9, 11, 13, 15, 17, 19, 23, 25, 27, 29, 31, 33, 37, 39, 41, 43, 45, 47]
     assert np.allclose(energy.value, np.mean(relevant_PAEs) / 30)  # sum of relevant PAEs / (num PAEs * max PAE)
 
 
-def test_AlignmentErrorEnergy_without_cross_term_only(mixed_structure_state: bl.State) -> None:
+def test_PAEEnergy_without_cross_term_only(mixed_structure_state: bl.State) -> None:
     mock_folding_metrics = Mock(bl.folding.FoldingMetrics)
     mock_folding_metrics.pae = np.arange(7**2).reshape((1, 7, 7))
     residues = sum([chain.residues for chain in mixed_structure_state.chains], start=[])
-    energy = bl.energies.AlignmentErrorEnergy(
+    energy = bl.energies.PAEEnergy(
         group_1_residues=residues[1:6:4],
         group_2_residues=residues[2:7:4],
         cross_term_only=False,
@@ -141,11 +141,11 @@ def test_AlignmentErrorEnergy_without_cross_term_only(mixed_structure_state: bl.
     assert np.allclose(energy.value, np.mean(relevant_PAEs) / 30)  # sum of relevant PAEs / (num PAEs * max PAE)
 
 
-def test_AlignmentErrorEnergy_of_residues_with_itself(mixed_structure_state: bl.State) -> None:
+def test_PAEEnergy_of_residues_with_itself(mixed_structure_state: bl.State) -> None:
     mock_folding_metrics = Mock(bl.folding.FoldingMetrics)
     mock_folding_metrics.pae = np.arange(7**2).reshape((1, 7, 7))
     residues = sum([chain.residues for chain in mixed_structure_state.chains], start=[])
-    energy = bl.energies.AlignmentErrorEnergy(group_1_residues=residues[1:6:2])
+    energy = bl.energies.PAEEnergy(group_1_residues=residues[1:6:2])
     energy.compute(structure=mixed_structure_state._structure, folding_metrics=mock_folding_metrics)
     relevant_PAEs = [8, 10, 12, 22, 24, 26, 36, 38, 40]
     assert np.allclose(energy.value, np.mean(relevant_PAEs) / 30)  # sum of relevant PAEs / (num PAEs * max PAE)
