@@ -96,21 +96,23 @@ class EnergyTerm(ABC):
     def get_residue_mask(self, structure: AtomArray, residue_group_index: int) -> npt.NDArray[np.bool_]:
         """Creates residue mask from residue group. Structure used to find unique residues in state"""
         residue_group = self.residue_groups[residue_group_index]
-        chain_ids, res_ids = residue_group
+        chain_ids, res_indices = residue_group
         residue_mask = np.array([], dtype=bool)
         for chain in pd.unique(structure.chain_id):  # preserves order of chains as fed to input (important)
+            # Note: in an atom_array object like structure .res_id is what we call the residue index and is an integer
             chain_res_ids = pd.unique(structure.res_id[structure.chain_id == chain])  # preserves order of residues
-            residue_mask = np.append(residue_mask, np.isin(chain_res_ids, res_ids[chain_ids == chain]))
+            residue_mask = np.append(residue_mask, np.isin(chain_res_ids, res_indices[chain_ids == chain]))
         return residue_mask
 
     def get_atom_mask(self, structure: AtomArray, residue_group_index: int) -> npt.NDArray[np.bool_]:
         """Creates atom mask from residue group. Structure used to find unique atoms in state"""
         residue_group = self.residue_groups[residue_group_index]
-        chain_ids, res_ids = residue_group
+        chain_ids, res_indices = residue_group
         atom_mask = np.full(shape=len(structure), fill_value=False)
         for chain in np.unique(chain_ids):
             chain_mask = structure.chain_id == chain
-            atom_mask[chain_mask] = np.isin(structure[chain_mask].res_id, res_ids[chain_ids == chain])
+            # Note: in an atom_array object like structure .res_id is what we call the residue index and is an integer
+            atom_mask[chain_mask] = np.isin(structure[chain_mask].res_id, res_indices[chain_ids == chain])
         return atom_mask
 
 
