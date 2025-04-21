@@ -12,7 +12,7 @@ def test_state_calculate_internal_structure_and_energies_method_outputs_correct_
 
     simple_state.get_energy(mock_folder)
     # energy term energies = -3.0 and -2.0. energy term weights = 1.0 and 2.0
-    assert np.isclose(simple_state.energy, (-1 * 1 + -0.5 * 1.0)), AssertionError(f"simple_state.energy = {simple_state.energy} != -1.5")
+    assert np.isclose(simple_state._energy, (-1 * 1 + -0.5 * 1.0)), AssertionError(f"simple_state.energy = {simple_state.energy} != -1.5")
 
 
 def test_state_chemical_potential_energy_outputs_correct_value(mixed_structure_state: br.State) -> None:

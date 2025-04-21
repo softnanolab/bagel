@@ -236,9 +236,11 @@ def simple_state() -> bl.State:
         energy_terms_weights=[1.0, 1.0],
         name='state_A',
         verbose=True,
-        _structure = AtomArray(length = len(residues)),
-        _energy_terms_value = [-1.0, -0.5],
     )
+    state._structure = AtomArray(length = len(residues))
+    state.energy_terms[0].value = -1.0
+    state.energy_terms[1].value = -0.5
+    state._energy_terms_value = { state.energy_terms[0].name: state.energy_terms[0].value, state.energy_terms[1].name: state.energy_terms[1].value } 
     return state
 
 
@@ -360,20 +362,27 @@ def trimer(base_sequence):
     return [bl.Chain(residues=residues_A), bl.Chain(residues=residues_B), bl.Chain(residues=residues_C)]
 
 @pytest.fixture
-def nominal_mixed_system(trimer: list[dp.Chain]) -> dp.System:
+def nominal_mixed_system(trimer: list[bl.Chain]) -> bl.System:
     """system with 3 mutable 20 amino acid chains. These are shared between 2 states with easier energies."""
-    state_1 = dp.State(
+    state_1 = bl.State(
         chains=trimer[:2],
-        energy_terms=[dp.energies.PTMEnergy()],
+        energy_terms=[bl.energies.PTMEnergy()],
         energy_term_weights=[1.0],
         name='state_1',
     )
 
-    state_2 = dp.State(
+    state_2 = bl.State(
         chains=trimer[1:],
-        energy_terms=[dp.energies.OverallPLDDTEnergy()],
+        energy_terms=[bl.energies.OverallPLDDTEnergy()],
         energy_term_weights=[1.0],
         name='state_2',
     )
 
-    return dp.System([state_1, state_2])
+    return bl.System([state_1, state_2])
+
+@pytest.fixture
+def temp_path() -> pl.Path:
+    num = np.random.randint(low=0, high=999_999)  # ensures multiple folders can be created at the same time
+    path = pl.Path(__file__).resolve().parent / f'{num} data'
+    yield path
+    shutil.rmtree(path)
