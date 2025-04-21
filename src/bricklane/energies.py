@@ -11,7 +11,7 @@ import warnings
 import pandas as pd
 
 
-# first row is chain_ids and second row is corresponding res_ids.
+# first row is chain_ids and second row is corresponding residue indexes.
 ResidueGroup = tuple[npt.NDArray[np.str_], npt.NDArray[np.int_]]
 
 
@@ -59,19 +59,22 @@ class EnergyTerm(ABC):
         """
         pass
 
-    def track_residue_removed_from_chain(self, chain_id: str, res_id: int) -> None:
-        """Shifts internally stored res_ids on a given chain to reflect a residue has been removed from chain."""
+    def track_residue_removed_from_chain(self, chain_id: str, res_index: int) -> None:
+        """Shifts internally stored res_ids on a given chain to reflect a residue has been removed from chain.
+        In practice, this means the indexes in residue_groups for all residues after the one removed it are 
+        shifted down by 1. Must be called every time a residue is removed from a chain."""
         for i, residue_group in enumerate(self.residue_groups):
-            chain_ids, res_ids = residue_group
-            shifted_mask = (chain_ids == chain_id) & (res_ids > res_id)
+            chain_ids, res_indices = residue_group
+            shifted_mask = (chain_ids == chain_id) & (res_indices > res_index)
             self.residue_groups[i][1][shifted_mask] -= 1
 
-    def track_residue_added_to_chain(self, chain_id: str, res_id: int) -> None:
-        """Shifts internally stored res_ids on a given chain to reflect a residue has been added. Assumes residue
-        origionally at given res_id shifts to higher index. Should be called before add residue."""
+    def track_residue_added_to_chain(self, chain_id: str, res_index: int) -> None:
+        """Shifts internally stored res_indices on a given chain to reflect a residue has been added. 
+        In practice, all residues with an index >= res_index are shifted by +1.
+        Must be called every time a residue is added."""
         for i, residue_group in enumerate(self.residue_groups):
-            chain_ids, res_ids = residue_group
-            shifted_mask = (chain_ids == chain_id) & (res_ids >= res_id)
+            chain_ids, res_indices = residue_group
+            shifted_mask = (chain_ids == chain_id) & (res_indices >= res_index)
             self.residue_groups[i][1][shifted_mask] += 1
 
     def remove_residue(self, chain_id: str, res_id: int) -> None:
