@@ -117,5 +117,5 @@ def test_GrandCanonical_MutationProtocol_does_not_remove_all_residues_in_chain(
     #state = br.State([chain], energy_terms=[br.energies.PTMEnergy()], energy_term_weights=[1.0], name='A')
     single_residue_system = br.System([state])
     mutator = br.mutation.GrandCanonical(move_probabilities={'mutation': 0.0, 'addition': 0.0, 'subtraction': 1.0})
-    mutated_system = mutator.one_step(folding_algorithm=None, system=single_residue_system, old_system=single_residue_system.__copy__())
+    mutated_system, _, _ = mutator.one_step(folding_algorithm=None, system=single_residue_system, old_system=single_residue_system.__copy__())
     assert len(mutated_system.states[0].chains[0].residues) > 0
