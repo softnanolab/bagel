@@ -86,11 +86,15 @@ class State:
     def get_chemical_potential_contribution(self) -> float:
         """Calculate the size contribution to the grand canonical energy of the state."""
         return 0.0 if self.chemical_potential is None else self.chemical_potential * self.total_residues()
-
+    
     def remove_residue_from_all_energy_terms(self, chain_ID: str, residue_index: int) -> None:
         """Remove the residue from the energy terms associated to it in the current state."""
         for term in self.energy_terms:
-            term.remove_residue(chain_ID, residue_index)
+            # The order of these two operations is important. FIRST you remove the residue, THEN you shift the indices
+            # If you do the opposite, you will remove the wrong residue
+            term.remove_residue( chain_ID, residue_index )
+            # ensuring residue indexes in energy terms are updated to reflect a change in chain length
+            term.shift_residues_indices_after_removal( chain_ID, residue_index )
 
     def add_residue_to_all_energy_terms(self, chain_ID: str, residue_index: int) -> None:
         """
@@ -107,6 +111,7 @@ class State:
                 chain = chains[i]
                 break
 
+        # Remember the following selection is done AFTER the residue has been added to the Chain object via chain.add_residue
         left_residue = chain.residues[residue_index - 1] if residue_index > 0 else None
         right_residue = chain.residues[residue_index + 1] if residue_index < len(chain.residues) else None
         # Now choose randomly between the left and the right residue, if they exist
@@ -123,10 +128,15 @@ class State:
         assert parent_residue is not None, 'The parent residue is None, should not happen!'
         # Now add the residue to the energy terms associated to the parent residue
         for term in self.energy_terms:
-            #! Need to check if this is needed, added by Ayham.
-            term.shift_residues_indices_after_addition( chain_ID, residue_index ) # must be called before add_residue
+            # The order of these two operations is important. 
+            # **Opposite** to what you do when you remove, you FIRST shift indices, and only THEN add one in the 'hole'
+            # created.  
+            
+            # MUST be called BEFORE add_residue. In this way, the residue of the parent index in the 
+            # residue_group attributed of the energy term is correct and updated to the same value of residue.index
+            term.shift_residues_indices_before_addition( chain_ID, residue_index ) 
             # Add the residue to the energy term if the parent residue is part of it and the term is inheritable
-            # The function automatically checks if the parent is also in it, or not
+            # The function automatically checks if the parent is also in it, or not.
             if term.inheritable:  # type: ignore
                 # Just a double check here before proceeding
                 parent_index = parent_residue.index
