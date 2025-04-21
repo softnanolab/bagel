@@ -20,9 +20,7 @@ class Residue:
     def __post_init__(self) -> None:
         """Check that the residue is valid."""
         assert self.name in aa_dict.keys(), f'acceptable amino acids are {aa_dict.keys()} name found: {self.name}...'
-        assert len(self.chain_ID) <= 4, (
-            f'chain_ID must be less 4 characters or less to avoid compatibility with .chain_id in atomarray object, found: {self.chain_ID}'
-        )
+        assert len(self.chain_ID) < 5, 'chain_ID must be less than 5 characters for compatibility atomarrays'
 
     @property
     def long_name(self) -> str:
