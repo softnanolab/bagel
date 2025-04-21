@@ -43,6 +43,7 @@ class EnergyTerm(ABC):
     def compute(self, structure: AtomArray, folding_metrics: FoldingMetrics) -> float:
         """
         Calculates the EnergyTerm's energy given information about the folded structure.
+        The result is returned and stored as an internal attribute (.value).
 
         Parameters
         ----------
@@ -54,8 +55,7 @@ class EnergyTerm(ABC):
         Returns
         -------
         energy : float
-            How well the structure satisfies the given criteria. Where possible, this number is always between 0 and 1.
-            The lower the energy the better.
+            How well the structure satisfies the given criteria. Where possible, this number should be between 0 and 1.
         """
         pass
 
