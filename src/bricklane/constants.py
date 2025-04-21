@@ -30,6 +30,8 @@ mutation_bias = {aa: 1.0 / len(aa_dict) for aa in aa_dict.keys()}
 mutation_bias_no_cystein = {aa: 1.0 / (len(aa_dict) - 1) if aa != 'C' else 0.0 for aa in aa_dict.keys()}
 
 hydrophobic_residues = ('VAL', 'ILE', 'LEU', 'PHE', 'MET', 'TRP')
+
+# TODO: maybe we should add O (O involved in peptide bonds) to the list of backbone atoms
 backbone_atoms = ('CA', 'N', 'C')
 
 angstrom = 1.0  # Units of measure for distances

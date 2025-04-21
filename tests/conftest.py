@@ -232,13 +232,112 @@ def simple_state() -> bl.State:
     residues = [bl.Residue(name=aa, chain_ID='C-A', index=i, mutable=True) for i, aa in enumerate(sequence)]
     state = bl.State(
         chains=[bl.Chain(residues)],
-        energy_terms=[bl.energies.PTMEnergy(), bl.energies.OverallPLDDTEnergy(), bl.energies.HydrophobicEnergy()],
-        energy_terms_weights=[1.0, 1.0, 5.0],
+        energy_terms=[bl.energies.PTMEnergy(), bl.energies.OverallPLDDTEnergy()],
+        energy_terms_weights=[1.0, 1.0],
         name='state_A',
         verbose=True,
+        _structure = AtomArray(length = len(residues)),
+        _energy_terms_value = [-1.0, -0.5],
     )
     return state
 
+
+@pytest.fixture
+def shared_chain_system() -> bl.State:
+    """System where each state references the same chain"""
+    sequence = np.random.choice(list(bl.constants.aa_dict.keys()), size=5)
+    residues = [bl.Residue(name=aa, chain_ID='A', index=i, mutable=True) for i, aa in enumerate(sequence)]
+    shared_chain = bl.Chain(residues)
+
+    A_state = bl.State(
+        chains=[shared_chain],
+        energy_terms=[bl.energies.PLDDTEnergy(residues), bl.energies.SurfaceAreaEnergy(residues)],
+        energy_terms_weights=[1.0, 1.0],
+        name='A',
+    )
+
+    B_state = bl.State(
+        chains=[shared_chain],
+        energy_terms=[bl.energies.PLDDTEnergy(residues), bl.energies.SurfaceAreaEnergy(residues)],
+        energy_terms_weights=[1.0, 1.0],
+        name='B',
+    )
+    return bl.System([A_state, B_state])
+
+@pytest.fixture
+def huge_system() -> bl.State:
+    sequence = np.random.choice(list(bl.constants.aa_dict.keys()), size=10_000)
+    residues = [bl.Residue(name=aa, chain_ID='C-A', index=i, mutable=True) for i, aa in enumerate(sequence)]
+    state = bl.State(
+        chains=[bl.Chain(residues)],
+        energy_terms=[bl.energies.PTMEnergy(), bl.energies.OverallPLDDTEnergy()],
+        energy_term_weights=[1.0, 2.0],
+        name='state_A',
+    )
+    return bl.System([state])
+
+
+@pytest.fixture
+def energies_system() -> bl.State:
+    """System where each state has an energy term that tracks all residues in state"""
+    sequence = np.random.choice(list(bl.constants.aa_dict.keys()), size=5)
+
+    A_residues = [bl.Residue(name=aa, chain_ID='A', index=i, mutable=True) for i, aa in enumerate(sequence)]
+    A_state = bl.State(
+        chains=[bl.Chain(A_residues)],
+        energy_terms=[bl.energies.PLDDTEnergy(A_residues), bl.energies.SurfaceAreaEnergy(A_residues)],
+        energy_term_weights=[1.0, 1.0],
+        name='A',
+    )
+
+    B_residues = [bl.Residue(name=aa, chain_ID='B', index=i, mutable=True) for i, aa in enumerate(sequence)]
+    B_state = bl.State(
+        chains=[bl.Chain(B_residues)],
+        energy_terms=[bl.energies.PLDDTEnergy(B_residues), bl.energies.SurfaceAreaEnergy(B_residues)],
+        energy_term_weights=[1.0, 1.0],
+        name='B',
+    )
+    return bl.System([A_state, B_state])
+
+
+@pytest.fixture
+def SA_minimizer() -> bl.minimizer.SimulatedAnnealing:
+    """Returns a minimizer that skips folding and closes all files minimizer creates by end of test."""
+    with patch('desprot.minimizer.inspect.stack') as mock_inspect_function:
+        # normally points to file executed, but is unpredictable when run by pytest and so must be set manually
+        mock_inspect_function.return_value = [[1, __file__]]
+        minimizer = bl.minimizer.SimulatedAnnealing(
+            folder=None,
+            mutator=bl.mutation.Canonical(),
+            initial_temperature=0.35,
+            final_temperature=0.1,
+            n_steps=6,
+            experiment_name=str(np.random.randint(low=0, high=999_999)),
+            structure_log_frequency=2,
+        )
+    yield minimizer
+    shutil.rmtree(minimizer.log_path)
+
+
+@pytest.fixture
+def ST_minimizer() -> bl.minimizer.SimulatedTempering:
+    """Returns a minimizer that skips folding and closes all files minimizer creates by end of test."""
+    with patch('desprot.minimizer.inspect.stack') as mock_inspect_function:
+        # normally points to file executed, but is unpredictable when run by pytest and so must be set manually
+        mock_inspect_function.return_value = [[1, __file__]]
+        minimizer = bl.minimizer.SimulatedTempering(
+            folder=None,
+            mutator=bl.mutation.Canonical(),
+            high_temperature=0.1,
+            low_temperature=0.01,
+            n_steps_high=2,
+            n_steps_low=1,
+            n_cycles=2,
+            experiment_name=str(np.random.randint(low=0, high=999_999)),
+            structure_log_frequency=2,
+        )
+    yield minimizer
+    shutil.rmtree(minimizer.log_path)
 
 @pytest.fixture
 def monomer(base_sequence):
@@ -259,3 +358,22 @@ def trimer(base_sequence):
     residues_B = [bl.Residue(name=aa, chain_ID='C-B', index=i, mutable=True) for i, aa in enumerate(base_sequence)]
     residues_C = [bl.Residue(name=aa, chain_ID='C-C', index=i, mutable=True) for i, aa in enumerate(base_sequence)]
     return [bl.Chain(residues=residues_A), bl.Chain(residues=residues_B), bl.Chain(residues=residues_C)]
+
+@pytest.fixture
+def nominal_mixed_system(trimer: list[dp.Chain]) -> dp.System:
+    """system with 3 mutable 20 amino acid chains. These are shared between 2 states with easier energies."""
+    state_1 = dp.State(
+        chains=trimer[:2],
+        energy_terms=[dp.energies.PTMEnergy()],
+        energy_term_weights=[1.0],
+        name='state_1',
+    )
+
+    state_2 = dp.State(
+        chains=trimer[1:],
+        energy_terms=[dp.energies.OverallPLDDTEnergy()],
+        energy_term_weights=[1.0],
+        name='state_2',
+    )
+
+    return dp.System([state_1, state_2])

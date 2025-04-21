@@ -1,6 +1,6 @@
 # test add_chain
 
-import bl.cklane as bl
+import bricklane as bl
 import pandas as pd
 import pathlib as pl
 import shutil
@@ -108,20 +108,20 @@ def test_system_dump_logs_folder_is_correct(mixed_system: bl.System) -> None:
 from unittest.mock import Mock
 
 def test_copied_system_is_independant_of_original_system(mixed_system: bl.System) -> None:
-    copied_system = mixed_system.copy()
+    copied_system = mixed_system.__copy__()
     mixed_system.states[0].chains[0].add_residue(amino_acid='A', index=0)
     assert mixed_system.states[0].chains[0] != copied_system.states[0].chains[0]
 
 def test_system_states_still_reference_shared_chain_object_after_copy_method(shared_chain_system: bl.System) -> None:
-    copied_system = shared_chain_system.copy()
+    copied_system = shared_chain_system.__copy__()
     copied_system.states[0].chains[0].add_residue(amino_acid='A', index=0)
     assert copied_system.states[0].chains[0] == copied_system.states[1].chains[0]
 
 
 def test_system_calculate_system_energies_method_gives_correct_output(mixed_system: bl.System) -> None:
     for state in mixed_system.states:
-        state.get_energy() = Mock()  # disable method for easier testing
-    total_system_energy = mixed_system.get_total_energy(folder=None)
+        state.get_energy = Mock()  # disable method for easier testing
+    total_system_energy = mixed_system.get_total_energy(folding_algorithm=None)
     # state 0: energy=-0.5, chem_potential=1.0, n_residues=3. state 1: energy=0.1, chem_potential=2.0, n_residues=7
     assert np.isclose(total_system_energy, (-0.5 + 1 * 3 + 0.1 + 2 * 7) / 2)  # system energy is mean of state energies
 
