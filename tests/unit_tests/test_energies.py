@@ -14,30 +14,30 @@ def test_residue_list_to_group_function(residues: list[bl.Residue]) -> None:
 
 def test_energies_properly_update_residue_group_after_track_residue_removed(residues: list[bl.Residue]) -> None:
     energy = bl.energies.PLDDTEnergy(residues)
-    energy.track_residue_removed_from_chain(chain_id='A', res_id=2)
-    assert all(energy.residue_groups[0][0] == np.array(['A', 'A', 'A', 'A', 'A', 'B'])), 'incorrect group_IDs'
-    assert all(energy.residue_groups[0][1] == np.array([0, 1, 2, 2, 3, 3])), 'incorrect res_IDs'
+    energy.track_residue_removed_from_chain(chain_id='A', res_index=2)
+    assert all(energy.residue_groups[0][0] == np.array(['A', 'A', 'A', 'A', 'A', 'B'])), 'incorrect chain_IDs'
+    assert all(energy.residue_groups[0][1] == np.array([0, 1, 2, 2, 3, 3])), 'incorrect res_indices'
 
 
 def test_energies_properly_update_residue_group_after_track_residue_added(residues: list[bl.Residue]) -> None:
     energy = bl.energies.PLDDTEnergy(residues)
-    energy.track_residue_added_to_chain(chain_id='A', res_id=1)
-    assert all(energy.residue_groups[0][0] == np.array(['A', 'A', 'A', 'A', 'A', 'B'])), 'incorrect group_IDs'
-    assert all(energy.residue_groups[0][1] == np.array([0, 2, 3, 4, 5, 3])), 'incorrect res_IDs'
+    energy.track_residue_added_to_chain(chain_id='A', res_index=1)
+    assert all(energy.residue_groups[0][0] == np.array(['A', 'A', 'A', 'A', 'A', 'B'])), 'incorrect chain_IDs'
+    assert all(energy.residue_groups[0][1] == np.array([0, 2, 3, 4, 5, 3])), 'incorrect res_indices'
 
 
 def test_energies_properly_update_residue_group_after_remove_residue(residues: list[bl.Residue]) -> None:
     energy = bl.energies.PLDDTEnergy(residues)
-    energy.remove_residue(chain_id='A', res_id=2)
-    assert all(energy.residue_groups[0][0] == np.array(['A', 'A', 'A', 'A', 'B'])), 'incorrect group_IDs'
-    assert all(energy.residue_groups[0][1] == np.array([0, 1, 3, 4, 3])), 'incorrect res_IDs'
+    energy.remove_residue(chain_id='A', res_index=2)
+    assert all(energy.residue_groups[0][0] == np.array(['A', 'A', 'A', 'A', 'B'])), 'incorrect chain_IDs'
+    assert all(energy.residue_groups[0][1] == np.array([0, 1, 3, 4, 3])), 'incorrect res_indices'
 
 
 def test_energies_properly_update_residue_group_after_add_residue(residues: list[bl.Residue]) -> None:
     energy = bl.energies.PLDDTEnergy(residues)
-    energy.add_residue(chain_id='A', res_id=2, parent_res_id=1)
-    assert all(energy.residue_groups[0][0] == np.array(['A', 'A', 'A', 'A', 'A', 'B', 'A'])), 'incorrect group_IDs'
-    assert all(energy.residue_groups[0][1] == np.array([0, 1, 2, 3, 4, 3, 2])), 'incorrect  res_IDs'
+    energy.add_residue(chain_id='A', res_index=2, parent_res_index=1)
+    assert all(energy.residue_groups[0][0] == np.array(['A', 'A', 'A', 'A', 'A', 'B', 'A'])), 'incorrect chain_IDs'
+    assert all(energy.residue_groups[0][1] == np.array([0, 1, 2, 3, 4, 3, 2])), 'incorrect  res_indices'
 
 
 def test_energies_get_correct_residue_mask(small_structure: AtomArray) -> None:
