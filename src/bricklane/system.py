@@ -26,8 +26,6 @@ class System:
     states: list[State]
     name: str | None = None
     total_energy: float | None = None
-    # ! Removing because this below is never used
-    # _old_energy: float | None = None
 
     def __copy__(self) -> 'System':
         """Copy the system object, setting the energy to None"""
