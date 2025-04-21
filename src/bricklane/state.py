@@ -96,13 +96,16 @@ class State:
         """
         You look within the same chain and the same state and you add the residue to the same energy terms the
         neighbours are part of. You actually look left and right, and randomly decide between the two. If the residue is
-        at the beginning or at the end of the chain, you just look at one of them You do it for all terms except the
-        TemplateMatchingEnergyTerm as this never makes sense.
+        at the beginning or at the end of the chain, you just look at one of them. You do it for all 
+        terms that are inheritable. 
         """
+
+        # Get the chain that needs to be checked to inherit the energy terms from the neighbours
         chains = self.chains
         for i in range(len(chains)):
             if chains[i].chain_ID == chain_ID:
                 chain = chains[i]
+                break
 
         left_residue = chain.residues[residue_index - 1] if residue_index > 0 else None
         right_residue = chain.residues[residue_index + 1] if residue_index < len(chain.residues) else None
@@ -120,12 +123,15 @@ class State:
         assert parent_residue is not None, 'The parent residue is None, should not happen!'
         # Now add the residue to the energy terms associated to the parent residue
         for term in self.energy_terms:
-            parent_index = parent_residue.index
-            # Just a double check here before proceeding
-            assert parent_residue.chain_ID == chain_ID, (
-                'The parent residue is not in the same chain, should not happen!'
-            )
+            #! Need to check if this is needed, added by Ayham.
+            term.shift_residues_indices_after_addition( chain_ID, residue_index ) # must be called before add_residue
             # Add the residue to the energy term if the parent residue is part of it and the term is inheritable
             # The function automatically checks if the parent is also in it, or not
             if term.inheritable:  # type: ignore
+                # Just a double check here before proceeding
+                parent_index = parent_residue.index
+                assert parent_residue.chain_ID == chain_ID, (
+                    'The parent residue is not in the same chain, should not happen!'
+                )
                 term.add_residue(chain_ID, residue_index, parent_index)
+            
