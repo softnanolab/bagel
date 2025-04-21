@@ -120,10 +120,10 @@ def line_structure() -> AtomArray:  # backbone atoms of first 2 residues form a 
         Atom(coord=[0, 0, 0], chain_id='C', atom_name='CA', res_name='GLY', res_id=0, element='C'),
         Atom(coord=[0, 0, 0], chain_id='C', atom_name='H', res_name='GLY', res_id=0, element='H'),
         Atom(coord=[1, 1, 0], chain_id='C', atom_name='CA', res_name='GLY', res_id=0, element='C'),
-        Atom(coord=[7, 7, 0], chain_id='D', atom_name='O', res_name='GLY', res_id=1, element='O'),
-        Atom(coord=[2, 2, 0], chain_id='D', atom_name='CA', res_name='GLY', res_id=1, element='C'),
-        Atom(coord=[6, 4, 0], chain_id='D', atom_name='CA', res_name='VAL', res_id=2, element='C'),
-        Atom(coord=[9, 0, 0], chain_id='D', atom_name='CA', res_name='VAL', res_id=2, element='C'),
+        Atom(coord=[7, 7, 0], chain_id='D', atom_name='O', res_name='GLY', res_id=0, element='O'),
+        Atom(coord=[2, 2, 0], chain_id='D', atom_name='CA', res_name='GLY', res_id=0, element='C'),
+        Atom(coord=[6, 4, 0], chain_id='D', atom_name='CA', res_name='VAL', res_id=1, element='C'),
+        Atom(coord=[9, 0, 0], chain_id='D', atom_name='CA', res_name='VAL', res_id=1, element='C'),
     ]
     return array(atoms)
 
@@ -132,8 +132,8 @@ def line_structure() -> AtomArray:  # backbone atoms of first 2 residues form a 
 def line_structure_residues() -> list[bl.Residue]:
     residues = [
         bl.Residue(name='G', chain_ID='C', index=0),
+        bl.Residue(name='V', chain_ID='D', index=0),
         bl.Residue(name='V', chain_ID='D', index=1),
-        bl.Residue(name='V', chain_ID='D', index=2),
     ]
     return residues
 
