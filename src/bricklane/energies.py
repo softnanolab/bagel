@@ -11,7 +11,7 @@ import warnings
 import pandas as pd
 
 
-# first row is chain_ids and second row is corresponding residue indexes.
+# first row is chain_ids and second row is corresponding residue indices.
 ResidueGroup = tuple[npt.NDArray[np.str_], npt.NDArray[np.int_]]
 
 
@@ -77,19 +77,21 @@ class EnergyTerm(ABC):
             shifted_mask = (chain_ids == chain_id) & (res_indices >= res_index)
             self.residue_groups[i][1][shifted_mask] += 1
 
-    def remove_residue(self, chain_id: str, res_id: int) -> None:
-        """Remove residue from this energy term's calculations"""
+    def remove_residue(self, chain_id: str, res_index: int) -> None:
+        """Remove residue from this energy term's calculations.
+        Helper function called by the state.remove_residue_from_all_energy_terms function."""
         for i, residue_group in enumerate(self.residue_groups):
-            chain_ids, res_ids = residue_group
-            remove_mask = (chain_ids == chain_id) & (res_ids == res_id)
-            self.residue_groups[i] = [chain_ids[~remove_mask], res_ids[~remove_mask]]  # type: ignore[call-overload]
+            chain_ids, res_indices = residue_group
+            remove_mask = (chain_ids == chain_id) & (res_indices == res_index)
+            self.residue_groups[i] = [chain_ids[~remove_mask], res_indices[~remove_mask]]  # type: ignore[call-overload]
 
-    def add_residue(self, chain_id: str, res_id: int, parent_res_id: int) -> None:
-        """Adds residue to this energy term's calculations, in the same group as its parent residue"""
+    def add_residue(self, chain_id: str, res_index: int, parent_res_index: int) -> None:
+        """Adds residue to this energy term's calculations, in the same group as its parent residue.
+        Helper function called by the state.add_residue_from_all_energy_terms function."""
         for i, residue_group in enumerate(self.residue_groups):
-            chain_ids, res_ids = residue_group
-            if any((chain_ids == chain_id) & (res_ids == parent_res_id)):
-                self.residue_groups[i] = [np.append(chain_ids, chain_id), np.append(res_ids, res_id)]  # type: ignore[call-overload]
+            chain_ids, res_indices = residue_group
+            if any((chain_ids == chain_id) & (res_indices == parent_res_index)):
+                self.residue_groups[i] = [np.append(chain_ids, chain_id), np.append(res_indices, res_index)]  # type: ignore[call-overload]
 
     def get_residue_mask(self, structure: AtomArray, residue_group_index: int) -> npt.NDArray[np.bool_]:
         """Creates residue mask from residue group. Structure used to find unique residues in state"""
