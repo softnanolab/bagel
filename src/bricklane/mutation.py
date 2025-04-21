@@ -140,10 +140,6 @@ class GrandCanonical(MutationProtocol):
             for state in system.states:
                 state.remove_residue_from_all_energy_terms(chain_ID=chain_ID, residue_index=index)
 
-                # ensuring residue indexes in energy terms are updated to reflect a change in chain length
-                for energy_term in state.energy_terms:
-                    energy_term.track_residue_removed_from_chain(chain_ID, index)
-
     def add_random_residue(self, chain: Chain, system: System) -> None:
         # Choose where to add the residue
         index = np.random.choice(range(chain.length + 1))
@@ -157,11 +153,8 @@ class GrandCanonical(MutationProtocol):
         # residue is at the beginning or at the end of the chain, you just look at one of them You do it for all terms
         # except the TemplateMatchingEnergyTerm as this never makes sense.
         for state in system.states:
-            # ensuring residue indexes in energy terms are updated to reflect a change in chain length
-            for energy_term in state.energy_terms:
-                energy_term.track_residue_added_to_chain(chain_ID, index)
-
             state.add_residue_to_all_energy_terms(chain_ID=chain_ID, residue_index=index)
+
 
     def one_step(
         self, folding_algorithm: FoldingAlgorithm, system: System, old_system: System

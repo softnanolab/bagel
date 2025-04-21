@@ -99,6 +99,9 @@ class Chain:
         self.residues.pop(index)
         for i in range(index, len(self.residues)):
             self.residues[i].index -= 1
+        # Added consistency check to ensure that the indices are correct
+        for i in range( len(self.residues) ):
+            assert self.residues[i].index == i, f'index of residue {self.residues[i]} is not correct after deletion'
 
     def add_residue(self, amino_acid: str, index: int) -> None:
         """Add a residue of type amino_acid at the position specificed by index."""
@@ -109,6 +112,9 @@ class Chain:
         self.residues.insert(index, Residue(name=amino_acid, chain_ID=chain_ID, index=index, mutable=True))
         for i in range(index + 1, len(self.residues)):
             self.residues[i].index += 1
+        # Added consistency check to ensure that the indices are correct
+        for i in range( len(self.residues) ):
+            assert self.residues[i].index == i, f'index of residue {self.residues[i]} is not correct after addition'
 
     def mutate_residue(self, index: int, amino_acid: str) -> None:
         """Change identity of residue at position specified by index to 'amino_acid'"""

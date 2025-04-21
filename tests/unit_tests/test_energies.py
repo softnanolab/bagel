@@ -19,9 +19,9 @@ def test_energies_properly_update_residue_group_after_residue_index_shifted_afte
     assert all(energy.residue_groups[0][1] == np.array([0, 1, 2, 2, 3, 3])), 'incorrect res_indices'
 
 
-def test_energies_properly_update_residue_group_after_residue_index_shifted_after_addition(residues: list[bl.Residue]) -> None:
+def test_energies_properly_update_residue_group_before_residue_index_shifted_for_addition(residues: list[bl.Residue]) -> None:
     energy = bl.energies.PLDDTEnergy(residues)
-    energy.shift_residues_indices_after_addition(chain_id='A', res_index=1)
+    energy.shift_residues_indices_before_addition(chain_id='A', res_index=1)
     assert all(energy.residue_groups[0][0] == np.array(['A', 'A', 'A', 'A', 'A', 'B'])), 'incorrect chain_IDs'
     assert all(energy.residue_groups[0][1] == np.array([0, 2, 3, 4, 5, 3])), 'incorrect res_indices'
 
@@ -33,7 +33,7 @@ def test_energies_properly_update_residue_group_after_remove_residue(residues: l
     assert all(energy.residue_groups[0][1] == np.array([0, 1, 3, 4, 3])), 'incorrect res_indices'
 
 
-def test_energies_properly_update_residue_group_after_add_residue(residues: list[bl.Residue]) -> None:
+def test_energies_properly_update_residue_group_before_add_residue(residues: list[bl.Residue]) -> None:
     energy = bl.energies.PLDDTEnergy(residues)
     energy.add_residue(chain_id='A', res_index=2, parent_res_index=1)
     assert all(energy.residue_groups[0][0] == np.array(['A', 'A', 'A', 'A', 'A', 'B', 'A'])), 'incorrect chain_IDs'

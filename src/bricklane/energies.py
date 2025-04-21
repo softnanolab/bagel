@@ -61,8 +61,8 @@ class EnergyTerm(ABC):
         """
         pass
 
-    def track_residue_removed_from_chain(self, chain_id: str, res_index: int) -> None:
-        """Shifts internally stored res_ids on a given chain to reflect a residue has been removed from chain.
+    def shift_residues_indices_after_removal(self, chain_id: str, res_index: int) -> None:
+        """Shifts internally stored res_indices on a given chain to reflect a residue has been removed from chain.
         In practice, this means the indexes in residue_groups for all residues after the one removed it are 
         shifted down by 1. Must be called every time a residue is removed from a chain."""
         for i, residue_group in enumerate(self.residue_groups):
@@ -70,7 +70,7 @@ class EnergyTerm(ABC):
             shifted_mask = (chain_ids == chain_id) & (res_indices > res_index)
             self.residue_groups[i][1][shifted_mask] -= 1
 
-    def track_residue_added_to_chain(self, chain_id: str, res_index: int) -> None:
+    def shift_residues_indices_before_addition(self, chain_id: str, res_index: int) -> None:
         """Shifts internally stored res_indices on a given chain to reflect a residue has been added. 
         In practice, all residues with an index >= res_index are shifted by +1.
         Must be called every time a residue is added."""
