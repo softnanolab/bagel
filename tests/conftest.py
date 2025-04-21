@@ -62,7 +62,7 @@ def pdb_path() -> str:
 def residues() -> list[bl.Residue]:
     """list of 5 Residue objects."""
     return [bl.Residue(name='C', chain_ID='A', index=i) for i in range(5)] + [
-        bl.Residue(name='C', chain_ID='B', index=3)
+        bl.Residue(name='C', chain_ID='B', index=0)
     ]
 
 
