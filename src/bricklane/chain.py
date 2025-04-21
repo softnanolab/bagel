@@ -14,7 +14,7 @@ class Residue:
 
     name: str  # type of the aminoacid in 1 upper case letter format
     chain_ID: str  # ID of the polymer chain this residue belongs to
-    index: int  # index of the residue in the polymer chain
+    index: int  # internal index of the residue in the chain (0 to len(chain)-1)
     mutable: bool = True  # whether the residue can be mutated
 
     def __post_init__(self) -> None:
