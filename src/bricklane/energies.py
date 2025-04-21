@@ -38,6 +38,8 @@ class EnergyTerm(ABC):
         self.residue_groups: list[ResidueGroup] = self.residue_groups
         self.value: float = 0.0
         assert hasattr(self, 'inheritable'), 'inheritable attribute must be set in class initialiser'
+        if self.name == "template_match" or self.name == "backbone_template_match":
+            assert self.inheritable is False, 'template_match energy term should NEVER be inheritable'
 
     @abstractmethod
     def compute(self, structure: AtomArray, folding_metrics: FoldingMetrics) -> float:
@@ -641,6 +643,7 @@ class TemplateMatchEnergy(EnergyTerm):
         self.template_atoms = template_atoms
         self.backbone_only = backbone_only
         self.distogram_separation = distogram_separation
+        self.inheritable = False 
 
     def compute(self, structure: AtomArray, folding_metrics: FoldingMetrics) -> float:
         structure_atoms = structure[self.get_atom_mask(structure, residue_group_index=0)]
