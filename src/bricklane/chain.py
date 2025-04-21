@@ -101,7 +101,7 @@ class Chain:
             self.residues[i].index -= 1
 
     def add_residue(self, amino_acid: str, index: int) -> None:
-        """Add a residue of given amino acid at given index."""
+        """Add a residue of type amino_acid at the position specificed by index."""
         index = index if index >= 0 else len(self.residues) + index
         assert index <= self.length, f'invalid index for {self.length} length chain'
         assert amino_acid in aa_dict.keys(), f'acceptable amino acids are {aa_dict.keys()}'
@@ -111,7 +111,7 @@ class Chain:
             self.residues[i].index += 1
 
     def mutate_residue(self, index: int, amino_acid: str) -> None:
-        """Change amino acid identity of given residue"""
+        """Change identity of residue at position specified by index to 'amino_acid'"""
         assert -self.length - 1 <= index <= self.length, f'invalid index for {self.length} length chain'
         assert self.mutability[index] == 1, 'index of selected residue is not mutable'
         assert amino_acid in aa_dict.keys(), f'acceptable amino acids are {aa_dict.keys()}'
