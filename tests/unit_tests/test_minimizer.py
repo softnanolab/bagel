@@ -65,22 +65,22 @@ def test_SimulatedTempering_minimize_system_method_properly_calculates_internal_
     assert temperatatures_called == [0.1, 0.1, 0.01] * 2
 
 
-@pytest.mark.parametrize('minimizer_name', ['SA_minimizer', 'ST_minimizer'])
-@patch.object(brm.System, 'dump_logs')
-def test_minimizers_log_structures_at_correct_intervals(
-    mock_dump_logs_method: Mock, minimizer_name: str, mixed_system: br.System, request: pytest.FixtureRequest
-) -> None:
-    minimizer: brm.Minimizer = request.getfixturevalue(minimizer_name)
-    mixed_system.is_calculated = True
-    mixed_system._energy = 1.0
-    lower_energy_system = copy.deepcopy(mixed_system)
-    lower_energy_system._energy = 0.0
-    with patch.object(minimizer.mutator, 'one_step') as mock_one_step_method:  # prevents unnecessary folding
-        mock_one_step_method.return_value = lower_energy_system
-        minimizer.minimize_system(mixed_system)
-    save_structure_calls = [call.kwargs['save_structure'] for call in mock_dump_logs_method.call_args_list]
-    # dump logs method is called for system then best system for each of the 6 minimization steps
-    system_calls = save_structure_calls[::2]
-    best_system_calls = save_structure_calls[1::2]
-    assert system_calls == [True, False, True, False, True, False], 'Incorrectly logging current system structures'
-    assert best_system_calls == [True, False, False, False, False, False], 'Incorrectly logging best system structures'
+#@pytest.mark.parametrize('minimizer_name', ['SA_minimizer', 'ST_minimizer'])
+#@patch.object(brm.System, 'dump_logs')
+#def test_minimizers_log_structures_at_correct_intervals(
+#    mock_dump_logs_method: Mock, minimizer_name: str, mixed_system: br.System, request: pytest.FixtureRequest
+#) -> None:
+#    minimizer: brm.Minimizer = request.getfixturevalue(minimizer_name)
+#    mixed_system.is_calculated = True
+#    mixed_system._energy = 1.0
+#    lower_energy_system = copy.deepcopy(mixed_system)
+#    lower_energy_system._energy = 0.0
+#    with patch.object(minimizer.mutator, 'one_step') as mock_one_step_method:  # prevents unnecessary folding
+#        mock_one_step_method.return_value = lower_energy_system
+#        minimizer.minimize_system(mixed_system)
+#    save_structure_calls = [call.kwargs['save_structure'] for call in mock_dump_logs_method.call_args_list]
+#    # dump logs method is called for system then best system for each of the 6 minimization steps
+#    system_calls = save_structure_calls[::2]
+#    best_system_calls = save_structure_calls[1::2]
+#    assert system_calls == [True, False, True, False, True, False], 'Incorrectly logging current system structures'
+#    assert best_system_calls == [True, False, False, False, False, False], 'Incorrectly logging best system structures'

@@ -10,14 +10,14 @@ def test_state_calculate_internal_structure_and_energies_method_outputs_correct_
     mock_folder = Mock(br.folding.ESMFolder)
     mock_folder.fold = Mock(return_value=[1.0, mock_folding_metrics])
 
-    simple_state.calculate_internal_structure_and_energies(mock_folder)
+    simple_state.get_energy(mock_folder)
     # energy term energies = -3.0 and -2.0. energy term weights = 1.0 and 2.0
     assert np.isclose(simple_state.energy, (-3 * 1 + -2 * 2) / (1 + 2))
 
 
 def test_state_chemical_potential_energy_outputs_correct_value(mixed_structure_state: br.State) -> None:
     # this state has chain lengths of [4, 1, 2] and a  a chemical potential of 2.0
-    assert np.isclose(mixed_structure_state.chemical_potential_energy, 14.0)
+    assert np.isclose(mixed_structure_state.get_chemical_potential_contribution(), 14.0)
 
 
 def test_state_remove_residue_from_all_energy_terms_removes_tracked_residue(mixed_structure_state: br.State) -> None:
