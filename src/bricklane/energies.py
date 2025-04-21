@@ -22,9 +22,14 @@ def residue_list_to_group(residues: list[Residue]) -> ResidueGroup:
 
 class EnergyTerm(ABC):
     """
-    Standard pattern for calculating structural or property loss.
+    Standard energy term to build the loss (total energy) function to be minimized.
+    Note that each energy term is a function of the structure and folding metrics.
+    Also, note that each energy term has its own __init__ method, however, all common
+    terms that must be initialized can be found in the __post__init__ function below.
+    Like the __init__ method, __post__init__ is also **automatically** called upon 
+    instantiating an object of the class. 
     """
-
+    
     def __post_init__(self) -> None:
         """Checks required attributes have been set after class is initialised"""
         assert hasattr(self, 'name'), 'name attribute must be set in class initialiser'
@@ -32,6 +37,7 @@ class EnergyTerm(ABC):
         assert hasattr(self, 'residue_groups'), 'residue_groups attribute must be set in class initialiser'
         self.residue_groups: list[ResidueGroup] = self.residue_groups
         self.value: float = 0.0
+        assert hasattr(self, 'inheritable'), 'inheritable attribute must be set in class initialiser'
 
     @abstractmethod
     def compute(self, structure: AtomArray, folding_metrics: FoldingMetrics) -> float:
