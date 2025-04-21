@@ -162,7 +162,7 @@ class GrandCanonical(MutationProtocol):
         for i in range(self.n_mutations):
             chain = self.choose_chain(system)
             # Now pick a move to make among removal, addition, or mutation
-            print('Current probabilties')
+            # print('Current probabilties')
             print(self.move_probabilities)
             move = np.random.choice(
                 list(self.move_probabilities.keys()),
@@ -179,7 +179,7 @@ class GrandCanonical(MutationProtocol):
                 self.remove_random_residue(chain=chain, system=system)
 
         self.reset_system(system=system)  # Reset the system so it knows it must recalculate fold and energy
-        print(f'HERE {system.states[0]._folding_metrics}')
+        # print(f'HERE {system.states[0]._folding_metrics}')
         delta_energy = system.get_total_energy(folding_algorithm) - old_system.get_total_energy(folding_algorithm)
         delta_chemical = system.chemical_potential_contribution() - old_system.chemical_potential_contribution()
 
