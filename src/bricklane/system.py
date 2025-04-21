@@ -39,7 +39,7 @@ class System:
 
     def get_total_energy(self, folding_algorithm: FoldingAlgorithm) -> float:
         if self.total_energy is None:
-            self.total_energy = np.mean([state.get_energy(folding_algorithm) for state in self.states])  # type: ignore
+            self.total_energy = np.sum([state.get_energy(folding_algorithm) for state in self.states])  # type: ignore
         return self.total_energy  # type: ignore
 
     def dump_logs(self, step: int, path: pl.Path, save_structure: bool = True) -> None:
