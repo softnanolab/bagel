@@ -62,7 +62,7 @@ class State:
         total_energy = sum(
             [energy * weight for energy, weight in zip(self._energy_terms_value.values(), self.energy_terms_weights)]
         )
-        self._energy = total_energy / sum(self.energy_terms_weights)  # returns average so value ~ between 0 and 1
+        self._energy = total_energy 
 
         if self.verbose:
             print(f'**Weighted** energy for state {self.name} is {self._energy}')

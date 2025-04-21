@@ -219,19 +219,20 @@ def test_TemplateMatchEnergy_is_correct_with_simple_structure(
     line_structure_residues: list[bl.Residue],
     line_structure: AtomArray,
 ) -> None:
-    template_atoms = copy.deepcopy(line_structure[line_structure.res_id < 2])
+    template_atoms = copy.deepcopy(line_structure[line_structure.res_id < 1])
     template_atoms.coord[0, :] -= [0.1, 0.1, 0]  # shifting back atom sqrt(0.02) backwards in direction of line
     template_atoms.coord[4, :] += [0.1, 0.1, 0]  # shifting front atom sqrt(0.02) forwards in direction of line
     energy = bl.energies.TemplateMatchEnergy(template_atoms, residues=line_structure_residues[:2], backbone_only=True)
     energy.compute(structure=line_structure, folding_metrics=None)
-    assert np.isclose(energy.value, np.mean([0.02, 0, 0.02]) ** 0.5)  # first and last template atoms sqrt(0.02) away
+    # it is only 3 atoms because you only count for backbone atoms, defined as of type C, N and CA
+    assert np.isclose(energy.value, np.mean( [0.02, 0.0, 0.02] )**0.5 )  # first and last template atoms sqrt(0.02) away
 
 
 def test_TemplateMatchEnergy_is_correct_with_simple_structure_using_distogram_metric(
     line_structure_residues: list[bl.Residue],
     line_structure: AtomArray,
 ) -> None:
-    template_atoms = copy.deepcopy(line_structure[line_structure.res_id < 2])
+    template_atoms = copy.deepcopy(line_structure[line_structure.res_id < 1])
     template_atoms.coord[0, :] -= [0.1, 0.1, 0]  # shifting back atom sqrt(0.02) backwards in direction of line
     template_atoms.coord[4, :] += [0.1, 0.1, 0]  # shifting front atom sqrt(0.02) forwards in direction of line
     energy = bl.energies.TemplateMatchEnergy(
