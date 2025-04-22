@@ -12,7 +12,9 @@ def test_residue_list_to_group_function(residues: list[bl.Residue]) -> None:
     assert np.all(res_ids == np.array(list(range(5)) + [0])), 'function returned wrong res ids'
 
 
-def test_energies_properly_update_residue_group_after_residue_index_shifted_after_removal(residues: list[bl.Residue]) -> None:
+def test_energies_properly_update_residue_group_after_residue_index_shifted_after_removal(
+    residues: list[bl.Residue],
+) -> None:
     energy = bl.energies.PLDDTEnergy(residues)
     energy.remove_residue(chain_id='A', res_index=2)
     energy.shift_residues_indices_after_removal(chain_id='A', res_index=2)
@@ -20,7 +22,9 @@ def test_energies_properly_update_residue_group_after_residue_index_shifted_afte
     assert all(energy.residue_groups[0][1] == np.array([0, 1, 2, 3, 0])), 'incorrect res_indices'
 
 
-def test_energies_properly_update_residue_group_before_residue_index_shifted_for_addition(residues: list[bl.Residue]) -> None:
+def test_energies_properly_update_residue_group_before_residue_index_shifted_for_addition(
+    residues: list[bl.Residue],
+) -> None:
     energy = bl.energies.PLDDTEnergy(residues)
     energy.shift_residues_indices_before_addition(chain_id='A', res_index=1)
     assert all(energy.residue_groups[0][0] == np.array(['A', 'A', 'A', 'A', 'A', 'B'])), 'incorrect chain_IDs'
@@ -58,7 +62,9 @@ def test_energies_get_correct_residue_mask_for_multimer(square_structure: AtomAr
     energy = bl.energies.PLDDTEnergy(residues)
     structure = concatenate([square_structure, line_structure])
     mask = energy.get_residue_mask(structure, residue_group_index=0)
-    assert all(mask == [False, True, True, True, False, True, True]), AssertionError( f'Incorrect residue mask for multimer {mask}')
+    assert all(mask == [False, True, True, True, False, True, True]), AssertionError(
+        f'Incorrect residue mask for multimer {mask}'
+    )
 
 
 def test_energies_get_correct_atom_mask(small_structure: AtomArray) -> None:
@@ -225,7 +231,7 @@ def test_TemplateMatchEnergy_is_correct_with_simple_structure(
     energy = bl.energies.TemplateMatchEnergy(template_atoms, residues=line_structure_residues[:2], backbone_only=True)
     energy.compute(structure=line_structure, folding_metrics=None)
     # it is only 3 atoms because you only count for backbone atoms, defined as of type C, N and CA
-    assert np.isclose(energy.value, np.mean( [0.02, 0.0, 0.02] )**0.5 )  # first and last template atoms sqrt(0.02) away
+    assert np.isclose(energy.value, np.mean([0.02, 0.0, 0.02]) ** 0.5)  # first and last template atoms sqrt(0.02) away
 
 
 def test_TemplateMatchEnergy_is_correct_with_simple_structure_using_distogram_metric(

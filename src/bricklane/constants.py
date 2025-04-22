@@ -24,7 +24,7 @@ aa_dict = {
     'V': 'VAL',  # valine
 }
 
-aminoacids_letters = list( aa_dict.keys() )
+aminoacids_letters = list(aa_dict.keys())
 mutation_bias = {aa: 1.0 / len(aa_dict) for aa in aa_dict.keys()}
 
 mutation_bias_no_cystein = {aa: 1.0 / (len(aa_dict) - 1) if aa != 'C' else 0.0 for aa in aa_dict.keys()}

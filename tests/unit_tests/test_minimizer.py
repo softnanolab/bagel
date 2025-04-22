@@ -7,16 +7,16 @@ import pytest
 from unittest.mock import patch, Mock
 
 
-#def test_Minimizer_initialise_log_path_method_creates_intended_files(SA_minimizer: brm.SimulatedAnnealing) -> None:
+# def test_Minimizer_initialise_log_path_method_creates_intended_files(SA_minimizer: brm.SimulatedAnnealing) -> None:
 #    assert SA_minimizer.log_path.is_dir(), 'Did not create a results folder.'
 #    script_path = SA_minimizer.log_path / 'origional_script.py'
 #    assert script_path.is_file(), 'Did not copy python script into results folder'
 
 
-#def test_Minimizer_one_step_method_accepts_lower_energy_system(
+# def test_Minimizer_one_step_method_accepts_lower_energy_system(
 #    SA_minimizer: brm.SimulatedAnnealing,
 #    mixed_system: br.System,
-#) -> None:
+# ) -> None:
 #    mixed_system.is_calculated = True
 #    mixed_system._energy = 1.0
 #    lower_energy_system = copy.deepcopy(mixed_system)
@@ -27,9 +27,9 @@ from unittest.mock import patch, Mock
 #    assert returned_system == lower_energy_system
 
 
-#def test_Minimizer_logging_step_method_gives_correct_output_for_first_step(
+# def test_Minimizer_logging_step_method_gives_correct_output_for_first_step(
 #    SA_minimizer: brm.SimulatedAnnealing, mixed_system: br.System
-#) -> None:
+# ) -> None:
 #    mixed_system.is_calculated = True  # prevents system for initially calculating structure and energies
 #    SA_minimizer.logging_step(
 #        temperature=0.1, step=0, system=mixed_system, best_system=mixed_system, new_best=True, acceptance_prob=0.5
@@ -43,10 +43,10 @@ from unittest.mock import patch, Mock
 #    assert all(correct_minizer_logs == minimizer_logs), 'incorrect information in minizer logs file'
 
 
-#@patch.object(brm.Minimizer, 'minimize_one_step')  # used to prevent unnecessary folding
-#def test_SimulatedAnnealing_minimize_system_method_properly_calculates_internal_attributes(
+# @patch.object(brm.Minimizer, 'minimize_one_step')  # used to prevent unnecessary folding
+# def test_SimulatedAnnealing_minimize_system_method_properly_calculates_internal_attributes(
 #    mock_minimize_method: Mock, SA_minimizer: brm.SimulatedAnnealing, mixed_system: br.System
-#) -> None:
+# ) -> None:
 #    mock_minimize_method.return_value = (mixed_system, 0.5)
 #    mixed_system.is_calculated = True  # prevents system for initially calculating structure and energies
 #    SA_minimizer.minimize_system(mixed_system)
@@ -54,10 +54,10 @@ from unittest.mock import patch, Mock
 #    assert np.allclose(temperatatures_called, [0.35, 0.3, 0.25, 0.2, 0.15, 0.1])
 
 
-#@patch.object(brm.Minimizer, 'minimize_one_step')  # used to prevent unnecessary folding
-#def test_SimulatedTempering_minimize_system_method_properly_calculates_internal_attributes(
+# @patch.object(brm.Minimizer, 'minimize_one_step')  # used to prevent unnecessary folding
+# def test_SimulatedTempering_minimize_system_method_properly_calculates_internal_attributes(
 #    mock_minimize_method: Mock, ST_minimizer: brm.SimulatedTempering, mixed_system: br.System
-#) -> None:
+# ) -> None:
 #    mock_minimize_method.return_value = (mixed_system, 0.5)
 #    mixed_system.is_calculated = True  # prevents system for initially calculating structure and energies
 #    ST_minimizer.minimize_system(mixed_system)
@@ -65,11 +65,11 @@ from unittest.mock import patch, Mock
 #    assert temperatatures_called == [0.1, 0.1, 0.01] * 2
 
 
-#@pytest.mark.parametrize('minimizer_name', ['SA_minimizer', 'ST_minimizer'])
-#@patch.object(brm.System, 'dump_logs')
-#def test_minimizers_log_structures_at_correct_intervals(
+# @pytest.mark.parametrize('minimizer_name', ['SA_minimizer', 'ST_minimizer'])
+# @patch.object(brm.System, 'dump_logs')
+# def test_minimizers_log_structures_at_correct_intervals(
 #    mock_dump_logs_method: Mock, minimizer_name: str, mixed_system: br.System, request: pytest.FixtureRequest
-#) -> None:
+# ) -> None:
 #    minimizer: brm.Minimizer = request.getfixturevalue(minimizer_name)
 #    mixed_system.is_calculated = True
 #    mixed_system._energy = 1.0

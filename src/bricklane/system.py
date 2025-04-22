@@ -37,12 +37,12 @@ class System:
 
     def get_total_energy(self, folding_algorithm: FoldingAlgorithm) -> float:
         if self.total_energy is None:
-            self.total_energy = np.sum([state.get_energy(folding_algorithm) for state in self.states])  # type: ignore
-        return self.total_energy  # type: ignore
-    
+            self.total_energy = np.sum([state.get_energy(folding_algorithm) for state in self.states])
+        return self.total_energy
+
     def get_total_loss(self, folding_algorithm: FoldingAlgorithm) -> float:
         if self.total_energy is None:
-            self.total_energy = np.sum([state.get_energy(folding_algorithm) for state in self.states])  # type: ignore
+            self.total_energy = np.sum([state.get_energy(folding_algorithm) for state in self.states])
         self.total_loss = self.total_energy + self.chemical_potential_contribution()
         return self.total_loss
 

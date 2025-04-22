@@ -32,7 +32,7 @@ def test_system_dump_config_file_is_correct(mixed_system: bl.System) -> None:
                 'pTM',
                 'selective_surface_area',
                 'local_pLDDT',
-                'cross_PAE', 
+                'cross_PAE',
                 #'pTM',
                 #'normalized_globular',
             ],
@@ -106,6 +106,7 @@ def test_copied_system_is_independant_of_original_system(mixed_system: bl.System
     mixed_system.states[0].chains[0].add_residue(amino_acid='A', index=0)
     assert mixed_system.states[0].chains[0] != copied_system.states[0].chains[0]
 
+
 def test_system_states_still_reference_shared_chain_object_after_copy_method(shared_chain_system: bl.System) -> None:
     copied_system = shared_chain_system.__copy__()
     copied_system.states[0].chains[0].add_residue(amino_acid='A', index=0)
@@ -117,4 +118,6 @@ def test_system_get_total_loss_gives_correct_output(mixed_system: bl.System) -> 
         state.get_energy = Mock()  # disable method for easier testing
     total_loss = mixed_system.get_total_loss(folding_algorithm=None)
     # state 0: energy=-0.5, chem_potential=1.0, n_residues=3. state 1: energy=0.1, chem_potential=2.0, n_residues=7
-    assert np.isclose(total_loss, (-0.5 + 1 * 3 + 0.1 + 2 * 7) )  # system loss is sum of state energies + chemical potentials contribution
+    assert np.isclose(
+        total_loss, (-0.5 + 1 * 3 + 0.1 + 2 * 7)
+    )  # system loss is sum of state energies + chemical potentials contribution
