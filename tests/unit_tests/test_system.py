@@ -31,8 +31,10 @@ def test_system_dump_config_file_is_correct(mixed_system: bl.System) -> None:
             'energy': [
                 'pTM',
                 'selective_surface_area',
-                'pTM',
-                'normalized_globular',
+                'local_pLDDT',
+                'cross_PAE', 
+                #'pTM',
+                #'normalized_globular',
             ],
             'weight': [1.0, 1.0, 1.0, 1.0],
         }
@@ -78,7 +80,7 @@ def test_system_dump_logs_folder_is_correct(mixed_system: bl.System) -> None:
             'small:selective_surface_area': [0.2],
             #'mixed:pTM': [-0.4],
             #'mixed:normalized_globular': [0.5],
-            'mixed:local_PLDDT': [-0.4],
+            'mixed:local_pLDDT': [-0.4],
             'mixed:cross_PAE': [0.5],
             'small:state_energy': [-0.5],
             'mixed:state_energy': [0.1],
