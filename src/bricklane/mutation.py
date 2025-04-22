@@ -150,8 +150,7 @@ class GrandCanonical(MutationProtocol):
         # Now you need to decide which energy terms you want to associate to this residue. You do it based on its
         # neighbours. You look within the same chain and the same state and you add the residue to the same energy terms
         # the neighbours are part of. You actually look left and right, and randomly decide between the two. If the
-        # residue is at the beginning or at the end of the chain, you just look at one of them You do it for all terms
-        # except the TemplateMatchingEnergyTerm as this never makes sense.
+        # residue is at the beginning or at the end of the chain, you just look at one of them. 
         for state in system.states:
             state.add_residue_to_all_energy_terms(chain_ID=chain_ID, residue_index=index)
 
@@ -164,6 +163,7 @@ class GrandCanonical(MutationProtocol):
             # Now pick a move to make among removal, addition, or mutation
             # print('Current probabilties')
             print(self.move_probabilities)
+            assert self.move_probabilities.keys() == {'mutation', 'addition', 'removal'}, 'Move probabilities must be mutation, addition and removal'
             move = np.random.choice(
                 list(self.move_probabilities.keys()),
                 p=list(self.move_probabilities.values()),

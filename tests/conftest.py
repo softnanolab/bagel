@@ -295,7 +295,7 @@ def energies_system() -> bl.State:
     A_state = bl.State(
         chains=[bl.Chain(A_residues)],
         energy_terms=[bl.energies.PLDDTEnergy(A_residues), bl.energies.SurfaceAreaEnergy(A_residues)],
-        energy_term_weights=[1.0, 1.0],
+        energy_terms_weights=[1.0, 1.0],
         name='A',
     )
 
@@ -303,7 +303,7 @@ def energies_system() -> bl.State:
     B_state = bl.State(
         chains=[bl.Chain(B_residues)],
         energy_terms=[bl.energies.PLDDTEnergy(B_residues), bl.energies.SurfaceAreaEnergy(B_residues)],
-        energy_term_weights=[1.0, 1.0],
+        energy_terms_weights=[1.0, 1.0],
         name='B',
     )
     return bl.System([A_state, B_state])
