@@ -21,17 +21,26 @@ def test_state_chemical_potential_energy_outputs_correct_value(mixed_structure_s
     assert np.isclose(mixed_structure_state.get_chemical_potential_contribution(), 14.0)
 
 
-def test_state_remove_residue_from_all_energy_terms_removes_tracked_residue(mixed_structure_state: br.State) -> None:
+def test_state_remove_residue_from_all_energy_terms_removes_correct_residue(mixed_structure_state: br.State) -> None:
     mixed_structure_state.chains[2].remove_residue(index=2)
     mixed_structure_state.remove_residue_from_all_energy_terms(chain_ID='E', residue_index=2)
-    for term in mixed_structure_state.energy_terms:
-        # started at ['C', 'D', 'D', 'E', 'E', 'E', 'E'], [0, 0, 1, 0, 1, 2, 3]
-        chain_ids, res_ids = term.residue_groups[0]
-        # removing index 2 E residue means the rest shift down and the max index tracked should be 2
-        assert np.all(chain_ids == ['C', 'D', 'D', 'E', 'E', 'E']) and np.all(res_ids == [0, 0, 1, 0, 1, 2])
+    
+    chain_ids, res_ids = mixed_structure_state.energy_terms[0].residue_groups[0]  
+    # started at ['C', 'D', 'D', 'E', 'E', 'E', 'E'], [0, 0, 1, 0, 1, 2, 3], remove index 2 at chain E
+    # removing index 2 E residue means the rest shift down and the max index tracked should be 2
+    assert np.all(chain_ids == ['C', 'D', 'D', 'E', 'E', 'E']) and np.all(res_ids == [0, 0, 1, 0, 1, 2])
+    
+    chain_ids, res_ids = mixed_structure_state.energy_terms[1].residue_groups[0]  
+    # started at ['C', 'D', 'D'], [0, 0, 1], should remain the same 
+    assert np.all(chain_ids == ['C', 'D', 'D']) and np.all(res_ids == [0, 0, 1])
+
+    chain_ids, res_ids = mixed_structure_state.energy_terms[1].residue_groups[1]
+    # started at ['E', 'E', 'E', 'E'], [0, 1, 2, 3], remove index 2 at chain E
+    # removing index 2 E residue means the rest shift down and the max index tracked should be 2
+    assert np.all(chain_ids == ['E', 'E', 'E']) and np.all(res_ids == [0, 1, 2])
 
 
-def test_state_add_residue_to_all_energy_terms_adds_residue_to_tracking(mixed_structure_state: br.State) -> None:
+def test_state_add_residue_to_all_energy_terms_adds_residue_to_residue_group(mixed_structure_state: br.State) -> None:
     mixed_structure_state.chains[1].add_residue(amino_acid='A', index=1)
     mixed_structure_state.add_residue_to_all_energy_terms(chain_ID='D', residue_index=1)
 
@@ -40,9 +49,14 @@ def test_state_add_residue_to_all_energy_terms_adds_residue_to_tracking(mixed_st
     assert np.all(chain_ids == ['C', 'D', 'D', 'E', 'E', 'E', 'E', 'D'])  # extra D added at end
     assert np.all(
         res_ids == [0, 0, 2, 0, 1, 2, 3, 1]
-    )  # index of origional residue shifted up and added new residue at end
+    )  # index of original residue shifted up and added new residue at end
 
-    # started at ['C', 'D', 'D', 'E', 'E', 'E', 'E'], [0, 0, 1, 0, 1, 2, 3]
+    # started at ['C', 'D', 'D'], [0, 0, 1] and shift of last index in chain D, but no residue added since non inheritable
     chain_ids, res_ids = mixed_structure_state.energy_terms[1].residue_groups[0]  # non inheritable energy
-    assert np.all(chain_ids == ['C', 'D', 'D', 'E', 'E', 'E', 'E'])  # extra D not added
-    assert np.all(res_ids == [0, 0, 2, 0, 1, 2, 3])  # index of origional residue shifted up
+    assert np.all(chain_ids == ['C', 'D', 'D'])  # extra D not added
+    assert np.all(res_ids == [0, 0, 2])  # index of original residue shifted up
+    
+    # started at ['E', 'E', 'E', 'E'], [0, 1, 2, 3] and remains the same because chain D is not part of this energy term
+    chain_ids, res_ids = mixed_structure_state.energy_terms[1].residue_groups[1]  # non inheritable energy
+    assert np.all(chain_ids == ['E', 'E', 'E', 'E'])  # extra D not added
+    assert np.all(res_ids == [ 0, 1, 2, 3])  # index of original residue shifted up
