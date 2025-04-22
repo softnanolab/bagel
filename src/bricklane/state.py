@@ -106,10 +106,15 @@ class State:
 
         # Get the chain that needs to be checked to inherit the energy terms from the neighbours
         chains = self.chains
+        chain = None
         for i in range(len(chains)):
             if chains[i].chain_ID == chain_ID:
                 chain = chains[i]
                 break
+
+        if chain is None:
+            # This is ok, it can happen if a residue is added to a chain that is not in one of the states
+            return
 
         # Remember the following selection is done AFTER the residue has been added to the Chain object via chain.add_residue
         left_residue = chain.residues[residue_index - 1] if residue_index > 0 else None
