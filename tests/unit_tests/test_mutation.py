@@ -96,7 +96,7 @@ def test_GrandCanonical_MutationProtocol_one_step_method_gives_correct_output_fo
     mutated_system, _, _ = mutator.one_step(folding_algorithm=None, system=energies_system, old_system=energies_system.__copy__())
     assert mocked_calculate_method.called, 'mutator did not recalculate structure and energies.'
     assert any([len(state.chains[0].residues) == 6 for state in mutated_system.states]), 'residue not added'
-        num_res = len(state.chains[0].residues)
+    num_res = len(state.chains[0].residues)
     for state in mutated_system.states:
         state_type = 'mutated' if num_res == 6 else 'original'
         for term in state.energy_terms:
