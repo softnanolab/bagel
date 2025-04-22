@@ -132,7 +132,7 @@ class PTMEnergy(EnergyTerm):
         ----------
         """
         self.name = 'pTM'
-        self.inheritable = False
+        self.inheritable = True
         self.residue_groups = []
 
     def compute(self, structure: AtomArray, folding_metrics: FoldingMetrics) -> float:
@@ -187,7 +187,7 @@ class OverallPLDDTEnergy(EnergyTerm):
         ----------
         """
         self.name = 'global_pLDDT'
-        self.inheritable = False
+        self.inheritable = True
         self.residue_groups = []
 
     def compute(self, structure: AtomArray, folding_metrics: FoldingMetrics) -> float:
@@ -740,7 +740,7 @@ class EllipsoidEnergy(EnergyTerm):
             all backbone atoms within the ellipsoid volume.
         """
         self.name = 'ellipsoid'
-        self.inheritable = False  # always considers all residues in structure
+        self.inheritable = True  # always considers all residues in structure
         self.residue_groups = []
         self.k_attractive = k_attractive
         self.k_repulsive = k_repulsive
@@ -818,7 +818,7 @@ class CuboidEnergy(EnergyTerm):
             perfect right angled vertex.
         """
         self.name = 'cuboid'
-        self.inheritable = False  # always considers all residues in structure
+        self.inheritable = True  # always considers all residues in structure
         self.residue_groups = []
         self.k_attractive = k_attractive
         self.k_repulsive = k_repulsive
