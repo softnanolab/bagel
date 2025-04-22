@@ -188,10 +188,13 @@ def mixed_structure_state(
     line_structure_residues: list[bl.Residue],
     square_structure_residues: list[bl.Residue],
 ) -> bl.State:
-    #energy_terms = [bl.energies.PTMEnergy(), bl.energies.GlobularEnergy()]
-    energy_terms = [bl.energies.PLDDTEnergy( residues = line_structure_residues + square_structure_residues ), 
-                    bl.energies.PAEEnergy( group_1_residues = line_structure_residues, group_2_residues = square_structure_residues,
-                                          inheritable=False )]
+    # energy_terms = [bl.energies.PTMEnergy(), bl.energies.GlobularEnergy()]
+    energy_terms = [
+        bl.energies.PLDDTEnergy(residues=line_structure_residues + square_structure_residues),
+        bl.energies.PAEEnergy(
+            group_1_residues=line_structure_residues, group_2_residues=square_structure_residues, inheritable=False
+        ),
+    ]
     state = bl.State(
         chains=line_structure_chains + square_structure_chains,
         energy_terms=energy_terms,
@@ -244,10 +247,13 @@ def simple_state() -> bl.State:
         name='state_A',
         verbose=True,
     )
-    state._structure = AtomArray(length = len(residues))
+    state._structure = AtomArray(length=len(residues))
     state.energy_terms[0].value = -1.0
     state.energy_terms[1].value = -0.5
-    state._energy_terms_value = { state.energy_terms[0].name: state.energy_terms[0].value, state.energy_terms[1].name: state.energy_terms[1].value } 
+    state._energy_terms_value = {
+        state.energy_terms[0].name: state.energy_terms[0].value,
+        state.energy_terms[1].name: state.energy_terms[1].value,
+    }
     return state
 
 
@@ -272,6 +278,7 @@ def shared_chain_system() -> bl.State:
         name='B',
     )
     return bl.System([A_state, B_state])
+
 
 @pytest.fixture
 def huge_system() -> bl.State:
@@ -348,6 +355,7 @@ def ST_minimizer() -> bl.minimizer.SimulatedTempering:
     yield minimizer
     shutil.rmtree(minimizer.log_path)
 
+
 @pytest.fixture
 def monomer(base_sequence):
     residues = [bl.Residue(name=aa, chain_ID='C-A', index=i, mutable=True) for i, aa in enumerate(base_sequence)]
@@ -368,6 +376,7 @@ def trimer(base_sequence):
     residues_C = [bl.Residue(name=aa, chain_ID='C-C', index=i, mutable=True) for i, aa in enumerate(base_sequence)]
     return [bl.Chain(residues=residues_A), bl.Chain(residues=residues_B), bl.Chain(residues=residues_C)]
 
+
 @pytest.fixture
 def nominal_mixed_system(trimer: list[bl.Chain]) -> bl.System:
     """system with 3 mutable 20 amino acid chains. These are shared between 2 states with easier energies."""
@@ -386,6 +395,7 @@ def nominal_mixed_system(trimer: list[bl.Chain]) -> bl.System:
     )
 
     return bl.System([state_1, state_2])
+
 
 @pytest.fixture
 def temp_path() -> pl.Path:

@@ -26,10 +26,10 @@ class EnergyTerm(ABC):
     Note that each energy term is a function of the structure and folding metrics.
     Also, note that each energy term has its own __init__ method, however, all common
     terms that must be initialized can be found in the __post__init__ function below.
-    Like the __init__ method, __post__init__ is also **automatically** called upon 
-    instantiating an object of the class. 
+    Like the __init__ method, __post__init__ is also **automatically** called upon
+    instantiating an object of the class.
     """
-    
+
     def __post_init__(self) -> None:
         """Checks required attributes have been set after class is initialised"""
         assert hasattr(self, 'name'), 'name attribute must be set in class initialiser'
@@ -38,7 +38,7 @@ class EnergyTerm(ABC):
         self.residue_groups: list[ResidueGroup] = self.residue_groups
         self.value: float = 0.0
         assert hasattr(self, 'inheritable'), 'inheritable attribute must be set in class initialiser'
-        if self.name == "template_match" or self.name == "backbone_template_match":
+        if self.name == 'template_match' or self.name == 'backbone_template_match':
             assert self.inheritable is False, 'template_match energy term should NEVER be inheritable'
 
     @abstractmethod
@@ -63,7 +63,7 @@ class EnergyTerm(ABC):
 
     def shift_residues_indices_after_removal(self, chain_id: str, res_index: int) -> None:
         """Shifts internally stored res_indices on a given chain to reflect a residue has been removed from chain.
-        In practice, this means the indexes in residue_groups for all residues after the one removed it are 
+        In practice, this means the indexes in residue_groups for all residues after the one removed it are
         shifted down by 1. Must be called every time a residue is removed from a chain."""
         for i, residue_group in enumerate(self.residue_groups):
             chain_ids, res_indices = residue_group
@@ -71,7 +71,7 @@ class EnergyTerm(ABC):
             self.residue_groups[i][1][shifted_mask] -= 1
 
     def shift_residues_indices_before_addition(self, chain_id: str, res_index: int) -> None:
-        """Shifts internally stored res_indices on a given chain to reflect a residue has been added. 
+        """Shifts internally stored res_indices on a given chain to reflect a residue has been added.
         In practice, all residues with an index >= res_index are shifted by +1.
         Must be called every time a residue is added."""
         for i, residue_group in enumerate(self.residue_groups):
@@ -516,7 +516,7 @@ class RingSymmetryEnergy(EnergyTerm):
 
 class SeparationEnergy(EnergyTerm):
     """
-    Energy that minimizes the distance between two groups of residues. The position of each group is 
+    Energy that minimizes the distance between two groups of residues. The position of each group is
     defined as the centroid of the backbone atoms of the residues belonging of that group.
     """
 
@@ -567,10 +567,10 @@ class SeparationEnergy(EnergyTerm):
 
 class GlobularEnergy(EnergyTerm):
     """
-    Energy proportional to the moment of inertia of the structure around its centroid. This energy is minimized when 
+    Energy proportional to the moment of inertia of the structure around its centroid. This energy is minimized when
     the atoms belonging to a structure have the lowest possible distance from the centre, and, due to excluded volume
-    effects that prevent collapse to a single point, helps forcing structures to 
-    be as close as possible to a spherically distributed cloud of points. 
+    effects that prevent collapse to a single point, helps forcing structures to
+    be as close as possible to a spherically distributed cloud of points.
     """
 
     def __init__(self, residues: list[Residue] | None = None, normalize: bool = True, inheritable: bool = True) -> None:
@@ -643,7 +643,7 @@ class TemplateMatchEnergy(EnergyTerm):
         self.template_atoms = template_atoms
         self.backbone_only = backbone_only
         self.distogram_separation = distogram_separation
-        self.inheritable = False 
+        self.inheritable = False
 
     def compute(self, structure: AtomArray, folding_metrics: FoldingMetrics) -> float:
         structure_atoms = structure[self.get_atom_mask(structure, residue_group_index=0)]
@@ -789,7 +789,7 @@ class CuboidEnergy(EnergyTerm):
     = 0, where a, b,and c are the ideal length, width, and depth of the desired cuboid with a volume equal to a sphere
     with a radius equal to the radius of gyration and n is the vertex sharpness). If the atoms lie outside of this
     cuboid (the left hand side is greater than 0), the atoms experience a spring force type energy that attracts them
-    back into the cuboid. All atoms also experience a pairwise exponential type repulsive energy that disfavours atoms 
+    back into the cuboid. All atoms also experience a pairwise exponential type repulsive energy that disfavours atoms
     to be too close to each other, so that they should evenly distributes them inside the supercube volume.
     """
 
