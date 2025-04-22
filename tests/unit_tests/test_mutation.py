@@ -30,6 +30,7 @@ import bricklane as br
 
 #! Could be compatible if one corrects .one_step to return a tuple System, float, float
 #! Also, patch.object should be get_total_energy
+#! Problem here is that once every while you try a mutation to the same amino acid and get an error even if ok
 #@patch.object(br.System, 'calculate_system_energies')  # prevents unnecessary folding
 #def test_Canonical_MutationProtocol_one_step_method_output_is_correct_for_1_mutation(
 #    mocked_method: Mock, mixed_system: br.System
@@ -46,6 +47,7 @@ import bricklane as br
 
 #! Could be compatible if one corrects .one_step to return a tuple System, float, float
 #! Also, patch.object should be get_total_energy
+#! Problem here is that once every while you try a mutation to the same amino acid and get an error even if ok
 #@patch.object(br.System, 'calculate_system_energies')  # prevents unnecessary folding
 #def test_Canonical_MutationProtocol_one_step_method_output_is_correct_for_2_mutations(
 #    mocked_method: Mock, huge_system: br.System
@@ -83,26 +85,26 @@ import bricklane as br
 
 #! Could be compatible if one corrects .one_step to return a tuple System, float, float
 #! Also, patch.object should be get_total_energy
+@patch.object(br.System, 'get_total_energy')  # prevents unnecessary folding
 #@patch.object(br.System, 'calculate_system_energies')  # prevents unnecessary folding
-#def test_GrandCanonical_MutationProtocol_one_step_method_gives_correct_output_for_addition_move(
-#    mocked_calculate_method: Mock,
-#    energies_system: br.System,
-#) -> None:
-#    mutator = br.mutation.GrandCanonical(move_probabilities={'mutation': 0.0, 'addition': 1.0, 'subtraction': 0.0})
-#    mutated_system = mutator.one_step(folder=None, system=energies_system)
-#    assert mocked_calculate_method.called, 'mutator did not recalculate structure and energies.'
-#    assert any([len(state.chains[0].residues) == 6 for state in mutated_system.states]), 'residue not added'
-#        num_res = len(state.chains[0].residues)
-#    for state in mutated_system.states:
-#        state_type = 'mutated' if num_res == 6 else 'origional'
-#        for term in state.energy_terms:
-#            num_tracked_res = len(term.residue_groups[0][0])
-#            # note energies must not track residues of chains from a different state!
-#            assert num_tracked_res == num_res, f'incorrect number of energy terms in {state_type} state'
+def test_GrandCanonical_MutationProtocol_one_step_method_gives_correct_output_for_addition_move(
+    mocked_calculate_method: Mock,
+    energies_system: br.System,
+) -> None:
+    mutator = br.mutation.GrandCanonical(move_probabilities={'mutation': 0.0, 'addition': 1.0, 'removal': 0.0})
+    #mutated_system = mutator.one_step(folder=None, system=energies_system)
+    mutated_system, _, _ = mutator.one_step(folding_algorithm=None, system=energies_system, old_system=energies_system.__copy__())
+    assert mocked_calculate_method.called, 'mutator did not recalculate structure and energies.'
+    assert any([len(state.chains[0].residues) == 6 for state in mutated_system.states]), 'residue not added'
+        num_res = len(state.chains[0].residues)
+    for state in mutated_system.states:
+        state_type = 'mutated' if num_res == 6 else 'original'
+        for term in state.energy_terms:
+            num_tracked_res = len(term.residue_groups[0][0])
+            # note energies must not track residues of chains from a different state!
+            assert num_tracked_res == num_res, f'incorrect number of energy terms in {state_type} state'
 
 
-#! Could be compatible if one corrects .one_step to return a tuple System, float, float
-#! Also, patch.object should be get_total_energy
 @patch.object(br.System, 'get_total_energy')  # prevents unnecessary folding
 #@patch.object(br.System, 'calculate_system_energies')  # prevents unnecessary folding
 def test_GrandCanonical_MutationProtocol_one_step_method_gives_correct_output_for_removal_move(
