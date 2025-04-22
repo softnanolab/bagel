@@ -83,8 +83,6 @@ import bricklane as br
 #    assert changed_residues[0] in br.constants.aminoacids_letters, 'Did not mutate residue into correct amino acid'
 
 
-#! Could be compatible if one corrects .one_step to return a tuple System, float, float
-#! Also, patch.object should be get_total_energy
 @patch.object(br.System, 'get_total_energy')  # prevents unnecessary folding
 #@patch.object(br.System, 'calculate_system_energies')  # prevents unnecessary folding
 def test_GrandCanonical_MutationProtocol_one_step_method_gives_correct_output_for_addition_move(
