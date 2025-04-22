@@ -82,7 +82,11 @@ import bricklane as br
 #    assert len(changed_residues) == 1, 'More or less than 1 residue was mutated'
 #    assert changed_residues[0] in br.constants.aminoacids_letters, 'Did not mutate residue into correct amino acid'
 
-
+#! HEEEEERE, this problem MUST be fixed. ACTUALLY IT IS NOT A PROBLEM: AN AMINOACID CAN BE ADDED TO A CHAIN THAT IS
+#! NOT IN ONE OF THE STATES OF THE SYSTEM! THIS IS OK, BUT THE CASE MUST BE HANDLED CORRECTLY HERE. IN PRACTICE, THIS 
+#! TEST IS WRONG BECAUSE IT ASSUMES THERE IS A PROBLEM WITH THIS, IT IS NOT. 
+#! Could be compatible if one corrects .one_step to return a tuple System, float, float
+#! Also, patch.object should be get_total_energy
 @patch.object(br.System, 'get_total_energy')  # prevents unnecessary folding
 #@patch.object(br.System, 'calculate_system_energies')  # prevents unnecessary folding
 def test_GrandCanonical_MutationProtocol_one_step_method_gives_correct_output_for_addition_move(
@@ -93,7 +97,8 @@ def test_GrandCanonical_MutationProtocol_one_step_method_gives_correct_output_fo
     #mutated_system = mutator.one_step(folder=None, system=energies_system)
     mutated_system, _, _ = mutator.one_step(folding_algorithm=None, system=energies_system, old_system=energies_system.__copy__())
     assert mocked_calculate_method.called, 'mutator did not recalculate structure and energies.'
-    assert any([len(state.chains[0].residues) == 6 for state in mutated_system.states]), 'residue not added'
+    #! The following check is ACTUALLY correct, because the residue MUST BE ADDED AT LEAST IN ONE STATE (as checked by "any") 
+    assert any([len(state.chains[0].residues) == 6 for state in mutated_system.states]), AssertionError(f'residue not added {[len(state.chains[0].residues) == 6 for state in mutated_system.states]}')
     num_res = len(state.chains[0].residues)
     for state in mutated_system.states:
         state_type = 'mutated' if num_res == 6 else 'original'
