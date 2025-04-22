@@ -320,7 +320,7 @@ class PAEEnergy(EnergyTerm):
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
         """
-        self.name = f'{"cross_" if cross_term_only else ""}alignment_error'
+        self.name = f'{"cross_" if cross_term_only else ""}PAE'
         self.inheritable = inheritable
         group_2_residues = group_1_residues if group_2_residues is None else group_2_residues
         self.residue_groups = [residue_list_to_group(group_1_residues), residue_list_to_group(group_2_residues)]

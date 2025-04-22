@@ -2,6 +2,7 @@ from unittest.mock import patch, Mock
 import bricklane as br
 
 
+#! Incompatible with current code, unique_chains does not exist
 #def test_MutationProtocol_random_residue_method_returns_residue_from_system(mixed_system: br.System) -> None:
 #    residue, chain = br.mutation.GrandCanonical().random_mutable_residue(mixed_system)
 #    all_chains = mixed_system.unique_chains()
@@ -10,7 +11,7 @@ import bricklane as br
 #    assert residue in all_residues, 'Did not return residue from system.'
 #    assert residue.mutable, 'Did not return mutable residue.'
 
-
+#! Incompatible with current code, random_mutable_residue does not exist
 #def test_MutationProtocol_random_residue_method_returns_mutable_residue(mixed_system: br.System) -> None:
 #    all_chains = mixed_system.unique_chains()
 #    residues = sum([chain.residues for chain in all_chains], start=[])
@@ -21,11 +22,14 @@ import bricklane as br
 #    assert residue == only_mutable_residue
 
 
+#! Incompatible with current code, sample_different_amino_acid does not exist
 #def test_MutationProtocol_sample_differen_amino_acid_method_returns_correct_output() -> None:
 #    mutator = br.mutation.GrandCanonical(mutation_bias={'A': 0.999_999, 'B': 0.000_001})
 #    assert mutator.sample_different_amino_acid(origional_amino_acid='A') == 'B'
 
 
+#! Could be compatible if one corrects .one_step to return a tuple System, float, float
+#! Also, patch.object should be get_total_energy
 #@patch.object(br.System, 'calculate_system_energies')  # prevents unnecessary folding
 #def test_Canonical_MutationProtocol_one_step_method_output_is_correct_for_1_mutation(
 #    mocked_method: Mock, mixed_system: br.System
@@ -40,6 +44,8 @@ import bricklane as br
 #    assert changed_residues[0] in br.constants.aminoacids_letters, 'Did not mutate residue into correct amino acid'
 
 
+#! Could be compatible if one corrects .one_step to return a tuple System, float, float
+#! Also, patch.object should be get_total_energy
 #@patch.object(br.System, 'calculate_system_energies')  # prevents unnecessary folding
 #def test_Canonical_MutationProtocol_one_step_method_output_is_correct_for_2_mutations(
 #    mocked_method: Mock, huge_system: br.System
@@ -57,6 +63,8 @@ import bricklane as br
 #    )
 
 
+#! Could be compatible if one corrects .one_step to return a tuple System, float, float
+#! Also, patch.object should be get_total_energy
 #@patch.object(br.System, 'calculate_system_energies')  # prevents unnecessary folding
 #def test_GrandCanonical_MutationProtocol_one_step_method_gives_correct_output_for_mutation_move(
 #    mocked_method: Mock,
@@ -72,6 +80,8 @@ import bricklane as br
 #    assert changed_residues[0] in br.constants.aminoacids_letters, 'Did not mutate residue into correct amino acid'
 
 
+#! Could be compatible if one corrects .one_step to return a tuple System, float, float
+#! Also, patch.object should be get_total_energy
 #@patch.object(br.System, 'calculate_system_energies')  # prevents unnecessary folding
 #def test_GrandCanonical_MutationProtocol_one_step_method_gives_correct_output_for_addition_move(
 #    mocked_calculate_method: Mock,
@@ -90,6 +100,8 @@ import bricklane as br
 #            assert num_tracked_res == num_res, f'incorrect number of energy terms in {state_type} state'
 
 
+#! Could be compatible if one corrects .one_step to return a tuple System, float, float
+#! Also, patch.object should be get_total_energy
 #@patch.object(br.System, 'calculate_system_energies')  # prevents unnecessary folding
 #def test_GrandCanonical_MutationProtocol_one_step_method_gives_correct_output_for_removal_move(
 #    mocked_calculate_method: Mock,

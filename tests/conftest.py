@@ -111,6 +111,7 @@ def small_structure_state(
     state._folding_metrics = folding_metrics
     state.energy_terms[0].value, state.energy_terms[1].value = [-0.7, 0.2]
     state._energy_terms_value = [-0.7, 0.2]
+    state.chemical_potential = 1.0
     return state
 
 
@@ -184,8 +185,13 @@ def mixed_structure_state(
     line_structure_chains: list[bl.Chain],
     square_structure: AtomArray,
     line_structure: AtomArray,
+    line_structure_residues: list[bl.Residue],
+    square_structure_residues: list[bl.Residue],
 ) -> bl.State:
-    energy_terms = [bl.energies.PTMEnergy(), bl.energies.GlobularEnergy()]
+    #energy_terms = [bl.energies.PTMEnergy(), bl.energies.GlobularEnergy()]
+    energy_terms = [bl.energies.PLDDTEnergy( residues = line_structure_residues + square_structure_residues ), 
+                    bl.energies.PAEEnergy( group_1_residues = line_structure_residues, group_2_residues = square_structure_residues,
+                                          inheritable=False )]
     state = bl.State(
         chains=line_structure_chains + square_structure_chains,
         energy_terms=energy_terms,
@@ -199,6 +205,7 @@ def mixed_structure_state(
     state._folding_metrics = folding_metrics
     state.energy_terms[0].value, state.energy_terms[1].value = [-0.4, 0.5]
     state._energy_terms_value = [-0.4, 0.5]
+    state.chemical_potential = 2.0
     return state
 
 
