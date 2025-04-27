@@ -61,9 +61,11 @@ class Minimizer(ABC):
         )
         acceptance_probability = np.exp(-(delta_energy + delta_chemical) / temperature)
         logger.debug(f'{delta_energy=}, {delta_chemical=}, {acceptance_probability=}')
+        accept = False
         if acceptance_probability > np.random.uniform(low=0.0, high=1.0):
-            return mutated_system
-        return system
+            accept = True
+            return mutated_system, accept
+        return system, accept
 
     def initialise_log_path(self, log_path: None | str | pl.Path) -> pl.Path:
         """
@@ -147,13 +149,11 @@ class SimulatedAnnealing(Minimizer):
         assert best_system.total_energy is not None, 'Cannot preserve best system before energy is calculated'
         for step in range(self.n_steps):
             new_best = False
-            system = self.minimize_one_step(self.temperatures[step], system)
+            system, accept = self.minimize_one_step(self.temperatures[step], system)
             assert system.total_energy is not None, 'Cannot minimize system before energy is calculated'
-            accept = False
             if system.total_energy < best_system.total_energy:
                 best_system = system.__copy__()  # This automatically records the energy in best_system.total_energy
                 new_best = True
-                accept = True
             self.logging_step(step, system, best_system, new_best, temperature=self.temperatures[step], accept=accept)
 
         assert best_system.total_energy is not None, f'{best_system=} energy cannot be None!'
@@ -206,12 +206,10 @@ class SimulatedTempering(Minimizer):
         assert best_system.total_energy is not None, 'Cannot preserve best system before energy is calculated'
         for step, temperature in enumerate(self.temperatures):
             new_best = False
-            system = self.minimize_one_step(temperature, system)
+            system, accept = self.minimize_one_step(temperature, system)
             assert system.total_energy is not None, 'Cannot minimize system before energy is calculated'
 
-            accept = False
             if system.total_energy < best_system.total_energy:
-                accept = True
                 best_system = system.__copy__()  # This automatically records the energy in best_system.total_energy
                 new_best = True
 
@@ -242,12 +240,10 @@ class FlexibleMinimiser(Minimizer):
             new_best = False
             temperature = self.temperature_schedule(step)
             self.folder = self.folder_schedule(step)
-            system = self.minimize_one_step(temperature, system)
+            system, accept = self.minimize_one_step(temperature, system)
             assert system.total_energy is not None, 'Cannot minimize system before energy is calculated'
-            accept = False
             if system.total_energy < best_energy:
                 new_best = True
-                accept = True
                 best_system = system.__copy__()  # This automatically records the energy in best_system.total_energy
             self.logging_step(step, system, best_system, new_best, temperature=temperature, accept=accept)
 
