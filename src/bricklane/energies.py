@@ -316,7 +316,7 @@ class PAEEnergy(EnergyTerm):
         cross_term_only: bool, default=True
             Whether to only consider the uncertainty in distance between group 1 and group 2 atoms. If set to False,
             also considers the uncertainty in distances between atoms within the same group.
-        inheritbale: bool, default=True
+        inheritable: bool, default=True
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
         """
@@ -327,7 +327,7 @@ class PAEEnergy(EnergyTerm):
         self.cross_term_only = cross_term_only
 
     def compute(self, structure: AtomArray, folding_metrics: FoldingMetrics) -> float:
-        assert hasattr(folding_metrics, 'pae'), 'pae metric not returned by folding algorith'
+        assert hasattr(folding_metrics, 'pae'), 'pae metric not returned by folding algorithm'
         pae = folding_metrics.pae[0]  # [n_residues, n_residues] pairwise predicted alignment error matrix
         max_pae = 30  # approximate max. Sometimes pae can be higher
 
