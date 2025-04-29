@@ -19,7 +19,7 @@ def residue_list_to_group(residues: list[Residue]) -> ResidueGroup:
     """Converts list of residue objects to ResidueGroup required by energy term objects"""
     return (np.array([res.chain_ID for res in residues]), np.array([res.index for res in residues]))
 
-
+# TODO: add weight attributes here to the energy terms
 class EnergyTerm(ABC):
     """
     Standard energy term to build the loss (total energy) function to be minimized.

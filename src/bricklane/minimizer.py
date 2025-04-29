@@ -20,7 +20,6 @@ import datetime as dt
 
 time_stamp: Callable[[], str] = lambda: dt.datetime.now().strftime('%y%m%d_%H%M%S')
 
-
 class Minimizer(ABC):
     """Standard template for energy minimisation logic."""
 
@@ -119,6 +118,21 @@ class Minimizer(ABC):
         system.dump_logs(step, self.log_path / 'current', save_structure=step % self.log_frequency == 0)
         best_system.dump_logs(step, self.log_path / 'best', save_structure=new_best)
         self.dump_logs(self.log_path, self.experiment_name, step, **kwargs)
+
+@dataclass
+class MonteCarlo(Minimizer):
+    mutator: MutationProtocol
+    folder: FoldingAlgorithm
+    experiment_name: str
+    log_frequency: int
+    log_path: pl.Path | str | None = None
+
+    def __post_init__(self) -> None:
+        raise NotImplementedError('Monte Carlo is not implemented yet')
+        super().__post_init__()
+
+    def minimize_system(self, system: System) -> System:
+        pass
 
 
 @dataclass
