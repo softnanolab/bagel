@@ -1,5 +1,4 @@
-import bricklane as br
-import bricklane.minimizer as brm
+import bagel as bg
 import pandas as pd
 import numpy as np
 import copy

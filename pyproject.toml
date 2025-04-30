@@ -1,12 +1,12 @@
 [project]
-name = "bricklane"
+name = "bagel"
 version = "0.1.0"
 authors = [
-  {name = "Ayham Al-Saffar", email = "ayham.saffar@gmail.com"},
   {name = "Jakub Lála", email = "jakublala@gmail.com"},
-  {name = "Stefano Angioletti-Uberti"},
+  {name = "Ayham Al-Saffar", email = "ayham.saffar@gmail.com"},
+  {name = "Stefano Angioletti-Uberti", email = "sangiole@imperial.ac.uk"},
 ]
-description = "Protein Engineering through Monte Carlo Optimization"
+description = "Protein Engineering through Optimization"
 readme = "README.md"
 license = "MIT"
 license_files = "LICENSE"
@@ -37,18 +37,18 @@ local = [
 
 [project.urls]
 Documentation = "coming soon"
-Repository = "https://github.com/softnanolab/briclane.git"
-Issues = "https://github.com/softnanolab/bricklane/issues"
+Repository = "https://github.com/softnanolab/bagel.git"
+Issues = "https://github.com/softnanolab/bagel/issues"
 
 [tool.mypy]
 strict = true
 show_traceback = true
 plugins = "numpy.typing.mypy_plugin"
-files = ["**/src/bricklane/*.py"] #selects files checked during mypy call, but does not affect the editor's MyPy linter
+files = ["**/src/bagel/*.py"] #selects files checked during mypy call, but does not affect the editor's MyPy linter
 explicit_package_bases = true #allows giving directories different mypy settings
 
 [[tool.mypy.overrides]]
-module = ["biotite.*", "pytest.*", "pandas.*", "bricklane.*"] #libraries that dont have type stubs
+module = ["biotite.*", "pytest.*", "pandas.*", "bagel.*"] #libraries that dont have type stubs
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -60,7 +60,7 @@ addopts = "--numprocesses auto"
 
 [tool.ruff]
 line-length = 120
-include = ["pyproject.toml", "**/src/bricklane/*.py", "**/tests/*.py"]
+include = ["pyproject.toml", "**/src/bagel/*.py", "**/tests/*.py"]
 fix = true
 
 [tool.ruff.lint.per-file-ignores]
@@ -79,7 +79,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/bricklane"]
+packages = ["src/bagel"]
 
 [tool.hatch.metadata]
 allow-direct-references = true
