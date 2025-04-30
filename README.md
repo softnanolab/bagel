@@ -1,5 +1,10 @@
 # Bagel: Protein Engineering through Optimization
 
+> 🚨 **Warning**
+> This is the development repository for Bagel. A public repo with the most current release is going to be published in a separate repository.
+> Instructions on how to properly develop this repo, and then push to the public repo are not yet finalized.
+
+
 ### Installation
 
 1. Clone the repo.
