@@ -102,7 +102,7 @@ def test_solvent_accessible_surface_area_function_gives_expected_return_array(sm
     assert np.issubdtype(sasa_result.dtype, np.floating), 'sasa does not return floats for each atom'
 
 
-@patch('bricklane.energies.sasa')
+@patch('bagel.energies.sasa')
 def test_SurfaceAreaEnergy(
     mock_sasa: Mock, small_structure_residues: list[bg.Residue], small_structure: AtomArray
 ) -> None:
@@ -113,7 +113,7 @@ def test_SurfaceAreaEnergy(
     assert np.isclose(energy.value, 1 / (22 * 2))  # max sasa is 22, and there are 2 atoms in the first residue
 
 
-@patch('bricklane.energies.sasa')
+@patch('bagel.energies.sasa')
 def test_HydrophobicEnergy(
     mock_sasa: Mock, small_structure_residues: list[bg.Residue], small_structure: AtomArray
 ) -> None:
@@ -255,7 +255,7 @@ def test_secondary_structure_elements_function_gives_expected_return_array(small
     assert np.issubdtype(sse_labels.dtype, np.str_), 'sse does not return strings for each atom'
 
 
-@patch('bricklane.energies.annotate_sse')
+@patch('bagel.energies.annotate_sse')
 def test_SecondaryStructureEnergy(
     mock_annotate_sse: Mock, small_structure_residues: list[bg.Residue], small_structure: AtomArray
 ) -> None:
