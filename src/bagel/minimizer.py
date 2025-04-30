@@ -5,7 +5,7 @@ from .system import System
 from .folding import FoldingAlgorithm
 from .mutation import MutationProtocol
 from abc import ABC, abstractmethod
-from typing import Callable, Any
+from typing import Callable, Any, NoReturn
 from dataclasses import dataclass, field
 import numpy as np
 
@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 import datetime as dt
 
 time_stamp: Callable[[], str] = lambda: dt.datetime.now().strftime('%y%m%d_%H%M%S')
+
 
 class Minimizer(ABC):
     """Standard template for energy minimisation logic."""
@@ -52,7 +53,7 @@ class Minimizer(ABC):
         """
         raise NotImplementedError('This method should be implemented by the subclass')
 
-    def minimize_one_step(self, temperature: float, system: System) -> System:
+    def minimize_one_step(self, temperature: float, system: System) -> tuple[System, bool]:
         mutated_system, delta_energy, delta_chemical = self.mutator.one_step(
             folding_algorithm=self.folder,
             system=system.__copy__(),
@@ -120,6 +121,7 @@ class Minimizer(ABC):
         best_system.dump_logs(real_step, self.log_path / 'best', save_structure=new_best)
         self.dump_logs(self.log_path, self.experiment_name, real_step, **kwargs)
 
+
 @dataclass
 class MonteCarlo(Minimizer):
     mutator: MutationProtocol
@@ -128,12 +130,16 @@ class MonteCarlo(Minimizer):
     log_frequency: int
     log_path: pl.Path | str | None = None
 
-    def __post_init__(self) -> None:
+    def __post_init__(self) -> NoReturn:
         raise NotImplementedError('Monte Carlo is not implemented yet')
-        super().__post_init__()
 
-    def minimize_system(self, system: System) -> System:
-        pass
+    def minimize_system(self, system: System) -> NoReturn:
+        """
+        This method is not implemented yet and will raise an exception.
+
+        The return type NoReturn tells mypy that this function never returns normally.
+        """
+        raise NotImplementedError('Monte Carlo is not implemented yet')
 
 
 @dataclass
@@ -267,7 +273,6 @@ class FlexibleMinimiser(Minimizer):
                 if (step + 1) % self.preserve_best_system_every_n_steps == 0:
                     logger.debug(f'Starting new cycle with best system from previous cycle')
                     system = best_system.__copy__()  # begin next cycle using best system from previous cycle
-
 
         assert best_system.total_energy is not None, f'Best energy {best_energy} cannot be None!'
         return best_system

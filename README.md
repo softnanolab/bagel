@@ -18,6 +18,10 @@
 
         uv sync
 
+5. (Optional) If you also want to develop this package.
+
+        uv sync --extra dev
+
 ### Use
 
 Run code within the environment.
