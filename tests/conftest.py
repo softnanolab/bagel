@@ -6,7 +6,7 @@ import pathlib as pl
 from unittest.mock import Mock
 import numpy as np
 from biotite.structure import AtomArray, Atom, array, concatenate
-import bricklane as bl
+import bagel as bg
 
 
 def pytest_addoption(parser):
@@ -32,7 +32,7 @@ This was leading to test breaking exceptions.
 
 
 @pytest.fixture(scope='session')  # ensures only 1 modal container is requested per process
-def folder(request) -> bl.folding.ESMFolder:
+def folder(request) -> bg.folding.ESMFolder:
     """
     Fixture that must be called in tests that require folding. Behaviour based on  the --folding flag of the
     origional pytest call.
@@ -41,15 +41,15 @@ def folder(request) -> bl.folding.ESMFolder:
     if flag == 'skip':
         pytest.skip(reason='--folding flag of the origional pytest call set to skip')
     else:
-        model = bl.folding.ESMFolder(use_modal=flag == 'modal')
+        model = bg.folding.ESMFolder(use_modal=flag == 'modal')
         yield model
         del model
 
 
 @pytest.fixture
-def short_chain() -> bl.Chain:
+def short_chain() -> bg.Chain:
     """Chain with 5 amino acids."""
-    return bl.Chain([bl.Residue(name='C', chain_ID='A', index=i) for i in range(5)])
+    return bg.Chain([bg.Residue(name='C', chain_ID='A', index=i) for i in range(5)])
 
 
 @pytest.fixture
@@ -59,10 +59,10 @@ def pdb_path() -> str:
 
 
 @pytest.fixture
-def residues() -> list[bl.Residue]:
+def residues() -> list[bg.Residue]:
     """list of 5 Residue objects."""
-    return [bl.Residue(name='C', chain_ID='A', index=i) for i in range(5)] + [
-        bl.Residue(name='C', chain_ID='B', index=0)
+    return [bg.Residue(name='C', chain_ID='A', index=i) for i in range(5)] + [
+        bg.Residue(name='C', chain_ID='B', index=0)
     ]
 
 
@@ -79,26 +79,26 @@ def small_structure() -> AtomArray:
 
 
 @pytest.fixture
-def small_structure_residues() -> list[bl.Residue]:
+def small_structure_residues() -> list[bg.Residue]:
     residues = [
-        bl.Residue(name='G', chain_ID='A', index=0),
-        bl.Residue(name='V', chain_ID='A', index=1),
-        bl.Residue(name='V', chain_ID='B', index=0),
+        bg.Residue(name='G', chain_ID='A', index=0),
+        bg.Residue(name='V', chain_ID='A', index=1),
+        bg.Residue(name='V', chain_ID='B', index=0),
     ]
     return residues
 
 
 @pytest.fixture
-def small_structure_chains(small_structure_residues: list[bl.Residue]) -> list[bl.Chain]:
-    return [bl.Chain(small_structure_residues[:2]), bl.Chain(small_structure_residues[-1:])]
+def small_structure_chains(small_structure_residues: list[bg.Residue]) -> list[bg.Chain]:
+    return [bg.Chain(small_structure_residues[:2]), bg.Chain(small_structure_residues[-1:])]
 
 
 @pytest.fixture
 def small_structure_state(
-    small_structure_chains: list[bl.Chain], small_structure_residues: list[bl.Residue], small_structure: AtomArray
-) -> bl.State:
-    energy_terms = [bl.energies.PTMEnergy(), bl.energies.SurfaceAreaEnergy(residues=small_structure_residues[1:])]
-    state = bl.State(
+    small_structure_chains: list[bg.Chain], small_structure_residues: list[bg.Residue], small_structure: AtomArray
+) -> bg.State:
+    energy_terms = [bg.energies.PTMEnergy(), bg.energies.SurfaceAreaEnergy(residues=small_structure_residues[1:])]
+    state = bg.State(
         chains=small_structure_chains,
         energy_terms=energy_terms,
         energy_terms_weights=[1.0 for term in energy_terms],
@@ -106,7 +106,7 @@ def small_structure_state(
     )
     state._energy = -0.5
     state._structure = small_structure
-    folding_metrics = Mock(bl.folding.FoldingMetrics)
+    folding_metrics = Mock(bg.folding.FoldingMetrics)
     folding_metrics.ptm = 0.7
     state._folding_metrics = folding_metrics
     state.energy_terms[0].value, state.energy_terms[1].value = [-0.7, 0.2]
@@ -130,18 +130,18 @@ def line_structure() -> AtomArray:  # backbone atoms of first 2 residues form a 
 
 
 @pytest.fixture
-def line_structure_residues() -> list[bl.Residue]:
+def line_structure_residues() -> list[bg.Residue]:
     residues = [
-        bl.Residue(name='G', chain_ID='C', index=0),
-        bl.Residue(name='V', chain_ID='D', index=0),
-        bl.Residue(name='V', chain_ID='D', index=1),
+        bg.Residue(name='G', chain_ID='C', index=0),
+        bg.Residue(name='V', chain_ID='D', index=0),
+        bg.Residue(name='V', chain_ID='D', index=1),
     ]
     return residues
 
 
 @pytest.fixture
-def line_structure_chains(line_structure_residues: list[bl.Residue]) -> list[bl.Chain]:
-    return [bl.Chain(residues=line_structure_residues[:1]), bl.Chain(residues=line_structure_residues[1:])]
+def line_structure_chains(line_structure_residues: list[bg.Residue]) -> list[bg.Chain]:
+    return [bg.Chain(residues=line_structure_residues[:1]), bg.Chain(residues=line_structure_residues[1:])]
 
 
 @pytest.fixture
@@ -164,38 +164,38 @@ def square_structure() -> AtomArray:  # centroid of backbone atoms of each resid
 
 
 @pytest.fixture
-def square_structure_residues() -> list[bl.Residue]:
+def square_structure_residues() -> list[bg.Residue]:
     residues = [
-        bl.Residue(name='G', chain_ID='E', index=0),
-        bl.Residue(name='V', chain_ID='E', index=1),
-        bl.Residue(name='V', chain_ID='E', index=2),
-        bl.Residue(name='V', chain_ID='E', index=3),
+        bg.Residue(name='G', chain_ID='E', index=0),
+        bg.Residue(name='V', chain_ID='E', index=1),
+        bg.Residue(name='V', chain_ID='E', index=2),
+        bg.Residue(name='V', chain_ID='E', index=3),
     ]
     return residues
 
 
 @pytest.fixture
-def square_structure_chains(square_structure_residues: list[bl.Residue]) -> list[bl.Chain]:
-    return [bl.Chain(residues=square_structure_residues)]
+def square_structure_chains(square_structure_residues: list[bg.Residue]) -> list[bg.Chain]:
+    return [bg.Chain(residues=square_structure_residues)]
 
 
 @pytest.fixture
 def mixed_structure_state(
-    square_structure_chains: list[bl.Chain],
-    line_structure_chains: list[bl.Chain],
+    square_structure_chains: list[bg.Chain],
+    line_structure_chains: list[bg.Chain],
     square_structure: AtomArray,
     line_structure: AtomArray,
-    line_structure_residues: list[bl.Residue],
-    square_structure_residues: list[bl.Residue],
-) -> bl.State:
-    # energy_terms = [bl.energies.PTMEnergy(), bl.energies.GlobularEnergy()]
+    line_structure_residues: list[bg.Residue],
+    square_structure_residues: list[bg.Residue],
+) -> bg.State:
+    # energy_terms = [bg.energies.PTMEnergy(), bg.energies.GlobularEnergy()]
     energy_terms = [
-        bl.energies.PLDDTEnergy(residues=line_structure_residues + square_structure_residues),
-        bl.energies.PAEEnergy(
+        bg.energies.PLDDTEnergy(residues=line_structure_residues + square_structure_residues),
+        bg.energies.PAEEnergy(
             group_1_residues=line_structure_residues, group_2_residues=square_structure_residues, inheritable=False
         ),
     ]
-    state = bl.State(
+    state = bg.State(
         chains=line_structure_chains + square_structure_chains,
         energy_terms=energy_terms,
         energy_terms_weights=[1.0 for term in energy_terms],
@@ -203,7 +203,7 @@ def mixed_structure_state(
     )
     state._energy = 0.1
     state._structure = concatenate((line_structure, square_structure))
-    folding_metrics = Mock(bl.folding.FoldingMetrics)
+    folding_metrics = Mock(bg.folding.FoldingMetrics)
     folding_metrics.ptm = 0.4
     state._folding_metrics = folding_metrics
     state.energy_terms[0].value, state.energy_terms[1].value = [-0.4, 0.5]
@@ -213,8 +213,8 @@ def mixed_structure_state(
 
 
 @pytest.fixture
-def mixed_system(small_structure_state: bl.State, mixed_structure_state: bl.State) -> bl.System:
-    system = bl.System(
+def mixed_system(small_structure_state: bg.State, mixed_structure_state: bg.State) -> bg.System:
+    system = bg.System(
         states=[small_structure_state, mixed_structure_state],
         name='mixed_system',
     )
@@ -237,12 +237,12 @@ def base_sequence() -> str:
 
 
 @pytest.fixture
-def simple_state() -> bl.State:
-    sequence = np.random.choice(list(bl.constants.aa_dict.keys()), size=5)
-    residues = [bl.Residue(name=aa, chain_ID='C-A', index=i, mutable=True) for i, aa in enumerate(sequence)]
-    state = bl.State(
-        chains=[bl.Chain(residues)],
-        energy_terms=[bl.energies.PTMEnergy(), bl.energies.OverallPLDDTEnergy()],
+def simple_state() -> bg.State:
+    sequence = np.random.choice(list(bg.constants.aa_dict.keys()), size=5)
+    residues = [bg.Residue(name=aa, chain_ID='C-A', index=i, mutable=True) for i, aa in enumerate(sequence)]
+    state = bg.State(
+        chains=[bg.Chain(residues)],
+        energy_terms=[bg.energies.PTMEnergy(), bg.energies.OverallPLDDTEnergy()],
         energy_terms_weights=[1.0, 1.0],
         name='state_A',
         verbose=True,
@@ -258,73 +258,73 @@ def simple_state() -> bl.State:
 
 
 @pytest.fixture
-def shared_chain_system() -> bl.State:
+def shared_chain_system() -> bg.State:
     """System where each state references the same chain"""
-    sequence = np.random.choice(list(bl.constants.aa_dict.keys()), size=5)
-    residues = [bl.Residue(name=aa, chain_ID='A', index=i, mutable=True) for i, aa in enumerate(sequence)]
-    shared_chain = bl.Chain(residues)
+    sequence = np.random.choice(list(bg.constants.aa_dict.keys()), size=5)
+    residues = [bg.Residue(name=aa, chain_ID='A', index=i, mutable=True) for i, aa in enumerate(sequence)]
+    shared_chain = bg.Chain(residues)
 
-    A_state = bl.State(
+    A_state = bg.State(
         chains=[shared_chain],
-        energy_terms=[bl.energies.PLDDTEnergy(residues), bl.energies.SurfaceAreaEnergy(residues)],
+        energy_terms=[bg.energies.PLDDTEnergy(residues), bg.energies.SurfaceAreaEnergy(residues)],
         energy_terms_weights=[1.0, 1.0],
         name='A',
     )
 
-    B_state = bl.State(
+    B_state = bg.State(
         chains=[shared_chain],
-        energy_terms=[bl.energies.PLDDTEnergy(residues), bl.energies.SurfaceAreaEnergy(residues)],
+        energy_terms=[bg.energies.PLDDTEnergy(residues), bg.energies.SurfaceAreaEnergy(residues)],
         energy_terms_weights=[1.0, 1.0],
         name='B',
     )
-    return bl.System([A_state, B_state])
+    return bg.System([A_state, B_state])
 
 
 @pytest.fixture
-def huge_system() -> bl.State:
-    sequence = np.random.choice(list(bl.constants.aa_dict.keys()), size=10_000)
-    residues = [bl.Residue(name=aa, chain_ID='C-A', index=i, mutable=True) for i, aa in enumerate(sequence)]
-    state = bl.State(
-        chains=[bl.Chain(residues)],
-        energy_terms=[bl.energies.PTMEnergy(), bl.energies.OverallPLDDTEnergy()],
+def huge_system() -> bg.State:
+    sequence = np.random.choice(list(bg.constants.aa_dict.keys()), size=10_000)
+    residues = [bg.Residue(name=aa, chain_ID='C-A', index=i, mutable=True) for i, aa in enumerate(sequence)]
+    state = bg.State(
+        chains=[bg.Chain(residues)],
+        energy_terms=[bg.energies.PTMEnergy(), bg.energies.OverallPLDDTEnergy()],
         energy_term_weights=[1.0, 2.0],
         name='state_A',
     )
-    return bl.System([state])
+    return bg.System([state])
 
 
 @pytest.fixture
-def energies_system() -> bl.State:
+def energies_system() -> bg.State:
     """System where each state has an energy term that tracks all residues in state"""
-    sequence = np.random.choice(list(bl.constants.aa_dict.keys()), size=5)
+    sequence = np.random.choice(list(bg.constants.aa_dict.keys()), size=5)
 
-    A_residues = [bl.Residue(name=aa, chain_ID='A', index=i, mutable=True) for i, aa in enumerate(sequence)]
-    A_state = bl.State(
-        chains=[bl.Chain(A_residues)],
-        energy_terms=[bl.energies.PLDDTEnergy(A_residues), bl.energies.SurfaceAreaEnergy(A_residues)],
+    A_residues = [bg.Residue(name=aa, chain_ID='A', index=i, mutable=True) for i, aa in enumerate(sequence)]
+    A_state = bg.State(
+        chains=[bg.Chain(A_residues)],
+        energy_terms=[bg.energies.PLDDTEnergy(A_residues), bg.energies.SurfaceAreaEnergy(A_residues)],
         energy_terms_weights=[1.0, 1.0],
         name='A',
     )
 
-    B_residues = [bl.Residue(name=aa, chain_ID='B', index=i, mutable=True) for i, aa in enumerate(sequence)]
-    B_state = bl.State(
-        chains=[bl.Chain(B_residues)],
-        energy_terms=[bl.energies.PLDDTEnergy(B_residues), bl.energies.SurfaceAreaEnergy(B_residues)],
+    B_residues = [bg.Residue(name=aa, chain_ID='B', index=i, mutable=True) for i, aa in enumerate(sequence)]
+    B_state = bg.State(
+        chains=[bg.Chain(B_residues)],
+        energy_terms=[bg.energies.PLDDTEnergy(B_residues), bg.energies.SurfaceAreaEnergy(B_residues)],
         energy_terms_weights=[1.0, 1.0],
         name='B',
     )
-    return bl.System([A_state, B_state])
+    return bg.System([A_state, B_state])
 
 
 @pytest.fixture
-def SA_minimizer() -> bl.minimizer.SimulatedAnnealing:
+def SA_minimizer() -> bg.minimizer.SimulatedAnnealing:
     """Returns a minimizer that skips folding and closes all files minimizer creates by end of test."""
     with patch('desprot.minimizer.inspect.stack') as mock_inspect_function:
         # normally points to file executed, but is unpredictable when run by pytest and so must be set manually
         mock_inspect_function.return_value = [[1, __file__]]
-        minimizer = bl.minimizer.SimulatedAnnealing(
+        minimizer = bg.minimizer.SimulatedAnnealing(
             folder=None,
-            mutator=bl.mutation.Canonical(),
+            mutator=bg.mutation.Canonical(),
             initial_temperature=0.35,
             final_temperature=0.1,
             n_steps=6,
@@ -336,14 +336,14 @@ def SA_minimizer() -> bl.minimizer.SimulatedAnnealing:
 
 
 @pytest.fixture
-def ST_minimizer() -> bl.minimizer.SimulatedTempering:
+def ST_minimizer() -> bg.minimizer.SimulatedTempering:
     """Returns a minimizer that skips folding and closes all files minimizer creates by end of test."""
     with patch('desprot.minimizer.inspect.stack') as mock_inspect_function:
         # normally points to file executed, but is unpredictable when run by pytest and so must be set manually
         mock_inspect_function.return_value = [[1, __file__]]
-        minimizer = bl.minimizer.SimulatedTempering(
+        minimizer = bg.minimizer.SimulatedTempering(
             folder=None,
-            mutator=bl.mutation.Canonical(),
+            mutator=bg.mutation.Canonical(),
             high_temperature=0.1,
             low_temperature=0.01,
             n_steps_high=2,
@@ -358,43 +358,43 @@ def ST_minimizer() -> bl.minimizer.SimulatedTempering:
 
 @pytest.fixture
 def monomer(base_sequence):
-    residues = [bl.Residue(name=aa, chain_ID='C-A', index=i, mutable=True) for i, aa in enumerate(base_sequence)]
-    return [bl.Chain(residues=residues)]
+    residues = [bg.Residue(name=aa, chain_ID='C-A', index=i, mutable=True) for i, aa in enumerate(base_sequence)]
+    return [bg.Chain(residues=residues)]
 
 
 @pytest.fixture
 def dimer(base_sequence):
-    residues_A = [bl.Residue(name=aa, chain_ID='C-A', index=i, mutable=True) for i, aa in enumerate(base_sequence)]
-    residues_B = [bl.Residue(name=aa, chain_ID='C-B', index=i, mutable=True) for i, aa in enumerate(base_sequence)]
-    return [bl.Chain(residues=residues_A), bl.Chain(residues=residues_B)]
+    residues_A = [bg.Residue(name=aa, chain_ID='C-A', index=i, mutable=True) for i, aa in enumerate(base_sequence)]
+    residues_B = [bg.Residue(name=aa, chain_ID='C-B', index=i, mutable=True) for i, aa in enumerate(base_sequence)]
+    return [bg.Chain(residues=residues_A), bg.Chain(residues=residues_B)]
 
 
 @pytest.fixture
 def trimer(base_sequence):
-    residues_A = [bl.Residue(name=aa, chain_ID='C-A', index=i, mutable=True) for i, aa in enumerate(base_sequence)]
-    residues_B = [bl.Residue(name=aa, chain_ID='C-B', index=i, mutable=True) for i, aa in enumerate(base_sequence)]
-    residues_C = [bl.Residue(name=aa, chain_ID='C-C', index=i, mutable=True) for i, aa in enumerate(base_sequence)]
-    return [bl.Chain(residues=residues_A), bl.Chain(residues=residues_B), bl.Chain(residues=residues_C)]
+    residues_A = [bg.Residue(name=aa, chain_ID='C-A', index=i, mutable=True) for i, aa in enumerate(base_sequence)]
+    residues_B = [bg.Residue(name=aa, chain_ID='C-B', index=i, mutable=True) for i, aa in enumerate(base_sequence)]
+    residues_C = [bg.Residue(name=aa, chain_ID='C-C', index=i, mutable=True) for i, aa in enumerate(base_sequence)]
+    return [bg.Chain(residues=residues_A), bg.Chain(residues=residues_B), bg.Chain(residues=residues_C)]
 
 
 @pytest.fixture
-def nominal_mixed_system(trimer: list[bl.Chain]) -> bl.System:
+def nominal_mixed_system(trimer: list[bg.Chain]) -> bg.System:
     """system with 3 mutable 20 amino acid chains. These are shared between 2 states with easier energies."""
-    state_1 = bl.State(
+    state_1 = bg.State(
         chains=trimer[:2],
-        energy_terms=[bl.energies.PTMEnergy()],
+        energy_terms=[bg.energies.PTMEnergy()],
         energy_term_weights=[1.0],
         name='state_1',
     )
 
-    state_2 = bl.State(
+    state_2 = bg.State(
         chains=trimer[1:],
-        energy_terms=[bl.energies.OverallPLDDTEnergy()],
+        energy_terms=[bg.energies.OverallPLDDTEnergy()],
         energy_term_weights=[1.0],
         name='state_2',
     )
 
-    return bl.System([state_1, state_2])
+    return bg.System([state_1, state_2])
 
 
 @pytest.fixture

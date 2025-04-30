@@ -1,4 +1,4 @@
-import bricklane as bl
+import bagel as bg
 import pandas as pd
 import pathlib as pl
 import shutil
@@ -8,7 +8,7 @@ import numpy as np
 from unittest.mock import Mock
 
 
-def test_system_dump_config_file_is_correct(mixed_system: bl.System) -> None:
+def test_system_dump_config_file_is_correct(mixed_system: bg.System) -> None:
     # TODO: this should be likely also tested through the Minimizer somehow, as that initializes the folder
     mock_output_folder = pl.Path(__file__).resolve().parent.parent / 'data' / mixed_system.name
     mock_experiment = test_system_dump_config_file_is_correct.__name__
@@ -44,7 +44,7 @@ def test_system_dump_config_file_is_correct(mixed_system: bl.System) -> None:
     shutil.rmtree(experiment_folder)
 
 
-def test_system_dump_logs_folder_is_correct(mixed_system: bl.System) -> None:
+def test_system_dump_logs_folder_is_correct(mixed_system: bg.System) -> None:
     # TODO: this should be likely also tested through the Minimizer somehow, as that initializes the folder
     mock_step = 0
     mock_output_folder = pl.Path(__file__).resolve().parent.parent / 'data' / mixed_system.name
@@ -101,19 +101,19 @@ def test_system_dump_logs_folder_is_correct(mixed_system: bl.System) -> None:
     shutil.rmtree(experiment_folder)
 
 
-def test_copied_system_is_independant_of_original_system(mixed_system: bl.System) -> None:
+def test_copied_system_is_independant_of_original_system(mixed_system: bg.System) -> None:
     copied_system = mixed_system.__copy__()
     mixed_system.states[0].chains[0].add_residue(amino_acid='A', index=0)
     assert mixed_system.states[0].chains[0] != copied_system.states[0].chains[0]
 
 
-def test_system_states_still_reference_shared_chain_object_after_copy_method(shared_chain_system: bl.System) -> None:
+def test_system_states_still_reference_shared_chain_object_after_copy_method(shared_chain_system: bg.System) -> None:
     copied_system = shared_chain_system.__copy__()
     copied_system.states[0].chains[0].add_residue(amino_acid='A', index=0)
     assert copied_system.states[0].chains[0] == copied_system.states[1].chains[0]
 
 
-def test_system_get_total_loss_gives_correct_output(mixed_system: bl.System) -> None:
+def test_system_get_total_loss_gives_correct_output(mixed_system: bg.System) -> None:
     for state in mixed_system.states:
         state.get_energy = Mock()  # disable method for easier testing
     total_loss = mixed_system.get_total_loss(folding_algorithm=None)

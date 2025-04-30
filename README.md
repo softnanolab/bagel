@@ -1,10 +1,10 @@
-# Development Instructions
+# Bagel: Protein Engineering through Optimization
 
 ### Installation
 
 1. Clone the repo.
 
-        git clone https://github.com/softnanolab/bricklane-wip
+        git clone https://github.com/softnanolab/bagel-wip
 
 2. Install `uv`
 
@@ -12,7 +12,7 @@
 
 3. Set directory to repo.
 
-        cd bricklane
+        cd bagel
 
 4. Download the environment.
 

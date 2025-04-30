@@ -111,13 +111,14 @@ class Minimizer(ABC):
 
     def logging_step(self, step: int, system: System, best_system: System, new_best: bool, **kwargs: Any) -> None:
         """Dumps logs for the minimizer, current and best systems as well as printing summary results to the terminal"""
-        logger.info(f'Step={step} - ' + ' - '.join(f'{k}={v}' for k, v in kwargs.items()))
+        real_step = step + 1
+        logger.info(f'Step={real_step} - ' + ' - '.join(f'{k}={v}' for k, v in kwargs.items()))
         assert isinstance(self.log_path, pl.Path), f'log_path must be a Path, not {type(self.log_path)}'
         if step == 0:
             system.dump_config(self.log_path)
-        system.dump_logs(step, self.log_path / 'current', save_structure=step % self.log_frequency == 0)
-        best_system.dump_logs(step, self.log_path / 'best', save_structure=new_best)
-        self.dump_logs(self.log_path, self.experiment_name, step, **kwargs)
+        system.dump_logs(real_step, self.log_path / 'current', save_structure=real_step % self.log_frequency == 0)
+        best_system.dump_logs(real_step, self.log_path / 'best', save_structure=new_best)
+        self.dump_logs(self.log_path, self.experiment_name, real_step, **kwargs)
 
 @dataclass
 class MonteCarlo(Minimizer):
@@ -229,7 +230,7 @@ class SimulatedTempering(Minimizer):
 
             self.logging_step(step, system, best_system, new_best, temperature=temperature, accept=accept)
 
-            if self.preserve_best_system and step % self.n_steps_cycle == 0:
+            if self.preserve_best_system and (step + 1) % self.n_steps_cycle == 0:
                 logger.debug(f'Starting new cycle with best system from previous cycle')
                 system = best_system.__copy__()  # begin next cycle using best system from previous cycle
 
@@ -244,6 +245,7 @@ class FlexibleMinimiser(Minimizer):
     temperature_schedule: Callable[[int], float]
     n_steps: int
     log_frequency: int = 100
+    preserve_best_system_every_n_steps: int | None = None
     experiment_name: str = field(default_factory=lambda: f'flexible_minimiser_{time_stamp()}')
     log_path: pl.Path | str | None = None
 
@@ -260,6 +262,12 @@ class FlexibleMinimiser(Minimizer):
                 new_best = True
                 best_system = system.__copy__()  # This automatically records the energy in best_system.total_energy
             self.logging_step(step, system, best_system, new_best, temperature=temperature, accept=accept)
+
+            if self.preserve_best_system_every_n_steps is not None:
+                if (step + 1) % self.preserve_best_system_every_n_steps == 0:
+                    logger.debug(f'Starting new cycle with best system from previous cycle')
+                    system = best_system.__copy__()  # begin next cycle using best system from previous cycle
+
 
         assert best_system.total_energy is not None, f'Best energy {best_energy} cannot be None!'
         return best_system

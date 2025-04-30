@@ -1,13 +1,13 @@
-import bricklane as br
+import bagel as bg
 from unittest.mock import Mock
 import numpy as np
 
 
-def test_state_calculate_internal_structure_and_energies_method_outputs_correct_value(simple_state: br.State) -> None:
-    mock_folding_metrics = Mock(br.folding.FoldingMetrics)
+def test_state_calculate_internal_structure_and_energies_method_outputs_correct_value(simple_state: bg.State) -> None:
+    mock_folding_metrics = Mock(bg.folding.FoldingMetrics)
     mock_folding_metrics.ptm = 3.0
     mock_folding_metrics.local_plddt = [[2.0, 2.0]]
-    mock_folder = Mock(br.folding.ESMFolder)
+    mock_folder = Mock(bg.folding.ESMFolder)
     mock_folder.fold = Mock(return_value=[1.0, mock_folding_metrics])
 
     simple_state.get_energy(mock_folder)
@@ -17,13 +17,13 @@ def test_state_calculate_internal_structure_and_energies_method_outputs_correct_
     )
 
 
-def test_state_chemical_potential_energy_outputs_correct_value(mixed_structure_state: br.State) -> None:
+def test_state_chemical_potential_energy_outputs_correct_value(mixed_structure_state: bg.State) -> None:
     # this state has chain lengths of [4, 1, 2] and a  a chemical potential of 2.0
     mixed_structure_state.chemical_potential = 2.0
     assert np.isclose(mixed_structure_state.get_chemical_potential_contribution(), 14.0)
 
 
-def test_state_remove_residue_from_all_energy_terms_removes_correct_residue(mixed_structure_state: br.State) -> None:
+def test_state_remove_residue_from_all_energy_terms_removes_correct_residue(mixed_structure_state: bg.State) -> None:
     mixed_structure_state.chains[2].remove_residue(index=2)
     mixed_structure_state.remove_residue_from_all_energy_terms(chain_ID='E', residue_index=2)
 
@@ -42,7 +42,7 @@ def test_state_remove_residue_from_all_energy_terms_removes_correct_residue(mixe
     assert np.all(chain_ids == ['E', 'E', 'E']) and np.all(res_ids == [0, 1, 2])
 
 
-def test_state_add_residue_to_all_energy_terms_adds_residue_to_residue_group(mixed_structure_state: br.State) -> None:
+def test_state_add_residue_to_all_energy_terms_adds_residue_to_residue_group(mixed_structure_state: bg.State) -> None:
     mixed_structure_state.chains[1].add_residue(amino_acid='A', index=1)
     mixed_structure_state.add_residue_to_all_energy_terms(chain_ID='D', residue_index=1)
 

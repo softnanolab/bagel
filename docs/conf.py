@@ -7,7 +7,7 @@ from typing import List
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = 'bricklane'
+project = 'bagel'
 copyright = '2025, Ayham A, Jakub L, Stefano A'
 author = 'Ayham A, Jakub L, Stefano A'
 release = '0.1.0'
