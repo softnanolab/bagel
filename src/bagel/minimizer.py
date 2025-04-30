@@ -106,6 +106,10 @@ class Minimizer(ABC):
                 headers = ['step'] + list(kwargs.keys())
                 writer.writerow(headers)
 
+            # Skip zeroth step, just logging the starting system
+            if step == 0:
+                return
+
             # Write the data row
             row = [step] + list(kwargs.values())
             writer.writerow(row)
@@ -167,7 +171,8 @@ class SimulatedAnnealing(Minimizer):
     def minimize_system(self, system: System) -> System:
         best_system = system.__copy__()
         best_system.get_total_energy(self.folder)  # update the energy internally
-        assert best_system.total_energy is not None, 'Cannot preserve best system before energy is calculated'
+        self.logging_step(-1, system, best_system, False)
+        assert best_system.total_energy is not None, 'Cannot start without best system has a calculated energy'
         for step in range(self.n_steps):
             new_best = False
             system, accept = self.minimize_one_step(self.temperatures[step], system)
@@ -224,7 +229,8 @@ class SimulatedTempering(Minimizer):
     def minimize_system(self, system: System) -> System:
         best_system = system.__copy__()
         best_system.get_total_energy(self.folder)  # update the energy internally
-        assert best_system.total_energy is not None, 'Cannot preserve best system before energy is calculated'
+        self.logging_step(-1, system, best_system, False)
+        assert best_system.total_energy is not None, 'Cannot start without best system has a calculated energy'
         for step, temperature in enumerate(self.temperatures):
             new_best = False
             system, accept = self.minimize_one_step(temperature, system)
@@ -257,14 +263,16 @@ class FlexibleMinimiser(Minimizer):
 
     def minimize_system(self, system: System) -> System:
         best_system = system
-        best_energy = system.get_total_energy(folding_algorithm=self.folder_schedule(0))
+        system.get_total_energy(folding_algorithm=self.folder_schedule(0))  # compute energy of initial system
+        assert best_system.total_energy is not None, 'Cannot start without best system has a calculated energy'
+        self.logging_step(-1, system, best_system, False)
         for step in range(self.n_steps):
             new_best = False
             temperature = self.temperature_schedule(step)
             self.folder = self.folder_schedule(step)
             system, accept = self.minimize_one_step(temperature, system)
             assert system.total_energy is not None, 'Cannot minimize system before energy is calculated'
-            if system.total_energy < best_energy:
+            if system.total_energy < best_system.total_energy:
                 new_best = True
                 best_system = system.__copy__()  # This automatically records the energy in best_system.total_energy
             self.logging_step(step, system, best_system, new_best, temperature=temperature, accept=accept)
@@ -274,5 +282,5 @@ class FlexibleMinimiser(Minimizer):
                     logger.debug(f'Starting new cycle with best system from previous cycle')
                     system = best_system.__copy__()  # begin next cycle using best system from previous cycle
 
-        assert best_system.total_energy is not None, f'Best energy {best_energy} cannot be None!'
+        assert best_system.total_energy is not None, f'Best energy {best_system.total_energy} cannot be None!'
         return best_system
