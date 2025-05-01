@@ -18,6 +18,7 @@ venv
 *.egg-info
 dist
 build
+docs/_build
 
 # IDE specific
 .vscode

@@ -245,7 +245,6 @@ def simple_state() -> bg.State:
         energy_terms=[bg.energies.PTMEnergy(), bg.energies.OverallPLDDTEnergy()],
         energy_terms_weights=[1.0, 1.0],
         name='state_A',
-        verbose=True,
     )
     state._structure = AtomArray(length=len(residues))
     state.energy_terms[0].value = -1.0

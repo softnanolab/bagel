@@ -1,4 +1,10 @@
-"""Standard template and objects for calculating structural or propery losses."""
+"""
+Standard template and objects for calculating structural or propery losses.
+
+MIT License
+
+Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
+"""
 
 from abc import ABC, abstractmethod
 from biotite.structure import AtomArray, sasa, annotate_sse, superimpose

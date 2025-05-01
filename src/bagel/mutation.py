@@ -1,5 +1,9 @@
 """
-Object defining the different types of mutation a chain can be subjected to
+Objects defining the different protocols for mutating the Chains.
+
+MIT License
+
+Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
 """
 
 import numpy as np
