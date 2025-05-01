@@ -10,14 +10,13 @@ import pathlib as pl
 from .system import System
 from .folding import FoldingAlgorithm
 from .mutation import MutationProtocol
-from abc import ABC, abstractmethod
-from typing import Callable, Any, NoReturn
 from dataclasses import dataclass, field
+from abc import ABC, abstractmethod
+from typing import Callable, Any
 import numpy as np
 
 import inspect
 import csv
-import shutil
 import logging
 
 logger = logging.getLogger(__name__)
@@ -38,6 +37,7 @@ class Minimizer(ABC):
 
     def __post_init__(self) -> None:
         self.log_path: pl.Path = self.initialise_log_path(self.log_path)
+        assert isinstance(self.log_path, pl.Path), f'log_path must be a Path, not {type(self.log_path)}'
         logger.debug(f'Logging path: {self.log_path}')
         logger.debug(f'Experiment name: {self.experiment_name}')
 
@@ -58,20 +58,6 @@ class Minimizer(ABC):
 
         """
         raise NotImplementedError('This method should be implemented by the subclass')
-
-    def minimize_one_step(self, temperature: float, system: System) -> tuple[System, bool]:
-        mutated_system, delta_energy, delta_chemical = self.mutator.one_step(
-            folding_algorithm=self.folder,
-            system=system.__copy__(),
-            old_system=system,
-        )
-        acceptance_probability = np.exp(-(delta_energy + delta_chemical) / temperature)
-        logger.debug(f'{delta_energy=}, {delta_chemical=}, {acceptance_probability=}')
-        accept = False
-        if acceptance_probability > np.random.uniform(low=0.0, high=1.0):
-            accept = True
-            return mutated_system, accept
-        return system, accept
 
     def initialise_log_path(self, log_path: None | str | pl.Path) -> pl.Path:
         """
@@ -116,42 +102,55 @@ class Minimizer(ABC):
             row = [step] + list(kwargs.values())
             writer.writerow(row)
 
-    def logging_step(self, step: int, system: System, best_system: System, new_best: bool, **kwargs: Any) -> None:
+    def log_initial_system(self, system: System, best_system: System) -> None:
+        assert isinstance(self.log_path, pl.Path), f'log_path must be a Path, not {type(self.log_path)}'
+        system.dump_config(self.log_path)
+        self.log_step(-1, system, best_system, False)
+
+    def log_step(self, step: int, system: System, best_system: System, new_best: bool, **kwargs: Any) -> None:
         """Dumps logs for the minimizer, current and best systems as well as printing summary results to the terminal"""
         real_step = step + 1
         logger.info(f'Step={real_step} - ' + ' - '.join(f'{k}={v}' for k, v in kwargs.items()))
         assert isinstance(self.log_path, pl.Path), f'log_path must be a Path, not {type(self.log_path)}'
-        # special logging for the zeroth step
-        if step == -1:
-            system.dump_config(self.log_path)
-        else:
+        if real_step > 0:
             self.dump_logs(self.log_path, real_step, **kwargs)
         system.dump_logs(real_step, self.log_path / 'current', save_structure=real_step % self.log_frequency == 0)
         best_system.dump_logs(real_step, self.log_path / 'best', save_structure=new_best)
 
 
 @dataclass
-class MonteCarlo(Minimizer):
-    mutator: MutationProtocol
-    folder: FoldingAlgorithm
-    experiment_name: str
-    log_frequency: int
-    log_path: pl.Path | str | None = None
+class MonteCarloMinimizer(Minimizer):
+    """
+    Generic implementation for Monte Carlo system minimization that works
+    for various temperature schedules and minimization strategies.
+    """
 
-    def __post_init__(self) -> NoReturn:
-        raise NotImplementedError('Monte Carlo is not implemented yet')
-
-    def minimize_system(self, system: System) -> NoReturn:
+    @abstractmethod
+    def minimize_system(self, system: System) -> System:
         """
-        This method is not implemented yet and will raise an exception.
+        Abstract method to be implemented by subclasses.
 
-        The return type NoReturn tells mypy that this function never returns normally.
+        This method should implement a Monte Carlo protocol to minimize the system.
         """
-        raise NotImplementedError('Monte Carlo is not implemented yet')
+        pass
+
+    def minimize_one_step(self, temperature: float, system: System) -> tuple[System, bool]:
+        mutated_system, delta_energy, delta_chemical = self.mutator.one_step(
+            folding_algorithm=self.folder,
+            system=system.__copy__(),
+            old_system=system,
+        )
+        acceptance_probability = np.exp(-(delta_energy + delta_chemical) / temperature)
+        logger.debug(f'{delta_energy=}, {delta_chemical=}, {acceptance_probability=}')
+        accept = False
+        if acceptance_probability > np.random.uniform(low=0.0, high=1.0):
+            accept = True
+            return mutated_system, accept
+        return system, accept
 
 
 @dataclass
-class SimulatedAnnealing(Minimizer):
+class SimulatedAnnealing(MonteCarloMinimizer):
     folder: FoldingAlgorithm
     mutator: MutationProtocol
     initial_temperature: float
@@ -176,7 +175,7 @@ class SimulatedAnnealing(Minimizer):
         system.get_total_energy(self.folder)  # update the energy internally
         best_system = system.__copy__()
         assert best_system.total_energy is not None, 'Cannot start without best system has a calculated energy'
-        self.logging_step(-1, system, best_system, False)
+        self.log_initial_system(system, best_system)
         for step in range(self.n_steps):
             new_best = False
             system, accept = self.minimize_one_step(self.temperatures[step], system)
@@ -184,14 +183,14 @@ class SimulatedAnnealing(Minimizer):
             if system.total_energy < best_system.total_energy:
                 best_system = system.__copy__()  # This automatically records the energy in best_system.total_energy
                 new_best = True
-            self.logging_step(step, system, best_system, new_best, temperature=self.temperatures[step], accept=accept)
+            self.log_step(step, system, best_system, new_best, temperature=self.temperatures[step], accept=accept)
 
         assert best_system.total_energy is not None, f'{best_system=} energy cannot be None!'
         return best_system
 
 
 @dataclass
-class SimulatedTempering(Minimizer):
+class SimulatedTempering(MonteCarloMinimizer):
     folder: FoldingAlgorithm
     mutator: MutationProtocol
     high_temperature: float
@@ -210,7 +209,7 @@ class SimulatedTempering(Minimizer):
 
     def __post_init__(self) -> None:
         super().__post_init__()
-        cycle_temperatures = np.concat(
+        cycle_temperatures = np.concatenate(
             [
                 np.full(shape=self.n_steps_low, fill_value=self.low_temperature),
                 np.full(shape=self.n_steps_high, fill_value=self.high_temperature),
@@ -218,7 +217,7 @@ class SimulatedTempering(Minimizer):
         )
         self.temperatures = np.tile(cycle_temperatures, reps=self.n_cycles)
         self.n_steps_cycle = self.n_steps_high + self.n_steps_low
-        self.acceptance: list[bool] = []
+        self.n_accepts: int = 0
 
     def dump_logs(self, output_folder: pl.Path, step: int, **kwargs: Any) -> None:
         """
@@ -226,15 +225,15 @@ class SimulatedTempering(Minimizer):
         we can compute additional information, such as the cumulative acceptance rate.
         """
         # TODO: this could be done a bit elegantly, if we keep track of self.step as well
-        self.acceptance.append(kwargs['accept'])
-        kwargs['acceptance_rate'] = sum(self.acceptance) / len(self.acceptance)
+        self.n_accepts += kwargs['accept']
+        kwargs['acceptance_rate'] = self.n_accepts / (step + 1)
         super().dump_logs(output_folder, step, **kwargs)
 
     def minimize_system(self, system: System) -> System:
         system.get_total_energy(self.folder)  # update the energy internally
         best_system = system.__copy__()
         assert best_system.total_energy is not None, 'Cannot start without best system has a calculated energy'
-        self.logging_step(-1, system, best_system, False)
+        self.log_initial_system(system, best_system)
         for step, temperature in enumerate(self.temperatures):
             new_best = False
             system, accept = self.minimize_one_step(temperature, system)
@@ -244,7 +243,7 @@ class SimulatedTempering(Minimizer):
                 best_system = system.__copy__()  # This automatically records the energy in best_system.total_energy
                 new_best = True
 
-            self.logging_step(step, system, best_system, new_best, temperature=temperature, accept=accept)
+            self.log_step(step, system, best_system, new_best, temperature=temperature, accept=accept)
 
             if self.preserve_best_system and (step + 1) % self.n_steps_cycle == 0:
                 logger.debug(f'Starting new cycle with best system from previous cycle')
@@ -255,7 +254,7 @@ class SimulatedTempering(Minimizer):
 
 
 @dataclass
-class FlexibleMinimiser(Minimizer):
+class FlexibleMinimiser(MonteCarloMinimizer):
     folder_schedule: Callable[[int], FoldingAlgorithm]
     mutator: MutationProtocol
     temperature_schedule: Callable[[int], float]
@@ -269,7 +268,7 @@ class FlexibleMinimiser(Minimizer):
         system.get_total_energy(self.folder)  # update the energy internally
         best_system = system.__copy__()
         assert best_system.total_energy is not None, 'Cannot start without best system has a calculated energy'
-        self.logging_step(-1, system, best_system, False)
+        self.log_initial_system(system, best_system)
         for step in range(self.n_steps):
             new_best = False
             temperature = self.temperature_schedule(step)
@@ -279,7 +278,7 @@ class FlexibleMinimiser(Minimizer):
             if system.total_energy < best_system.total_energy:
                 new_best = True
                 best_system = system.__copy__()  # This automatically records the energy in best_system.total_energy
-            self.logging_step(step, system, best_system, new_best, temperature=temperature, accept=accept)
+            self.log_step(step, system, best_system, new_best, temperature=temperature, accept=accept)
 
             if self.preserve_best_system_every_n_steps is not None:
                 if (step + 1) % self.preserve_best_system_every_n_steps == 0:
