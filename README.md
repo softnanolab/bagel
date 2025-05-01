@@ -1,5 +1,8 @@
 # Bagel: Protein Engineering through Optimization
 
+![Tests](https://img.shields.io/github/actions/workflow/status/softnanolab/bagel-wip/python-modal-tests.yaml?branch=main)
+
+
 > 🚨 **Warning**
 > This is the development repository for Bagel. A public repo with the most current release is going to be published in a separate repository.
 > Instructions on how to properly develop this repo, and then push to the public repo are not yet finalized.
@@ -65,6 +68,12 @@ To run the tests, you must specify how to handle any tests that require folding.
 Alternative options for --folding is "modal" and "local".
 
 By default, --numprocesses is set to auto. When running locally, this may have to be overided to avoid running out of CUDA memory.
+
+## Development Notes
+
+## Docs
+
+        uv run pydoclint src/bagel/* --style=sphinx
 
 ### Commit Checking
 

@@ -10,7 +10,6 @@ state = bg.State(
     energy_terms=[bg.energies.PTMEnergy(), bg.energies.OverallPLDDTEnergy(), bg.energies.HydrophobicEnergy()],
     energy_terms_weights=[1.0, 1.0, 5.0],
     name='state_A',
-    verbose=True,
 )
 
 minimizer = bg.minimizer.SimulatedTempering(

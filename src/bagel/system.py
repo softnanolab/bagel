@@ -1,4 +1,10 @@
-"""Top level object defining the input for a protein design pipeline"""
+"""
+Top-level object defining the overall protein design task, including all the States.
+
+MIT License
+
+Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
+"""
 
 from biotite.structure.io.pdbx import CIFFile, set_structure
 from collections import OrderedDict

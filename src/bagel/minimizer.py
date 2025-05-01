@@ -1,4 +1,10 @@
-"""Standard template and objects for energy minimisation logic."""
+"""
+Standard template and objects for energy minimization logic.
+
+MIT License
+
+Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
+"""
 
 import pathlib as pl
 from .system import System
@@ -92,7 +98,7 @@ class Minimizer(ABC):
         else:
             raise ValueError(f'log_path must be a Path or str, not {type(log_path)}')
 
-    def dump_logs(self, output_folder: pl.Path, experiment_name: str, step: int, **kwargs: Any) -> None:
+    def dump_logs(self, output_folder: pl.Path, step: int, **kwargs: Any) -> None:
         output_file = output_folder / f'optimization.log'
 
         # Check if file exists to determine if we need to write headers
@@ -106,10 +112,6 @@ class Minimizer(ABC):
                 headers = ['step'] + list(kwargs.keys())
                 writer.writerow(headers)
 
-            # Skip zeroth step, just logging the starting system
-            if step == 0:
-                return
-
             # Write the data row
             row = [step] + list(kwargs.values())
             writer.writerow(row)
@@ -119,11 +121,13 @@ class Minimizer(ABC):
         real_step = step + 1
         logger.info(f'Step={real_step} - ' + ' - '.join(f'{k}={v}' for k, v in kwargs.items()))
         assert isinstance(self.log_path, pl.Path), f'log_path must be a Path, not {type(self.log_path)}'
-        if step == 0:
+        # special logging for the zeroth step
+        if step == -1:
             system.dump_config(self.log_path)
+        else:
+            self.dump_logs(self.log_path, real_step, **kwargs)
         system.dump_logs(real_step, self.log_path / 'current', save_structure=real_step % self.log_frequency == 0)
         best_system.dump_logs(real_step, self.log_path / 'best', save_structure=new_best)
-        self.dump_logs(self.log_path, self.experiment_name, real_step, **kwargs)
 
 
 @dataclass
@@ -163,16 +167,16 @@ class SimulatedAnnealing(Minimizer):
         self.temperatures = np.linspace(start=self.initial_temperature, stop=self.final_temperature, num=self.n_steps)
         self.acceptance: list[bool] = []
 
-    def dump_logs(self, output_folder: pl.Path, experiment_name: str, step: int, **kwargs: Any) -> None:
+    def dump_logs(self, output_folder: pl.Path, step: int, **kwargs: Any) -> None:
         self.acceptance.append(kwargs['accept'])
         kwargs['acceptance_rate'] = sum(self.acceptance) / len(self.acceptance)
-        super().dump_logs(output_folder, experiment_name, step, **kwargs)
+        super().dump_logs(output_folder, step, **kwargs)
 
     def minimize_system(self, system: System) -> System:
+        system.get_total_energy(self.folder)  # update the energy internally
         best_system = system.__copy__()
-        best_system.get_total_energy(self.folder)  # update the energy internally
-        self.logging_step(-1, system, best_system, False)
         assert best_system.total_energy is not None, 'Cannot start without best system has a calculated energy'
+        self.logging_step(-1, system, best_system, False)
         for step in range(self.n_steps):
             new_best = False
             system, accept = self.minimize_one_step(self.temperatures[step], system)
@@ -216,7 +220,7 @@ class SimulatedTempering(Minimizer):
         self.n_steps_cycle = self.n_steps_high + self.n_steps_low
         self.acceptance: list[bool] = []
 
-    def dump_logs(self, output_folder: pl.Path, experiment_name: str, step: int, **kwargs: Any) -> None:
+    def dump_logs(self, output_folder: pl.Path, step: int, **kwargs: Any) -> None:
         """
         Dump the logs for the simulated tempering. Before sending it off to the superclass,
         we can compute additional information, such as the cumulative acceptance rate.
@@ -224,13 +228,13 @@ class SimulatedTempering(Minimizer):
         # TODO: this could be done a bit elegantly, if we keep track of self.step as well
         self.acceptance.append(kwargs['accept'])
         kwargs['acceptance_rate'] = sum(self.acceptance) / len(self.acceptance)
-        super().dump_logs(output_folder, experiment_name, step, **kwargs)
+        super().dump_logs(output_folder, step, **kwargs)
 
     def minimize_system(self, system: System) -> System:
+        system.get_total_energy(self.folder)  # update the energy internally
         best_system = system.__copy__()
-        best_system.get_total_energy(self.folder)  # update the energy internally
-        self.logging_step(-1, system, best_system, False)
         assert best_system.total_energy is not None, 'Cannot start without best system has a calculated energy'
+        self.logging_step(-1, system, best_system, False)
         for step, temperature in enumerate(self.temperatures):
             new_best = False
             system, accept = self.minimize_one_step(temperature, system)
@@ -262,8 +266,8 @@ class FlexibleMinimiser(Minimizer):
     log_path: pl.Path | str | None = None
 
     def minimize_system(self, system: System) -> System:
-        best_system = system
-        system.get_total_energy(folding_algorithm=self.folder_schedule(0))  # compute energy of initial system
+        system.get_total_energy(self.folder)  # update the energy internally
+        best_system = system.__copy__()
         assert best_system.total_energy is not None, 'Cannot start without best system has a calculated energy'
         self.logging_step(-1, system, best_system, False)
         for step in range(self.n_steps):

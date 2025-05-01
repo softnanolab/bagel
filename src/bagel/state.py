@@ -1,4 +1,10 @@
-"""standard object to encode the tertiary structure, losses, and folding logic for a chain or complex of chains."""
+"""
+Standard object to encode the tertiary structure, losses, and folding logic for a chain or complex of chains.
+
+MIT License
+
+Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
+"""
 
 from .chain import Chain
 from .folding import FoldingAlgorithm, FoldingMetrics
@@ -18,16 +24,44 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class State:
+    """
+    A State is a multimeric collection of :class:`.Chain` objects with associated :class:`.EnergyTerm` objects and chemical potential.
+    Chains can be independent of other States, or be shared between multiple States.
+
+    Parameters
+    ----------
+    name : str
+        Unique identifier for this State.
+    chains : List[:class:`.Chain`]
+        List of single monomeric Chains in this State.
+    energy_terms : List[:class:`.EnergyTerm`]
+        Collection of EnergyTerms that define the State.
+    energy_terms_weights : List[float] # TODO: this will be moved into EnergyTerms
+        Weights for each EnergyTerm.
+    chemical_potential : Optional[float], optional
+        Chemical potential value for this state. Default is None.
+
+    Attributes
+    ----------
+    _energy : Optional[float]
+        Cached total (weighted) energy value for the State.
+    _structure : AtomArray
+        Atomic structure representation.
+    _folding_metrics : Optional[FoldingMetrics]
+        Metrics from the :class:`.FoldingAlgorithm` such as pLDDT, or PAE.
+    _energy_terms_value : dict[(str, float)]
+        Cached (unweighted)values of individual :class:`.EnergyTerm` objects.
+    """
+
+    name: str
     chains: List[Chain]  # This is a list of single monomeric chains
     energy_terms: List[EnergyTerm]
     energy_terms_weights: List[float]
-    name: str
     chemical_potential: Optional[float] = None
     _energy: Optional[float] = field(default=None, init=False)
     _structure: AtomArray = field(default=None, init=False)
     _folding_metrics: Optional[FoldingMetrics] = field(default=None, init=False)
     _energy_terms_value: dict[(str, float)] = field(default_factory=lambda: {}, init=False)
-    verbose: bool = False
 
     def __post_init__(self) -> None:
         """Sanity check."""
@@ -42,7 +76,7 @@ class State:
         return [chain.sequence for chain in self.chains]
 
     def fold(self, folding_algorithm: FoldingAlgorithm) -> tuple[AtomArray, FoldingMetrics]:
-        """predict new structure of state. Stores structure and folding metrics as private attributes."""
+        """Predict new structure of state. Stores structure and folding metrics as private attributes."""
         assert self._structure is None, 'State already has a structure'
         self._structure, self._folding_metrics = folding_algorithm.fold(chains=self.chains)
         return self._structure, self._folding_metrics
@@ -56,16 +90,14 @@ class State:
             for term in self.energy_terms:
                 energy = term.compute(self._structure, self._folding_metrics)
                 self._energy_terms_value[term.name] = energy
-                if self.verbose:
-                    print(f'Energy term {term.name} has value {energy}')
+                logger.debug(f'Energy term {term.name} has value {energy}')
 
         total_energy = sum(
             [energy * weight for energy, weight in zip(self._energy_terms_value.values(), self.energy_terms_weights)]
         )
         self._energy = total_energy
 
-        if self.verbose:
-            print(f'**Weighted** energy for state {self.name} is {self._energy}')
+        logger.debug(f'**Weighted** energy for state {self.name} is {self._energy}')
 
         return self._energy
 
