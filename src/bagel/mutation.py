@@ -14,6 +14,9 @@ from .constants import mutation_bias_no_cystein
 from dataclasses import dataclass, field
 from typing import Dict, Tuple
 from abc import ABC, abstractmethod
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -26,8 +29,25 @@ class MutationProtocol(ABC):
         self, folding_algorithm: FoldingAlgorithm, system: System, old_system: System
     ) -> Tuple[System, float, float]:
         """
-        Makes one mutation and returns the new system, the energy difference and the difference in size
-        compared to the old system.
+        Abstract method for performing a single mutation step.
+
+        Parameters
+        ----------
+        folding_algorithm : FoldingAlgorithm
+            The algorithm used to fold the protein and calculate its energy
+        system : System
+            The system to be mutated
+        old_system : System
+            The original system before mutation, used for comparison
+
+        Returns
+        -------
+        System
+            The mutated system
+        float
+            The energy difference between the mutated and original system
+        float
+            The difference in chemical potential contribution (related to size) between the mutated and original system
         """
         pass
 
@@ -90,13 +110,7 @@ class Canonical(MutationProtocol):
         for i in range(self.n_mutations):
             chain = self.choose_chain(system)
             self.mutate_random_residue(chain=chain)
-        # print( "Canonical mutation")
-        # for i in range( len( system.states ) ):
-        #    for j in range( len( system.states[i].chains )):
-        #        print( f"NEW state[{i}].chains[{j}] {system.states[i].chains[j].sequence}")
-        #        print( f"OLD state[{i}].chains[{j}] {old_system.states[i].chains[j].sequence}")
         self.reset_system(system=system)  # Reset the system so it knows it must recalculate fold and energy
-        # print( f"HERE {system.states[0]._folding_metrics}" )
         delta_energy = system.get_total_energy(folding_algorithm) - old_system.get_total_energy(folding_algorithm)
         return system, delta_energy, 0.0
 
@@ -127,8 +141,8 @@ class GrandCanonical(MutationProtocol):
             self.move_probabilities = {
                 move: prob / sum(self.move_probabilities.values()) for move, prob in self.move_probabilities.items()
             }
-            print('Recalcalculated move probabilties to ensure they sum to 1')
-            print(self.move_probabilities)
+            logger.warning('Recalculated move probabilties to ensure they sum to 1')
+            logger.info(self.move_probabilities)
 
     def remove_random_residue(self, chain: Chain, system: System) -> None:
         # First of all, only try this if it does not bring chains to 0 length
@@ -164,8 +178,6 @@ class GrandCanonical(MutationProtocol):
         for i in range(self.n_mutations):
             chain = self.choose_chain(system)
             # Now pick a move to make among removal, addition, or mutation
-            # print('Current probabilties')
-            print(self.move_probabilities)
             assert self.move_probabilities.keys() == {'mutation', 'addition', 'removal'}, (
                 'Move probabilities must be mutation, addition and removal'
             )
@@ -174,17 +186,13 @@ class GrandCanonical(MutationProtocol):
                 p=list(self.move_probabilities.values()),
             )
             if move == 'mutation':
-                # print( "mutation")
                 self.mutate_random_residue(chain=chain)
             elif move == 'addition':
-                # print( "addition")
                 self.add_random_residue(chain=chain, system=system)
             elif move == 'removal':
-                # print( "removal")
                 self.remove_random_residue(chain=chain, system=system)
 
         self.reset_system(system=system)  # Reset the system so it knows it must recalculate fold and energy
-        # print(f'HERE {system.states[0]._folding_metrics}')
         delta_energy = system.get_total_energy(folding_algorithm) - old_system.get_total_energy(folding_algorithm)
         delta_chemical = system.chemical_potential_contribution() - old_system.chemical_potential_contribution()
 
