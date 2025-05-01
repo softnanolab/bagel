@@ -1,4 +1,10 @@
-"""Standard template and objects for energy minimisation logic."""
+"""
+Standard template and objects for energy minimization logic.
+
+MIT License
+
+Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
+"""
 
 import pathlib as pl
 from .system import System

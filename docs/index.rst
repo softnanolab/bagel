@@ -3,14 +3,67 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-bricklane documentation
-=====================
+Bagel Documentation
+==================
 
-Add your content using ``reStructuredText`` syntax. See the
-`reStructuredText <https://www.sphinx-doc.org/en/master/usage/restructuredtext/index.html>`_
-documentation for details.
-
+Welcome to the Bagel package documentation.
 
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
+
+   api/modules
+
+API Reference
+------------
+
+.. automodule:: bagel
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Core Modules
+-----------
+
+.. automodule:: bagel.chain
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: bagel.system
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: bagel.energies
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: bagel.state
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: bagel.mutation
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: bagel.minimizer
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: bagel.constants
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Folding Package
+-------------
+
+.. automodule:: bagel.folding
+   :members:
+   :undoc-members:
+   :show-inheritance:

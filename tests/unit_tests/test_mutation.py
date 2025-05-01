@@ -142,7 +142,7 @@ def test_GrandCanonical_MutationProtocol_does_not_remove_all_residues_in_chain(
     mocked_calculate_method: Mock, residues: list[bg.Residue]
 ) -> None:
     chain = bg.Chain(residues[:1])
-    state = bg.State([chain], energy_terms=[bg.energies.PTMEnergy()], energy_terms_weights=[1.0], name='A')
+    state = bg.State(name='A', chains=[chain], energy_terms=[bg.energies.PTMEnergy()], energy_terms_weights=[1.0])
     # state = bg.State([chain], energy_terms=[bg.energies.PTMEnergy()], energy_term_weights=[1.0], name='A')
     single_residue_system = bg.System([state])
     mutator = bg.mutation.GrandCanonical(move_probabilities={'mutation': 0.0, 'addition': 0.0, 'removal': 1.0})

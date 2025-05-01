@@ -17,7 +17,6 @@ state = bg.State(
     ],
     energy_terms_weights=[1.0, 1.0, 3.0, 1.0, 1.0],
     name='state_A',
-    verbose=True,
 )
 
 minimizer = bg.minimizer.SimulatedAnnealing(
