@@ -123,7 +123,7 @@ class GrandCanonical(MutationProtocol):
         n_mutations: int = 1,
         mutation_bias: Dict[str, float] = mutation_bias_no_cystein,
         move_probabilities: dict[str, float] = {
-            'mutation': 0.5,
+            'mutation': 0.5,  # TODO: maybe this should be called substitution? i.e. differentiate the naming here from the protocol
             'addition': 0.25,
             'removal': 0.25,
         },
