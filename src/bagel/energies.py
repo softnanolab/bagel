@@ -36,14 +36,15 @@ class EnergyTerm(ABC):
     Like the __init__ method, __post__init__ is also **automatically** called upon
     instantiating an object of the class.
     """
-    def __init__(self, name, oracle_name ) -> None:
+    def __init__(self, name:str, oracle_name:str, input_key:str ) -> None:
         """Initialises EnergyTerm class.
 
         Parameters
         ----------
         """
-        self.name: str = name
-        self.oracle_name: str = oracle_name
+        self.name = name
+        self.oracle_name = oracle_name
+        self.input_key = input_key
         
     def __post_init__(self) -> None:
         """Checks required attributes have been set after class is initialised"""
@@ -57,17 +58,16 @@ class EnergyTerm(ABC):
             assert self.inheritable is False, 'template_match energy term should NEVER be inheritable'
 
     @abstractmethod
-    def compute(self, structure: AtomArray, folding_metrics: FoldingMetrics) -> float:
+    def compute(self, oracles_output : dict ) -> float:
         """
         Calculates the EnergyTerm's energy given information about the folded structure.
         The result is returned and stored as an internal attribute (.value).
 
         Parameters
         ----------
-        structure: AtomArray
-            An array containing positions and attributes of each atom in the structure.
-        folding_metrics: FoldingMetrics
-            Key statistics dataclass calculated from the state folding process.
+        oracles_output: dict
+            A dictionary containing the output of all the oracles that are applied to a specific state ( 
+            a collection of chains).  Examples of output are folding metrics and the structure.
 
         Returns
         -------
@@ -140,18 +140,20 @@ class PTMEnergy(EnergyTerm):
     model was trained on.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, oracle_name:str ) -> None:
         """Initialises Predicted Template Modelling Score Energy class.
 
         Parameters
         ----------
         """
-        super().__init__(name='pTM', oracle_name='FoldingOracle')
+        super().__init__( oracle_name = oracle_name, name='pTM', input_key="folding_metrics" )
         #self.name = 'pTM'
+        self.oracle_name = oracle_name
         self.inheritable = True
         self.residue_groups = []
 
-    def compute(self, structure: AtomArray, folding_metrics: FoldingMetrics) -> float:
+    def compute(self, oracles_output: dict) -> float:
+        folding_metrics = oracles_output[self.oracle_name][ self.input_key ]
         assert hasattr(folding_metrics, 'ptm'), 'PTM metric not returned by folding algorith'
         self.value = -folding_metrics.ptm
         return self.value
@@ -162,26 +164,26 @@ class ChemicalPotentialEnergy(EnergyTerm):
     For some choices of parameters, this is equivalent to a chemical potential contribution to the grand-canonical
     free energy Omega = E - mu * N
     """
-    def __init__(self, power : float = 1.0, target_size : int = 0, chemical_potential : float = 1.0 ) -> None:
+    def __init__(self, oracle_name:str, power : float = 1.0, target_size : int = 0, chemical_potential : float = 1.0 ) -> None:
         """Initialises Chemical Potential Energy class. 
 
         Parameters
         ----------
         """
-        super().__init__(name='chem_pot', oracle_name='FoldingOracle')
-        #self.name = 'chem_pot'
+        super().__init__(oracle_name = oracle_name, name='chem_pot', input_key="structure")
         self.inheritable = True
         self.residue_groups = []
         self.power = power 
         self.target_size = target_size
         self.chemical_potential = chemical_potential 
 
-    def compute(self, structure: AtomArray, folding_metrics: FoldingMetrics) -> float:
+    def compute(self, oracles_output: dict) -> float:
+        structure = oracles_output[self.oracle_name][ self.input_key ]
         assert isinstance(structure, AtomArray), 'structure should be an AtomArray object but is not {type(structure)}'
 
     	# The following works even if some residues have the same number but different chain IDs because res_ids 
 	    # actually returns a list of tuples ( chain_id, res_id ) 
-        res_ids = struc.get_res_id(structure)
+        res_ids = structure.get_res_id(structure)
         unique_res_ids = set(res_ids)
         num_residues = len(unique_res_ids)
 
@@ -198,7 +200,7 @@ class PLDDTEnergy(EnergyTerm):
     relevant atoms.
     """
 
-    def __init__(self, residues: list[Residue], inheritable: bool = True) -> None:
+    def __init__(self, oracle_name: str, residues: list[Residue], inheritable: bool = True) -> None:
         """Initialises Local Predicted Local Distance Difference Test Energy class.
 
         Parameters
@@ -209,12 +211,13 @@ class PLDDTEnergy(EnergyTerm):
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
         """
-        super().__init__(name='local_pLDDT', oracle_name='FoldingOracle')
+        super().__init__(oracle_name: str, name='local_pLDDT', input_key="folding_metrics")
         #self.name = 'local_pLDDT'
         self.inheritable = inheritable
         self.residue_groups = [residue_list_to_group(residues)]
 
-    def compute(self, structure: AtomArray, folding_metrics: FoldingMetrics) -> float:
+    def compute(self, oracles_output: dict) -> float:
+        folding_metrics = oracles_output[self.oracle_name][self.input_key]
         assert hasattr(folding_metrics, 'local_plddt'), 'local_plddt metric not returned by folding algorithm'
         plddt = folding_metrics.local_plddt[0]  # [n_residues] array
         mask = self.get_residue_mask(structure, residue_group_index=0)
@@ -236,12 +239,13 @@ class OverallPLDDTEnergy(EnergyTerm):
         Parameters
         ----------
         """
-        super().__init__(name='global_pLDDT', oracle_name='FoldingOracle')
+        super().__init__(oracle_name:str, name='global_pLDDT', input_key="folding_metrics")
         #self.name = 'global_pLDDT'
         self.inheritable = True
         self.residue_groups = []
 
-    def compute(self, structure: AtomArray, folding_metrics: FoldingMetrics) -> float:
+    def compute(self, oracles_output:dict ) -> float:
+        folding_metrics = oracles_output[self.oracle_name][self.input_key]
         assert hasattr(folding_metrics, 'local_plddt'), 'local_plddt metric not returned by folding algorithm'
         plddt = folding_metrics.local_plddt[0]  # [n_residues] array
         self.value = -np.mean(plddt)
@@ -256,6 +260,8 @@ class SurfaceAreaEnergy(EnergyTerm):
 
     def __init__(
         self,
+        oracle_name: str,
+        input_key: str,
         residues: list[Residue] | None = None,
         inheritable: bool = True,
         probe_radius: float | None = None,
@@ -276,14 +282,15 @@ class SurfaceAreaEnergy(EnergyTerm):
         max_sasa: float or None, default=None
             The maximum SASA value used if normalization is enabled. Default is the full surface area of a Sulfur atom.
         """
-        super().__init__(name='surface_area', oracle_name='FoldingOracle')
+        super().__init__(oracle_name = oracle_name, name='surface_area', input_key=input_key)
         self.name = f'{"selective_" if residues is not None else ""}surface_area'
         self.inheritable = inheritable
         self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
         self.probe_radius = probe_radius_water if probe_radius is None else probe_radius
         self.max_sasa = max_sasa_values['S'] if max_sasa is None else max_sasa
 
-    def compute(self, structure: AtomArray, folding_metrics: FoldingMetrics) -> float:
+    def compute(self, oracles_output:dict ) -> float:
+        structure = oracles_output[self.oracle_name][self.input_key]
         if len(self.residue_groups) != 0:
             atom_mask: npt.NDArray[np.bool_] = self.get_atom_mask(structure, residue_group_index=0)
         else:
@@ -302,6 +309,8 @@ class HydrophobicEnergy(EnergyTerm):
 
     def __init__(
         self,
+        oracle_name: str,
+        input_key: str,
         residues: list[Residue] | None = None,
         inheritable: bool = True,
         surface_only: bool = False,
@@ -320,7 +329,7 @@ class HydrophobicEnergy(EnergyTerm):
             Whether to only consider the atoms exposed to water at the surface. If False, interior atoms are included
             in the calculation. If true, result is scaled by normalised solute accessible surface area values.
         """
-        super().__init__(name='hydrophobic', oracle_name='FoldingOracle')
+        super().__init__( oracle_name = oracle_name, name='hydrophobic', input_key=input_key)
         selective = 'selective_' if residues is not None else ''
         surface = 'surface_' if surface_only else ''
         self.name = f'{selective}{surface}hydrophobic'
@@ -328,7 +337,8 @@ class HydrophobicEnergy(EnergyTerm):
         self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
         self.surface_only = surface_only
 
-    def compute(self, structure: AtomArray, folding_metrics: FoldingMetrics) -> float:
+    def compute(self, oracles_output:dict ) -> float:
+        structure = oracles_output[self.oracle_name][self.input_key]
         if len(self.residue_groups) > 0:
             relevance_mask: npt.NDArray[np.bool_] = self.get_atom_mask(structure, residue_group_index=0)
         else:
@@ -352,6 +362,8 @@ class PAEEnergy(EnergyTerm):
 
     def __init__(
         self,
+        oracle_name: str,
+        input_key: str,
         group_1_residues: list[Residue],
         group_2_residues: list[Residue] | None = None,
         cross_term_only: bool = True,
@@ -380,7 +392,8 @@ class PAEEnergy(EnergyTerm):
         self.residue_groups = [residue_list_to_group(group_1_residues), residue_list_to_group(group_2_residues)]
         self.cross_term_only = cross_term_only
 
-    def compute(self, structure: AtomArray, folding_metrics: FoldingMetrics) -> float:
+    def compute(self, oracles_output ) -> float:
+        folding_metrics = oracles_output[self.oracle_name][self.input_key]
         assert hasattr(folding_metrics, 'pae'), 'pae metric not returned by folding algorithm'
         pae = folding_metrics.pae[0]  # [n_residues, n_residues] pairwise predicted alignment error matrix
         max_pae = 30  # approximate max. Sometimes pae can be higher
@@ -411,6 +424,8 @@ class PAEEnergyV2(EnergyTerm):
 
     def __init__(
         self,
+        oracle_name: str,
+        input_key: str,
         group_1_residues: list[Residue],
         group_2_residues: list[Residue] | None = None,
         cross_term_only: bool = True,
@@ -432,7 +447,7 @@ class PAEEnergyV2(EnergyTerm):
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
         """
-        super().__init__(name='PAE', oracle_name='FoldingOracle')
+        super().__init__(oracle_name = oracle_name, input_key = input_key, name='PAE')
         warnings.warn(message='This class has known issues and is to be removed', category=DeprecationWarning)
         self.name = f'{"cross_" if cross_term_only else ""}alignment_error'
         self.inheritable = inheritable
@@ -506,7 +521,8 @@ class PAEEnergyV2(EnergyTerm):
             pae_mask = pae_mask > 0
         return pae_mask
 
-    def compute(self, structure: AtomArray, folding_metrics: FoldingMetrics) -> float:
+    def compute(self, oracles_output:dict) -> float:
+        folding_metrics = oracles_output[self.oracle_name][self.input_key]
         assert hasattr(folding_metrics, 'pae'), 'pae metric not returned by folding algorith'
         pae = folding_metrics.pae[0]  # [n_residues, n_residues] pairwise predicted alignment error matrix
         assert len(pae.shape) == 2, 'PAE matrix has incorrect shape'
