@@ -197,7 +197,7 @@ class ChemicalPotentialEnergy(EnergyTerm):
 
 	# The following works even if some residues have the same number but different chain IDs because res_ids 
 	# actually returns a list of tuples ( chain_id, res_id ) 
-	res_ids = struc.get_res_id(structure)
+	res_ids = structure.get_res_id(structure)
 	unique_res_ids = set(res_ids)
 	num_residues = len(unique_res_ids)
 
