@@ -7,7 +7,7 @@ Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
 """
 
 import numpy as np
-from .folding import FoldingAlgorithm
+#from .folding import FoldingAlgorithm
 from .chain import Chain
 from .system import System
 from .constants import mutation_bias_no_cystein
@@ -23,7 +23,9 @@ class MutationProtocol(ABC):
 
     @abstractmethod
     def one_step(
-        self, folding_algorithm: FoldingAlgorithm, system: System, old_system: System
+        self, 
+        #folding_algorithm: FoldingAlgorithm, 
+        system: System, old_system: System
     ) -> Tuple[System, float, float]:
         """
         Makes one mutation and returns the new system, the energy difference and the difference in size
@@ -63,12 +65,15 @@ class MutationProtocol(ABC):
         amino_acid = np.random.choice(list(self.mutation_bias.keys()), p=list(self.mutation_bias.values()))
         chain.mutate_residue(index=index, amino_acid=amino_acid)
 
+    #! Stefano: need to modify to reset all oracles outputs
     def reset_system(self, system: System) -> System:
+        print('Resetting system RESET ALL ORACLES OUTPUTS')
         system.total_energy = None
         for state in system.states:
             state._energy_terms_value = {}
-            state._structure = None
-            state._folding_metrics = None
+            state._oracles_output = {}
+            #state._structure = None
+            #state._folding_metrics = None
         return system
 
 
@@ -83,7 +88,9 @@ class Canonical(MutationProtocol):
         self.mutation_bias = mutation_bias
 
     def one_step(
-        self, folding_algorithm: FoldingAlgorithm, system: System, old_system: System
+        self, 
+        #folding_algorithm: FoldingAlgorithm, 
+        system: System, old_system: System
     ) -> Tuple[System, float, float]:
         for i in range(self.n_mutations):
             chain = self.choose_chain(system)
@@ -95,7 +102,7 @@ class Canonical(MutationProtocol):
         #        print( f"OLD state[{i}].chains[{j}] {old_system.states[i].chains[j].sequence}")
         self.reset_system(system=system)  # Reset the system so it knows it must recalculate fold and energy
         # print( f"HERE {system.states[0]._folding_metrics}" )
-        delta_energy = system.get_total_energy(folding_algorithm) - old_system.get_total_energy(folding_algorithm)
+        delta_energy = system.get_total_energy() - old_system.get_total_energy()
         return system, delta_energy
 
 
@@ -155,7 +162,9 @@ class GrandCanonical(MutationProtocol):
             state.add_residue_to_all_energy_terms(chain_ID=chain_ID, residue_index=index)
 
     def one_step(
-        self, folding_algorithm: FoldingAlgorithm, system: System, old_system: System
+        self, 
+        #folding_algorithm: FoldingAlgorithm, 
+        system: System, old_system: System
     ) -> Tuple[System, float, float]:
         for i in range(self.n_mutations):
             chain = self.choose_chain(system)
@@ -181,7 +190,7 @@ class GrandCanonical(MutationProtocol):
 
         self.reset_system(system=system)  # Reset the system so it knows it must recalculate fold and energy
         # print(f'HERE {system.states[0]._folding_metrics}')
-        delta_energy = system.get_total_energy(folding_algorithm) - old_system.get_total_energy(folding_algorithm)
+        delta_energy = system.get_total_energy() - old_system.get_total_energy()
 
         return system, delta_energy
 

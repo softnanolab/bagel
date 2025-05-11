@@ -36,7 +36,15 @@ class EnergyTerm(ABC):
     Like the __init__ method, __post__init__ is also **automatically** called upon
     instantiating an object of the class.
     """
+    def __init__(self, name, oracle_name ) -> None:
+        """Initialises EnergyTerm class.
 
+        Parameters
+        ----------
+        """
+        self.name: str = name
+        self.oracle_name: str = oracle_name
+        
     def __post_init__(self) -> None:
         """Checks required attributes have been set after class is initialised"""
         assert hasattr(self, 'name'), 'name attribute must be set in class initialiser'
@@ -138,7 +146,8 @@ class PTMEnergy(EnergyTerm):
         Parameters
         ----------
         """
-        self.name = 'pTM'
+        super().__init__(name='pTM', oracle_name='FoldingOracle')
+        #self.name = 'pTM'
         self.inheritable = True
         self.residue_groups = []
 
@@ -153,28 +162,28 @@ class ChemicalPotentialEnergy(EnergyTerm):
     For some choices of parameters, this is equivalent to a chemical potential contribution to the grand-canonical
     free energy Omega = E - mu * N
     """
-
     def __init__(self, power : float = 1.0, target_size : int = 0, chemical_potential : float = 1.0 ) -> None:
         """Initialises Chemical Potential Energy class. 
 
         Parameters
         ----------
         """
-        self.name = 'chem_pot'
+        super().__init__(name='chem_pot', oracle_name='FoldingOracle')
+        #self.name = 'chem_pot'
         self.inheritable = True
         self.residue_groups = []
-	self.power = power 
+        self.power = power 
         self.target_size = target_size
         self.chemical_potential = chemical_potential 
 
     def compute(self, structure: AtomArray, folding_metrics: FoldingMetrics) -> float:
         assert isinstance(structure, AtomArray), 'structure should be an AtomArray object but is not {type(structure)}'
 
-	# The following works even if some residues have the same number but different chain IDs because res_ids 
-	# actually returns a list of tuples ( chain_id, res_id ) 
-	res_ids = struc.get_res_id(structure)
-	unique_res_ids = set(res_ids)
-	num_residues = len(unique_res_ids)
+    	# The following works even if some residues have the same number but different chain IDs because res_ids 
+	    # actually returns a list of tuples ( chain_id, res_id ) 
+        res_ids = struc.get_res_id(structure)
+        unique_res_ids = set(res_ids)
+        num_residues = len(unique_res_ids)
 
         self.value = self.chemical_potential * ( abs( num_residues - self.target_size ) )**self.power
 
@@ -200,7 +209,8 @@ class PLDDTEnergy(EnergyTerm):
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
         """
-        self.name = 'local_pLDDT'
+        super().__init__(name='local_pLDDT', oracle_name='FoldingOracle')
+        #self.name = 'local_pLDDT'
         self.inheritable = inheritable
         self.residue_groups = [residue_list_to_group(residues)]
 
@@ -226,7 +236,8 @@ class OverallPLDDTEnergy(EnergyTerm):
         Parameters
         ----------
         """
-        self.name = 'global_pLDDT'
+        super().__init__(name='global_pLDDT', oracle_name='FoldingOracle')
+        #self.name = 'global_pLDDT'
         self.inheritable = True
         self.residue_groups = []
 
@@ -265,6 +276,7 @@ class SurfaceAreaEnergy(EnergyTerm):
         max_sasa: float or None, default=None
             The maximum SASA value used if normalization is enabled. Default is the full surface area of a Sulfur atom.
         """
+        super().__init__(name='surface_area', oracle_name='FoldingOracle')
         self.name = f'{"selective_" if residues is not None else ""}surface_area'
         self.inheritable = inheritable
         self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
@@ -308,6 +320,7 @@ class HydrophobicEnergy(EnergyTerm):
             Whether to only consider the atoms exposed to water at the surface. If False, interior atoms are included
             in the calculation. If true, result is scaled by normalised solute accessible surface area values.
         """
+        super().__init__(name='hydrophobic', oracle_name='FoldingOracle')
         selective = 'selective_' if residues is not None else ''
         surface = 'surface_' if surface_only else ''
         self.name = f'{selective}{surface}hydrophobic'
@@ -360,6 +373,7 @@ class PAEEnergy(EnergyTerm):
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
         """
+        super().__init__(name='PAE', oracle_name='FoldingOracle')
         self.name = f'{"cross_" if cross_term_only else ""}PAE'
         self.inheritable = inheritable
         group_2_residues = group_1_residues if group_2_residues is None else group_2_residues
@@ -418,6 +432,7 @@ class PAEEnergyV2(EnergyTerm):
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
         """
+        super().__init__(name='PAE', oracle_name='FoldingOracle')
         warnings.warn(message='This class has known issues and is to be removed', category=DeprecationWarning)
         self.name = f'{"cross_" if cross_term_only else ""}alignment_error'
         self.inheritable = inheritable
@@ -527,6 +542,7 @@ class RingSymmetryEnergy(EnergyTerm):
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
         """
+        super().__init__(name='ring_symmetry', oracle_name='FoldingOracle')
         self.name = f'{"neighbour_" if direct_neighbours_only else ""}ring_symmetry'
         self.inheritable = inheritable
         assert (len(symmetry_groups) > 1) and (len(symmetry_groups[0]) >= 1), 'Multiple symmetry groups required.'
@@ -582,6 +598,7 @@ class SeparationEnergy(EnergyTerm):
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
         """
+        super().__init__(name='separation', oracle_name='FoldingOracle')
         self.name = f'{"normalized_" if normalize else ""}separation'
         self.inheritable = inheritable
         self.residue_groups = [residue_list_to_group(group_1_residues), residue_list_to_group(group_2_residues)]
@@ -627,6 +644,7 @@ class GlobularEnergy(EnergyTerm):
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
         """
+        super().__init__(name='globular', oracle_name='FoldingOracle')
         self.name = f'{"normalized_" if normalize else ""}globular'
         self.inheritable = inheritable
         self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
@@ -678,6 +696,7 @@ class TemplateMatchEnergy(EnergyTerm):
             the two pairwise distance matrices. By default, the root mean square of the difference in positions is used
             instead.
         """
+        super().__init__(name='template_match', oracle_name='FoldingOracle')
         self.name = f'{"backbone_" if backbone_only else ""}template_match'
         self.residue_groups = [residue_list_to_group(residues)]
         self.template_atoms = template_atoms
@@ -732,6 +751,7 @@ class SecondaryStructureEnergy(EnergyTerm):
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
         """
+        super().__init__(name='secondary_structure', oracle_name='FoldingOracle')
         self.name = f'{target_secondary_structure.lower()}'
         self.inheritable = inheritable
         self.residue_groups = [residue_list_to_group(residues)]
@@ -779,6 +799,7 @@ class EllipsoidEnergy(EnergyTerm):
             Constant of proportionality for the recipricol exponential type repulsive energy that evenly distributes
             all backbone atoms within the ellipsoid volume.
         """
+        super().__init__(name='ellipsoid', oracle_name='FoldingOracle')
         self.name = 'ellipsoid'
         self.inheritable = True  # always considers all residues in structure
         self.residue_groups = []
@@ -857,7 +878,8 @@ class CuboidEnergy(EnergyTerm):
             A metric for how sharp the coreners of the cuboid should ideally be. The higher the value, the closer to a
             perfect right angled vertex.
         """
-        self.name = 'cuboid'
+        super().__init__(name='cuboid', oracle_name='FoldingOracle')
+        #self.name = 'cuboid'
         self.inheritable = True  # always considers all residues in structure
         self.residue_groups = []
         self.k_attractive = k_attractive

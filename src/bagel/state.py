@@ -7,6 +7,7 @@ Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
 """
 
 from .chain import Chain
+from .oracles import Oracles
 from .folding import FoldingAlgorithm, FoldingMetrics
 from .energies import EnergyTerm
 from typing import Optional
@@ -34,6 +35,9 @@ class State:
         Unique identifier for this State.
     chains : List[:class:`.Chain`]
         List of single monomeric Chains in this State.
+    oracles : List[:class:`.Oracle`]
+        List of oracles that can be used to predict properties of this State.
+        An oracle for example is a protein structure prediction model, or a protein language model.
     energy_terms : List[:class:`.EnergyTerm`]
         Collection of EnergyTerms that define the State.
     energy_terms_weights : List[float] # TODO: this will be moved into EnergyTerms
@@ -43,21 +47,19 @@ class State:
     ----------
     _energy : Optional[float]
         Cached total (weighted) energy value for the State.
-    _structure : AtomArray
-        Atomic structure representation.
-    _folding_metrics : Optional[FoldingMetrics]
-        Metrics from the :class:`.FoldingAlgorithm` such as pLDDT, or PAE.
+    _oracles_output : Optional[dict] 
+        Output of different oracles, e.g., structure, folding_metrics, residues embedding...
     _energy_terms_value : dict[(str, float)]
         Cached (unweighted)values of individual :class:`.EnergyTerm` objects.
     """
 
     name: str
     chains: List[Chain]  # This is a list of single monomeric chains
+    oracles: dict 
     energy_terms: List[EnergyTerm]
     energy_terms_weights: List[float]
     _energy: Optional[float] = field(default=None, init=False)
-    _structure: AtomArray = field(default=None, init=False)
-    _folding_metrics: Optional[FoldingMetrics] = field(default=None, init=False)
+    _oracles_output: Optional[dict] = field(default=None, init=False)
     _energy_terms_value: dict[(str, float)] = field(default_factory=lambda: {}, init=False)
 
     def __post_init__(self) -> None:
@@ -72,20 +74,16 @@ class State:
     def total_sequence(self) -> List[str]:
         return [chain.sequence for chain in self.chains]
 
-    def fold(self, folding_algorithm: FoldingAlgorithm) -> tuple[AtomArray, FoldingMetrics]:
-        """Predict new structure of state. Stores structure and folding metrics as private attributes."""
-        assert self._structure is None, 'State already has a structure'
-        self._structure, self._folding_metrics = folding_algorithm.fold(chains=self.chains)
-        return self._structure, self._folding_metrics
-
-    def get_energy(self, folding_algorithm: FoldingAlgorithm) -> float:
+    def get_energy(self) -> float:
         """Calculate energy of state using energy terms ."""
         if self._energy_terms_value == {}:  # If energies not yet calculated
-            if self._structure is None or self._folding_metrics is None:
-                self._structure, self._folding_metrics = self.fold(folding_algorithm=folding_algorithm)
+            # Check if the output of the oracle is already calculated, otherwise calculate it
+            for name, output in self._oracles_output.items():
+                if output is None:
+                    self._oracles_output[ name ] = self.oracles[ name ].make_prediction( state = self )
 
             for term in self.energy_terms:
-                energy = term.compute(self._structure, self._folding_metrics)
+                energy = term.compute( self._oracles_output ) 
                 self._energy_terms_value[term.name] = energy
                 logger.debug(f'Energy term {term.name} has value {energy}')
 

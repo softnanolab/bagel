@@ -12,7 +12,7 @@ from .state import State
 from .chain import Chain, Residue
 from typing import Any
 from dataclasses import dataclass
-from .folding import FoldingAlgorithm
+#from .folding import FoldingAlgorithm
 from .constants import aa_dict
 from copy import deepcopy
 import pathlib as pl
@@ -41,9 +41,9 @@ class System:
             name=self.name,
         )
 
-    def get_total_energy(self, folding_algorithm: FoldingAlgorithm) -> float:
+    def get_total_energy(self) -> float:
         if self.total_energy is None:
-            self.total_energy = np.sum([state.get_energy(folding_algorithm) for state in self.states])
+            self.total_energy = np.sum([state.get_energy() for state in self.states])
         return self.total_energy
 
     def dump_logs(self, step: int, path: pl.Path, save_structure: bool = True) -> None:

@@ -8,7 +8,7 @@ Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
 
 import pathlib as pl
 from .system import System
-from .folding import FoldingAlgorithm
+#from .folding import FoldingAlgorithm
 from .mutation import MutationProtocol
 from abc import ABC, abstractmethod
 from typing import Callable, Any, NoReturn
@@ -31,7 +31,7 @@ class Minimizer(ABC):
     """Standard template for energy minimisation logic."""
 
     mutator: MutationProtocol
-    folder: FoldingAlgorithm
+    #folder: FoldingAlgorithm
     experiment_name: str
     log_frequency: int
     log_path: pl.Path | str | None = None
@@ -61,7 +61,7 @@ class Minimizer(ABC):
 
     def minimize_one_step(self, temperature: float, system: System) -> tuple[System, bool]:
         mutated_system, delta_energy = self.mutator.one_step(
-            folding_algorithm=self.folder,
+            #folding_algorithm=self.folder,
             system=system.__copy__(),
             old_system=system,
         )
@@ -133,7 +133,7 @@ class Minimizer(ABC):
 @dataclass
 class MonteCarlo(Minimizer):
     mutator: MutationProtocol
-    folder: FoldingAlgorithm
+    #folder: FoldingAlgorithm
     experiment_name: str
     log_frequency: int
     log_path: pl.Path | str | None = None
@@ -152,7 +152,7 @@ class MonteCarlo(Minimizer):
 
 @dataclass
 class SimulatedAnnealing(Minimizer):
-    folder: FoldingAlgorithm
+    #folder: FoldingAlgorithm
     mutator: MutationProtocol
     initial_temperature: float
     final_temperature: float
@@ -173,7 +173,7 @@ class SimulatedAnnealing(Minimizer):
         super().dump_logs(output_folder, step, **kwargs)
 
     def minimize_system(self, system: System) -> System:
-        system.get_total_energy(self.folder)  # update the energy internally
+        system.get_total_energy() # update the energy internally
         best_system = system.__copy__()
         assert best_system.total_energy is not None, 'Cannot start without best system has a calculated energy'
         self.logging_step(-1, system, best_system, False)
@@ -192,7 +192,7 @@ class SimulatedAnnealing(Minimizer):
 
 @dataclass
 class SimulatedTempering(Minimizer):
-    folder: FoldingAlgorithm
+    #folder: FoldingAlgorithm
     mutator: MutationProtocol
     high_temperature: float
     low_temperature: float
@@ -231,7 +231,7 @@ class SimulatedTempering(Minimizer):
         super().dump_logs(output_folder, step, **kwargs)
 
     def minimize_system(self, system: System) -> System:
-        system.get_total_energy(self.folder)  # update the energy internally
+        system.get_total_energy() # update the energy internally
         best_system = system.__copy__()
         assert best_system.total_energy is not None, 'Cannot start without best system has a calculated energy'
         self.logging_step(-1, system, best_system, False)
@@ -256,7 +256,7 @@ class SimulatedTempering(Minimizer):
 
 @dataclass
 class FlexibleMinimiser(Minimizer):
-    folder_schedule: Callable[[int], FoldingAlgorithm]
+    #folder_schedule: Callable[[int], FoldingAlgorithm]
     mutator: MutationProtocol
     temperature_schedule: Callable[[int], float]
     n_steps: int
@@ -266,14 +266,16 @@ class FlexibleMinimiser(Minimizer):
     log_path: pl.Path | str | None = None
 
     def minimize_system(self, system: System) -> System:
-        system.get_total_energy(self.folder)  # update the energy internally
+        raise NotImplementedError('Flexible minimizer DOES NOT work in new implementation with Oracles, yet')
+    
+        system.get_total_energy()  # update the energy internally
         best_system = system.__copy__()
         assert best_system.total_energy is not None, 'Cannot start without best system has a calculated energy'
         self.logging_step(-1, system, best_system, False)
         for step in range(self.n_steps):
             new_best = False
             temperature = self.temperature_schedule(step)
-            self.folder = self.folder_schedule(step)
+            #self.folder = self.folder_schedule(step)
             system, accept = self.minimize_one_step(temperature, system)
             assert system.total_energy is not None, 'Cannot minimize system before energy is calculated'
             if system.total_energy < best_system.total_energy:
