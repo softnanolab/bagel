@@ -143,9 +143,13 @@ class ESMFolder(FoldingAlgorithm):
         """
         Reduce ESMFoldOutput (from ModalFold) to a ESMFoldingMetrics object
         """
+        from bagel.constants import atom_order
+
+        # HACK: This is a hack to get the CA atoms
+        # TODO: Move upstream to ModalFold in version 0.0.11
         atoms = output.atom_array
         metrics = ESMFoldingMetrics(
-            local_plddt=output.plddt,
+            local_plddt=output.plddt[..., atom_order['CA']],
             ptm=output.ptm,
             pae=output.predicted_aligned_error,
         )
