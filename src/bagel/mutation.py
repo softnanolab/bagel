@@ -96,11 +96,9 @@ class Canonical(MutationProtocol):
     # TODO default factory fix
     def __init__(
         self,
-        chemical_potential: float = 0.0,
         n_mutations: int = 1,
         mutation_bias: Dict[str, float] = mutation_bias_no_cystein,
     ):
-        self.chemical_potential = chemical_potential
         self.n_mutations = n_mutations
         self.mutation_bias = mutation_bias
 
@@ -112,14 +110,13 @@ class Canonical(MutationProtocol):
             self.mutate_random_residue(chain=chain)
         self.reset_system(system=system)  # Reset the system so it knows it must recalculate fold and energy
         delta_energy = system.get_total_energy(folding_algorithm) - old_system.get_total_energy(folding_algorithm)
-        return system, delta_energy, 0.0
+        return system, delta_energy
 
 
 class GrandCanonical(MutationProtocol):
     # TODO default factory fix
     def __init__(
         self,
-        chemical_potential: float = 0.0,
         n_mutations: int = 1,
         mutation_bias: Dict[str, float] = mutation_bias_no_cystein,
         move_probabilities: dict[str, float] = {
@@ -130,7 +127,6 @@ class GrandCanonical(MutationProtocol):
     ):
         self.n_mutations = n_mutations
         self.mutation_bias = mutation_bias
-        self.chemical_potential = chemical_potential
         self.move_probabilities = move_probabilities
         # Check that no probabilities are negative
         if any([prob < 0 for prob in self.move_probabilities.values()]):
@@ -194,9 +190,8 @@ class GrandCanonical(MutationProtocol):
 
         self.reset_system(system=system)  # Reset the system so it knows it must recalculate fold and energy
         delta_energy = system.get_total_energy(folding_algorithm) - old_system.get_total_energy(folding_algorithm)
-        delta_chemical = system.chemical_potential_contribution() - old_system.chemical_potential_contribution()
 
-        return system, delta_energy, delta_chemical
+        return system, delta_energy
 
 
 @dataclass

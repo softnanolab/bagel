@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class State:
     """
-    A State is a multimeric collection of :class:`.Chain` objects with associated :class:`.EnergyTerm` objects and chemical potential.
+    A State is a multimeric collection of :class:`.Chain` objects with associated :class:`.EnergyTerm` objects.
     Chains can be independent of other States, or be shared between multiple States.
 
     Parameters
@@ -38,8 +38,6 @@ class State:
         Collection of EnergyTerms that define the State.
     energy_terms_weights : List[float] # TODO: this will be moved into EnergyTerms
         Weights for each EnergyTerm.
-    chemical_potential : Optional[float], optional
-        Chemical potential value for this state. Default is None.
 
     Attributes
     ----------
@@ -57,7 +55,6 @@ class State:
     chains: List[Chain]  # This is a list of single monomeric chains
     energy_terms: List[EnergyTerm]
     energy_terms_weights: List[float]
-    chemical_potential: Optional[float] = None
     _energy: Optional[float] = field(default=None, init=False)
     _structure: AtomArray = field(default=None, init=False)
     _folding_metrics: Optional[FoldingMetrics] = field(default=None, init=False)
@@ -82,7 +79,7 @@ class State:
         return self._structure, self._folding_metrics
 
     def get_energy(self, folding_algorithm: FoldingAlgorithm) -> float:
-        """Calculate energy of state using energy terms (not including chemical potential)."""
+        """Calculate energy of state using energy terms ."""
         if self._energy_terms_value == {}:  # If energies not yet calculated
             if self._structure is None or self._folding_metrics is None:
                 self._structure, self._folding_metrics = self.fold(folding_algorithm=folding_algorithm)
@@ -115,9 +112,6 @@ class State:
     def total_residues(self) -> int:
         return sum([len(chain.residues) for chain in self.chains])
 
-    def get_chemical_potential_contribution(self) -> float:
-        """Calculate the size contribution to the grand canonical energy of the state."""
-        return 0.0 if self.chemical_potential is None else self.chemical_potential * self.total_residues()
 
     def remove_residue_from_all_energy_terms(self, chain_ID: str, residue_index: int) -> None:
         """Remove the residue from the energy terms associated to it in the current state."""

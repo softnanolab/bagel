@@ -117,7 +117,7 @@ def test_system_get_total_loss_gives_correct_output(mixed_system: bg.System) -> 
     for state in mixed_system.states:
         state.get_energy = Mock()  # disable method for easier testing
     total_loss = mixed_system.get_total_loss(folding_algorithm=None)
-    # state 0: energy=-0.5, chem_potential=1.0, n_residues=3. state 1: energy=0.1, chem_potential=2.0, n_residues=7
+    # state 0: energy=-0.5, state 1: energy=0.1
     assert np.isclose(
-        total_loss, (-0.5 + 1 * 3 + 0.1 + 2 * 7)
-    )  # system loss is sum of state energies + chemical potentials contribution
+        total_loss, (-0.5 + 0.1 )
+    )  # system loss is sum of state energies  

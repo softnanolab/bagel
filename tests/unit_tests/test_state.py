@@ -17,12 +17,6 @@ def test_state_calculate_internal_structure_and_energies_method_outputs_correct_
     )
 
 
-def test_state_chemical_potential_energy_outputs_correct_value(mixed_structure_state: bg.State) -> None:
-    # this state has chain lengths of [4, 1, 2] and a  a chemical potential of 2.0
-    mixed_structure_state.chemical_potential = 2.0
-    assert np.isclose(mixed_structure_state.get_chemical_potential_contribution(), 14.0)
-
-
 def test_state_remove_residue_from_all_energy_terms_removes_correct_residue(mixed_structure_state: bg.State) -> None:
     mixed_structure_state.chains[2].remove_residue(index=2)
     mixed_structure_state.remove_residue_from_all_energy_terms(chain_ID='E', residue_index=2)
