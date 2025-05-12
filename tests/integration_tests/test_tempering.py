@@ -1,6 +1,7 @@
 import pathlib as pl
 import bagel as bg
 
+TTT = 10.0**20
 
 # ? Could this not just be a mutation unit test?
 def test_tempering_does_not_mutate_immutable_residues(folder: bg.folding.ESMFolder, test_log_path: pl.Path) -> None:
@@ -19,7 +20,7 @@ def test_tempering_does_not_mutate_immutable_residues(folder: bg.folding.ESMFold
     minimizer = bg.minimizer.SimulatedTempering(
         folder=folder,
         mutator=bg.mutation.Canonical(),
-        high_temperature=1000.0,  # Ensures any mutation is accepted
+        high_temperature=TTT,  # Ensures any mutation is accepted
         low_temperature=0.001,
         n_steps_high=3,
         n_steps_low=2,

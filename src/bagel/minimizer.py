@@ -59,6 +59,9 @@ class Minimizer(ABC):
         """
         raise NotImplementedError('This method should be implemented by the subclass')
 
+    def minimize_one_step(self, temperature: float, system: System) -> tuple[System, bool]:
+        raise NotImplementedError('This method should be implemented by the subclass')
+
     def initialise_log_path(self, log_path: None | str | pl.Path) -> pl.Path:
         """
         Creates folder next to the .py script run named the <self.experiment_name>. Said folder cannot already exist.
@@ -135,13 +138,13 @@ class MonteCarloMinimizer(Minimizer):
         pass
 
     def minimize_one_step(self, temperature: float, system: System) -> tuple[System, bool]:
-        mutated_system, delta_energy, delta_chemical = self.mutator.one_step(
+        mutated_system, delta_energy = self.mutator.one_step(
             folding_algorithm=self.folder,
             system=system.__copy__(),
             old_system=system,
         )
-        acceptance_probability = np.exp(-(delta_energy + delta_chemical) / temperature)
-        logger.debug(f'{delta_energy=}, {delta_chemical=}, {acceptance_probability=}')
+        acceptance_probability = np.exp(-delta_energy / temperature)
+        logger.debug(f'{delta_energy=}, {acceptance_probability=}')
         accept = False
         if acceptance_probability > np.random.uniform(low=0.0, high=1.0):
             accept = True

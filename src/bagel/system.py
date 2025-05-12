@@ -46,19 +46,13 @@ class System:
             self.total_energy = np.sum([state.get_energy(folding_algorithm) for state in self.states])
         return self.total_energy
 
-    def get_total_loss(self, folding_algorithm: FoldingAlgorithm) -> float:
-        if self.total_energy is None:
-            self.total_energy = np.sum([state.get_energy(folding_algorithm) for state in self.states])
-        self.total_loss = self.total_energy + self.chemical_potential_contribution()
-        return self.total_loss
-
     def dump_logs(self, step: int, path: pl.Path, save_structure: bool = True) -> None:
         r"""
         Saves logging information for the system under the given directory path. This folder contains:
 
         - a CSV file named 'energies.csv'. Columns include 'step', '\<state.name\>_\<energy.name\>' for all energies,
-          '\<state.name\>_chemical_potential_energy', '\<state.name\>_energy' and 'system_energy'. Note the final
-          column is the sum of the mean weighted energies and the chemical potential energies of each state.
+          '\<state.name\>_energy' and 'system_energy'. Note the final
+          column is the sum of the mean weighted energies of each state.
         - a FASTA file for all sequences named '\<state.name\>.fasta'. Each header is the sequence's step and each
           sequence is a string of amino acid letters with : seperating each chain.
         - a further directory named 'structures' containing all CIF files. Files are named '\<state.name>_\<step>.cif'
@@ -152,6 +146,3 @@ class System:
         # Add the chain to the states it is part of
         for st_idx in state_index:
             self.states[st_idx].chains.append(new_chain)
-
-    def chemical_potential_contribution(self) -> float:
-        return sum([state.get_chemical_potential_contribution() for state in self.states])
