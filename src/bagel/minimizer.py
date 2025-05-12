@@ -31,7 +31,6 @@ class Minimizer(ABC):
     """Standard template for energy minimisation logic."""
 
     mutator: MutationProtocol
-    #folder: FoldingAlgorithm
     experiment_name: str
     log_frequency: int
     log_path: pl.Path | str | None = None
@@ -61,7 +60,6 @@ class Minimizer(ABC):
 
     def minimize_one_step(self, temperature: float, system: System) -> tuple[System, bool]:
         mutated_system, delta_energy = self.mutator.one_step(
-            #folding_algorithm=self.folder,
             system=system.__copy__(),
             old_system=system,
         )
@@ -133,7 +131,6 @@ class Minimizer(ABC):
 @dataclass
 class MonteCarlo(Minimizer):
     mutator: MutationProtocol
-    #folder: FoldingAlgorithm
     experiment_name: str
     log_frequency: int
     log_path: pl.Path | str | None = None
@@ -152,7 +149,6 @@ class MonteCarlo(Minimizer):
 
 @dataclass
 class SimulatedAnnealing(Minimizer):
-    #folder: FoldingAlgorithm
     mutator: MutationProtocol
     initial_temperature: float
     final_temperature: float
@@ -192,7 +188,6 @@ class SimulatedAnnealing(Minimizer):
 
 @dataclass
 class SimulatedTempering(Minimizer):
-    #folder: FoldingAlgorithm
     mutator: MutationProtocol
     high_temperature: float
     low_temperature: float
@@ -256,7 +251,6 @@ class SimulatedTempering(Minimizer):
 
 @dataclass
 class FlexibleMinimiser(Minimizer):
-    #folder_schedule: Callable[[int], FoldingAlgorithm]
     mutator: MutationProtocol
     temperature_schedule: Callable[[int], float]
     n_steps: int
@@ -275,7 +269,6 @@ class FlexibleMinimiser(Minimizer):
         for step in range(self.n_steps):
             new_best = False
             temperature = self.temperature_schedule(step)
-            #self.folder = self.folder_schedule(step)
             system, accept = self.minimize_one_step(temperature, system)
             assert system.total_energy is not None, 'Cannot minimize system before energy is calculated'
             if system.total_energy < best_system.total_energy:

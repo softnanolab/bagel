@@ -540,6 +540,8 @@ class RingSymmetryEnergy(EnergyTerm):
 
     def __init__(
         self,
+        oracle_name: str,
+        input_key: str,
         symmetry_groups: list[list[Residue]],
         direct_neighbours_only: bool = False,
         inheritable: bool = True,
@@ -558,14 +560,15 @@ class RingSymmetryEnergy(EnergyTerm):
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
         """
-        super().__init__(name='ring_symmetry', oracle_name='FoldingOracle')
+        super().__init__( oracle_name, input_key = input_key, name='ring_symmetry')
         self.name = f'{"neighbour_" if direct_neighbours_only else ""}ring_symmetry'
         self.inheritable = inheritable
         assert (len(symmetry_groups) > 1) and (len(symmetry_groups[0]) >= 1), 'Multiple symmetry groups required.'
         self.residue_groups = [residue_list_to_group(symmetry_group) for symmetry_group in symmetry_groups]
         self.direct_neighbours_only: bool = direct_neighbours_only
 
-    def compute(self, structure: AtomArray, folding_metrics: FoldingMetrics) -> float:
+    def compute(self, oracles_output : dict ) -> float:
+        structure = oracles_output[self.oracle_name][self.input_key]
         num_groups = len(self.residue_groups)
         centroids = np.zeros(shape=(num_groups, 3))
         backbone_mask = np.isin(structure.atom_name, backbone_atoms)
@@ -594,6 +597,8 @@ class SeparationEnergy(EnergyTerm):
 
     def __init__(
         self,
+        oracle_name: str,
+        input_key: str,
         group_1_residues: list[Residue],
         group_2_residues: list[Residue],
         normalize: bool = True,
@@ -614,13 +619,14 @@ class SeparationEnergy(EnergyTerm):
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
         """
-        super().__init__(name='separation', oracle_name='FoldingOracle')
+        super().__init__( oracle_name, input_key = input_key, name='separation' )
         self.name = f'{"normalized_" if normalize else ""}separation'
         self.inheritable = inheritable
         self.residue_groups = [residue_list_to_group(group_1_residues), residue_list_to_group(group_2_residues)]
         self.normalize = normalize
 
-    def compute(self, structure: AtomArray, folding_metrics: FoldingMetrics) -> float:
+    def compute(self, oracles_output : dict ) -> float:
+        structure = oracles_output[self.oracle_name][self.input_key]
         backbone_mask = np.isin(structure.atom_name, backbone_atoms)
         group_1_mask = self.get_atom_mask(structure, residue_group_index=0)
         group_2_mask = self.get_atom_mask(structure, residue_group_index=1)
@@ -646,7 +652,12 @@ class GlobularEnergy(EnergyTerm):
     be as close as possible to a spherically distributed cloud of points.
     """
 
-    def __init__(self, residues: list[Residue] | None = None, normalize: bool = True, inheritable: bool = True) -> None:
+    def __init__(self, 
+                oracle_name: str,
+                input_key: str,
+                residues: list[Residue] | None = None, 
+                normalize: bool = True, 
+                inheritable: bool = True) -> None:
         """
         Initialises globular energy class.
 
@@ -660,13 +671,14 @@ class GlobularEnergy(EnergyTerm):
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
         """
-        super().__init__(name='globular', oracle_name='FoldingOracle')
+        super().__init__( oracle_name, input_key = input_key, name='globular')
         self.name = f'{"normalized_" if normalize else ""}globular'
         self.inheritable = inheritable
         self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
         self.normalize = normalize
 
-    def compute(self, structure: AtomArray, folding_metrics: FoldingMetrics) -> float:
+    def compute(self, oracles_output:dict ) -> float:
+        structure = oracles_output[self.oracle_name][self.input_key]
         backbone_mask = np.isin(structure.atom_name, backbone_atoms)
         if len(self.residue_groups) > 0:
             selected_mask = self.get_atom_mask(structure, residue_group_index=0)
@@ -691,6 +703,8 @@ class TemplateMatchEnergy(EnergyTerm):
 
     def __init__(
         self,
+        oracle_name: str,
+        input_key: str,
         template_atoms: AtomArray,
         residues: list[Residue],
         backbone_only: bool = False,
@@ -712,7 +726,7 @@ class TemplateMatchEnergy(EnergyTerm):
             the two pairwise distance matrices. By default, the root mean square of the difference in positions is used
             instead.
         """
-        super().__init__(name='template_match', oracle_name='FoldingOracle')
+        super().__init__( oracle_name, input_key = input_key, name='template_match')
         self.name = f'{"backbone_" if backbone_only else ""}template_match'
         self.residue_groups = [residue_list_to_group(residues)]
         self.template_atoms = template_atoms
@@ -720,7 +734,8 @@ class TemplateMatchEnergy(EnergyTerm):
         self.distogram_separation = distogram_separation
         self.inheritable = False
 
-    def compute(self, structure: AtomArray, folding_metrics: FoldingMetrics) -> float:
+    def compute(self, oracles_output:dict ) -> float:
+        structure = oracles_output[self.oracle_name][self.input_key]
         structure_atoms = structure[self.get_atom_mask(structure, residue_group_index=0)]
         template_atoms = self.template_atoms
         if self.backbone_only:
@@ -753,7 +768,12 @@ class SecondaryStructureEnergy(EnergyTerm):
     beta-sheet, and coil.
     """
 
-    def __init__(self, residues: list[Residue], target_secondary_structure: str, inheritable: bool = True) -> None:
+    def __init__(self, 
+                oracle_name: str,
+                input_key: str,
+                residues: list[Residue], 
+                target_secondary_structure: str, 
+                inheritable: bool = True) -> None:
         """
         Initialises the secondary structure energy class.
 
@@ -767,7 +787,7 @@ class SecondaryStructureEnergy(EnergyTerm):
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
         """
-        super().__init__(name='secondary_structure', oracle_name='FoldingOracle')
+        super().__init__( oracle_name, input_key = input_key, name='secondary_structure')
         self.name = f'{target_secondary_structure.lower()}'
         self.inheritable = inheritable
         self.residue_groups = [residue_list_to_group(residues)]
@@ -775,7 +795,8 @@ class SecondaryStructureEnergy(EnergyTerm):
         assert target_secondary_structure in options, f'{target_secondary_structure} not recognised. options: {options}'
         self.target_secondary_structure = target_secondary_structure
 
-    def compute(self, structure: AtomArray, folding_metrics: FoldingMetrics) -> float:
+    def compute(self, oracles_output:dict ) -> float:
+        structure = oracles_output[self.oracle_name][self.input_key]
         target_label = self.target_secondary_structure[0]  # How Biotite labels secondary structures
         calculated_labels = annotate_sse(structure)
         selection_mask = self.get_residue_mask(structure, residue_group_index=0)
@@ -797,6 +818,8 @@ class EllipsoidEnergy(EnergyTerm):
 
     def __init__(
         self,
+        oracle_name: str,
+        input_key: str,
         aspect_ratio: tuple[float, float, float],
         k_attractive: float = 1.0,
         k_repulsive: float = 10.0,
@@ -815,7 +838,7 @@ class EllipsoidEnergy(EnergyTerm):
             Constant of proportionality for the recipricol exponential type repulsive energy that evenly distributes
             all backbone atoms within the ellipsoid volume.
         """
-        super().__init__(name='ellipsoid', oracle_name='FoldingOracle')
+        super().__init__( oracle_name, input_key = input_key, name='ellipsoid')
         self.name = 'ellipsoid'
         self.inheritable = True  # always considers all residues in structure
         self.residue_groups = []
@@ -827,7 +850,13 @@ class EllipsoidEnergy(EnergyTerm):
         self.aspect_ratio /= np.prod(self.aspect_ratio) ** (1 / 3)  # ensures product of aspect ratios equals 1
         warnings.warn('This energy is yet to have any unit tests and is not guaranteed to work')
 
-    def compute(self, structure: AtomArray, folding_metrics: FoldingMetrics) -> float:
+    def compute( self, oracles_output:dict ) -> float:
+        structure = oracles_output[self.oracle_name][self.input_key]
+        atoms = structure[np.isin(structure.atom_name, backbone_atoms)]
+
+        # transforming to principle component axes
+        centered_coords = atoms.coord - np.mean(atoms.coord, axis=0, keepdims=True)
+        variances, basis_vectors = np.linalg.eigh(np.cov(centered_coords, rowvar=False))        
         atoms = structure[np.isin(structure.atom_name, backbone_atoms)]
 
         # transforming to principle component axes
@@ -872,6 +901,8 @@ class CuboidEnergy(EnergyTerm):
 
     def __init__(
         self,
+        oracle_name: str,
+        input_key: str,
         aspect_ratio: tuple[float, float, float],
         k_attractive: float = 1.0,
         k_repulsive: float = 10.0,
@@ -894,7 +925,7 @@ class CuboidEnergy(EnergyTerm):
             A metric for how sharp the coreners of the cuboid should ideally be. The higher the value, the closer to a
             perfect right angled vertex.
         """
-        super().__init__(name='cuboid', oracle_name='FoldingOracle')
+        super().__init__( oracle_name, input_key = input_key, name='cuboid')
         #self.name = 'cuboid'
         self.inheritable = True  # always considers all residues in structure
         self.residue_groups = []
@@ -907,7 +938,8 @@ class CuboidEnergy(EnergyTerm):
         self.aspect_ratio /= np.prod(self.aspect_ratio) ** (1 / 3)  # ensures product of aspect ratios equals 1
         warnings.warn('This energy is yet to have any unit tests and is not guaranteed to work')
 
-    def compute(self, structure: AtomArray, folding_metrics: FoldingMetrics) -> float:
+    def compute(self, oracles_output:dict ) -> float:
+        structure = oracles_output[self.oracle_name][self.input_key]
         atoms = structure[np.isin(structure.atom_name, backbone_atoms)]
 
         # transforming to principle component axes
