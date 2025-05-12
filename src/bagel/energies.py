@@ -15,6 +15,7 @@ from .chain import Residue
 from .folding import FoldingMetrics
 import warnings
 import pandas as pd
+from torch import Functional as F
 
 
 # first row is chain_ids and second row is corresponding residue indices.
@@ -969,3 +970,53 @@ class CuboidEnergy(EnergyTerm):
 
         self.value = attractive_energy + repulsive_energy
         return self.value
+
+class EmbeddingsSimilarityEnergy(EnergyTerm):
+    """
+    Energy terms measuring the cosine similarity between current embeddings and embeddings of a template.
+    See paper: Rajendran et al 2025 - to be published
+    """
+
+    def __init__(self, oracle_name: str, 
+                residues: list[Residue],
+                reference_embeddings: Tensor,
+                conserved_residues_map: Tensor,
+                input_key: str = "embeddings",  
+                inheritable: bool = True,
+                ) -> None:
+        """Initialises EmbeddingsSimilarityEnergy class.
+
+        Parameters
+        ----------
+        residues: list[Residue]
+            Which residues to include in the calculation.
+        inheritable: bool, default=True
+            If a new residue is added next to a residue included in this energy term, this dictates whether that new
+            residue could then be added to this energy term.
+        """
+        super().__init__( oracle_name=oracle_name, 
+                        name='embeddings_similarity', 
+                        input_key = input_key )
+        self.residue_groups = [residue_list_to_group(residues)]
+        self.reference_embeddings = reference_embeddings
+        self.conserved_residues_map = conserved_residues_map 
+        self.inheritable = inheritable
+        assert self.reference_embeddings.shape[0] == len(self.conserved_residues_map), f'Conserved residues map {self.conserved_residues_map} does not match reference embeddings {self.reference_embeddings.shape}'
+
+    def compute(self, oracles_output: dict) -> float:
+        embeddings = oracles_output[self.oracle_name][self.input_key]
+        assert isinstance( embeddings, Tensor ), f'Embeddings is expected to be a torch tensor...but is type: {type(embeddings)}'
+        assert len(embeddings.shape) == 2, f'Embeddings is expected to be a 2D tensor...but is shape: {embeddings.shape}. This does not work with batches.'
+        assert embeddings.shape[0] == len(self.residue_groups[0]), f'Embeddings shape {embeddings.shape} does not match residue groups {self.residue_groups[0]}'
+        
+        #The following generate a 2D tensor of shape (n_conserved_residues, n_features)
+        conserved_embeddings = embeddings[ self.conserved_residues_map ]
+
+        assert conserved_embeddings.shape == self.reference_embeddings.shape, f'Conserved embeddings shape {conserved_embeddings.shape} does not match reference embeddings {self.reference_embeddings.shape}'
+        #The following generates a 1D tensor of shape (n_conserved_residues)
+        with torch.no_grad():
+            cosine = F.cosine_similarity( conserved_embeddings, self.reference_embeddings, dim=1 )
+
+        self.value = 1.0 - torch.mean( cosine )
+        return self.value
+
