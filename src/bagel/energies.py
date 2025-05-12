@@ -980,17 +980,25 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
     def __init__(self, oracle_name: str, 
                 residues: list[Residue],
                 reference_embeddings: Tensor,
-                conserved_residues_map: Tensor,
+                conserved_residues_map: list[int],
                 input_key: str = "embeddings",  
-                inheritable: bool = True,
+                inheritable: bool = False,
                 ) -> None:
         """Initialises EmbeddingsSimilarityEnergy class.
 
         Parameters
         ----------
+        oracle_name: str
+            The name of the oracle (protein language model here) that will be used to calculate the embeddings.
         residues: list[Residue]
             Which residues to include in the calculation.
-        inheritable: bool, default=True
+        reference_embeddings: Tensor
+            The reference embeddings to compare to.
+        conserved_residues_map: list[int]
+            A list with the residue indices whose embeddings should be extracted from the pLM returned by the protein 
+            language model to be compared to the reference embeddings.
+        input_key: str, default="embeddings"
+        inheritable: bool, default=False
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
         """
@@ -1019,4 +1027,3 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
 
         self.value = 1.0 - torch.mean( cosine )
         return self.value
-
