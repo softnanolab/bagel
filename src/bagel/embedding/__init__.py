@@ -1,4 +1,4 @@
-from .base import FoldingAlgorithm, FoldingMetrics
-from .esmfold import ESMFolder, ESMFoldingMetrics
+from .base import ProteinLanguageModel
+from .esm2 import ESM2, ESM2Output
 
-__all__ = ['FoldingAlgorithm', 'FoldingMetrics', 'ESMFolder', 'ESMFoldingMetrics']
+__all__ = [ 'ProteinLanguageModel', "ESM2", "ESM2Output" ]

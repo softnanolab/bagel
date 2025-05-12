@@ -1,7 +1,7 @@
 from abc import ABC, dataclass, abstractmethod
 from typing import List
 from pydantic import BaseModel
-from torch import nn, Tensor
+from torch import nn.Module, Tensor
 from typing import Optional
 import logging
 
@@ -15,8 +15,8 @@ class ProteinLanguageModel(ABC):
     An Embedding is a N_residues x N_features matrix that contains the embeddings of the residues in the state.
     """
     name: str
-    model : nn
-    
+    model : nn.Module
+
     @abstractmethod
     def _load(self) -> None:
         """
