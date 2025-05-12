@@ -15,7 +15,7 @@ keywords = ["protein", "protein design", "optimisation", "drug", "binder"]
 requires-python = ">=3.12"
 dependencies = [
     "biotite>=1.0.1",
-    "modalfold==0.0.11",
+    "modalfold==0.0.12",
     "numpy>=2.2.0",
     "pandas>=2.2.3",
     "pydantic>=2.10.6",

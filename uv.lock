@@ -172,7 +172,7 @@ local = [
 requires-dist = [
     { name = "biotite", specifier = ">=1.0.1" },
     { name = "ipykernel", marker = "extra == 'dev'", specifier = ">=6.29.5" },
-    { name = "modalfold", specifier = "==0.0.10" },
+    { name = "modalfold", specifier = "==0.0.12" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.14.1" },
     { name = "numpy", specifier = ">=2.2.0" },
     { name = "pandas", specifier = ">=2.2.3" },
@@ -788,7 +788,7 @@ wheels = [
 
 [[package]]
 name = "modalfold"
-version = "0.0.10"
+version = "0.0.12"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "biotite" },
@@ -800,9 +800,9 @@ dependencies = [
     { name = "pytest-xdist" },
     { name = "torch" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6c/88/ef811e30d62e881c763265674875e6f76a7e56ab6e82008ccbe6dcc081f1/modalfold-0.0.10.tar.gz", hash = "sha256:4b460c194965d60f6b3653c15303667d42fe41daacf4e11045a0574247c61242", size = 109298, upload_time = "2025-03-19T12:47:06.724Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/40/9f/e21929fe36e375cf4497785864f67c558db6563a0b349eb8403def5f625b/modalfold-0.0.12.tar.gz", hash = "sha256:8542add3d13752c0592db46b43ccb84c047bf1d140d3160fa00916ca64b14091", size = 110269, upload_time = "2025-05-07T19:04:34.457Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/21/ba/319814ca0af4d24d51e3d9bc8eb23fcea22dc94500f79c910b34fec80f5f/modalfold-0.0.10-py3-none-any.whl", hash = "sha256:e74c973ccf327c17aed0e2505f1976b0b4ffdf30a1344caf40428abeab4aa68b", size = 15441, upload_time = "2025-03-19T12:47:05.461Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/33/353d27888a440011c2519879919adbd4a5c75e76db7cc61043618ce4aa43/modalfold-0.0.12-py3-none-any.whl", hash = "sha256:4e7af04875a8ab2e920f824a022ae9a7a0d0bf658ab02494c096078991675409", size = 15740, upload_time = "2025-05-07T19:04:33.055Z" },
 ]
 
 [[package]]

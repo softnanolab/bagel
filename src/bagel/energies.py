@@ -135,6 +135,7 @@ class OneBodyEnergyTerm(EnergyTerm):
         # TODO: add a specific check for the 1-body term
         raise NotImplementedError
 
+
 class TwoBodyEnergyTerm(EnergyTerm):
     """
     Assertions to add: no residue group.
@@ -144,13 +145,14 @@ class TwoBodyEnergyTerm(EnergyTerm):
         # TODO: add a specific check for the 2-body term
         raise NotImplementedError
 
+
 # n-body terms
 # 1) zero body terms will be explicit from an empty list in one-body terms (all one-body terms can effectively be global)
 # 2) one body term
 # 3) two body term, requires to have two lists of residue groups
 
 
-class PLDDTEnergy(EnergyTerm): # 1-body term
+class PLDDTEnergy(EnergyTerm):  # 1-body term
     """
     Predicted Template Modelling score energy. This is a measure of how confident the folding model is in its overall
     structure prediction. This translates to how similar a sequence's structure is to the low energy structures the
@@ -173,7 +175,7 @@ class PLDDTEnergy(EnergyTerm): # 1-body term
         return self.value
 
 
-class PLDDTEnergy(EnergyTerm): # 1-body term
+class PLDDTEnergy(EnergyTerm):  # 1-body term
     """
     Predicted Local Distance Difference Test energy. This is the spread of the predicted separation between an atom and
     each of its nearest neighbours. This translates to how confident the model is that the sequence has a single lowest
@@ -204,7 +206,7 @@ class PLDDTEnergy(EnergyTerm): # 1-body term
         return self.value
 
 
-class OverallPLDDTEnergy(EnergyTerm): # 1-body term
+class OverallPLDDTEnergy(EnergyTerm):  # 1-body term
     """
     Overall Predicted Local Distance Difference Test energy. This is the spread of the predicted separation between an
     atom and each of its nearest neighbours. This translates to how confident the model is that the sequence has a
@@ -323,7 +325,7 @@ class HydrophobicEnergy(EnergyTerm):
         return self.value
 
 
-class PAEEnergy(EnergyTerm): # 2-body term
+class PAEEnergy(EnergyTerm):  # 2-body term
     """
     Energy that drives down the uncertainty in the predicted distances between two groups of residues. This uncertainty
     is measured by calculating the average normalised predicted alignment error of all the relevant residue pairs.
@@ -381,7 +383,7 @@ class PAEEnergy(EnergyTerm): # 2-body term
         return self.value
 
 
-class PAEEnergyV2(EnergyTerm): # 2-body term
+class PAEEnergyV2(EnergyTerm):  # 2-body term
     """
     Energy that drives down the uncertainty in the predicted distances between two groups of residues. This uncertainty
     is measured by calculating the average normalised predicted alignment error of all the relevant residue pairs.
