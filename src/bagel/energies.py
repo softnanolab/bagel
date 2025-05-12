@@ -152,7 +152,7 @@ class TwoBodyEnergyTerm(EnergyTerm):
 # 3) two body term, requires to have two lists of residue groups
 
 
-class PLDDTEnergy(EnergyTerm):  # 1-body term
+class PTMEnergy(EnergyTerm):  # 1-body term
     """
     Predicted Template Modelling score energy. This is a measure of how confident the folding model is in its overall
     structure prediction. This translates to how similar a sequence's structure is to the low energy structures the
@@ -190,18 +190,18 @@ class ChemicalPotentialEnergy(EnergyTerm):
         self.name = 'chem_pot'
         self.inheritable = True
         self.residue_groups = []
-	self.power = power 
+        self.power = power 
         self.target_size = target_size
         self.chemical_potential = chemical_potential 
 
     def compute(self, structure: AtomArray, folding_metrics: FoldingMetrics) -> float:
         assert isinstance(structure, AtomArray), 'structure should be an AtomArray object but is not {type(structure)}'
 
-	# The following works even if some residues have the same number but different chain IDs because res_ids 
-	# actually returns a list of tuples ( chain_id, res_id ) 
-	res_ids = structure.get_res_id(structure)
-	unique_res_ids = set(res_ids)
-	num_residues = len(unique_res_ids)
+        # The following works even if some residues have the same number but different chain IDs because res_ids 
+        # actually returns a list of tuples ( chain_id, res_id ) 
+        res_ids = structure.get_res_id(structure)
+        unique_res_ids = set(res_ids)
+        num_residues = len(unique_res_ids)
 
         self.value = self.chemical_potential * ( abs( num_residues - self.target_size ) )**self.power
 
