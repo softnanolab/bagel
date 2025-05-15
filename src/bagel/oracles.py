@@ -32,10 +32,7 @@ class Oracle:
 
     Parameters
     ----------
-    name : str
-        Unique identifier for this Oracle.
     """
-    name: str
 
     def __post_init__(self) -> None:
         """Sanity check."""
@@ -71,7 +68,7 @@ class FoldingOracle(Oracle):
         structure, folding_metrics = self.folding_algorithm.fold( chains = state.chains )
         return structure, folding_metrics
     
-class EmbeddingsOracle(Oracle):
+class EmbeddingOracle(Oracle):
     """
     A ESM2 is a specific type of Oracle that uses the ESM2 protein Language Model to predict the residues' embeddings 
     Parameters        
