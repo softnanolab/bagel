@@ -52,27 +52,12 @@ def run_simple_binder() -> Any:
 
     # Define the energy terms to be applied to the chain. apply them to residues, and specify the weight
     energy_terms = [
-        bg.energies.PTMEnergy(
-            oracle=esmfold,
-            weight=1.0,
-        ),
-        bg.energies.OverallPLDDTEnergy(
-            oracle=esmfold,
-            weight=1.0,
-        ),
-        bg.energies.HydrophobicEnergy(
-            oracle=esmfold,
-            weight=5.0,
-        ),
+        bg.energies.PTMEnergy(),
+        bg.energies.OverallPLDDTEnergy(),
+        bg.energies.HydrophobicEnergy(),
         bg.energies.PAEEnergy(
-            oracle=esmfold,
-            residues=[residues_hotspot, residues_binder],
-            weight=5.0,
-        ),
-        bg.energies.SeparationEnergy(
-            oracle=esmfold,
-            residues=[residues_hotspot, residues_binder],
-            weight=1.0,
+            group_1_residues=residues_hotspot,
+            group_2_residues=residues_binder,
         ),
     ]
 
@@ -90,13 +75,17 @@ def run_simple_binder() -> Any:
     # Simulated tempering does n_steps_low at a low temperature (enhancing local minimization),
     # and n_steps_high at a high temperature (exploring the space)
     minimizer = bg.minimizer.SimulatedTempering(
-        mutator=bg.mutation.Canonical(n_mutations=1), # cannot add/remove residues, only substitutes for different amino acid types
-        high_temperature=2,
+        folder=esmfold,
+        mutator=bg.mutation.Canonical(n_mutations=1),
+        high_temperature=1.0,
         low_temperature=0.1,
-        n_cycles=10,
-        n_steps_low=100,
         n_steps_high=20,
-        log_frequency=50,
+        n_steps_low=100,
+        n_cycles=2,
+        preserve_best_system=True,
+        log_frequency=5,
+        experiment_name='simple_binder',
+        log_path='logs/simple_binder.log',
     )
 
     best_system = minimizer.minimize_system(system=initial_system)
