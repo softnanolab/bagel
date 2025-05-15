@@ -114,5 +114,11 @@ class ESM2(ProteinLanguageModel):
         """
         #! @JAKUB: Not sure this is correct, I think this only works if N_batch = 1, I made an assertion for that 
         assert output["last_hidden_state"].shape[0] == 1, f"Return next only works correctly for batch of size 1, got {len(output['last_hidden_state'].shape)}D tensor"
-        
-        return output["last_hidden_state"].reshape(-1, output["last_hidden_state"].shape[-1]) 
+
+        #Return the embeddings as a 2D tensor of size N_residues x N_features
+        embedding = output["last_hidden_state"].reshape(-1, output["last_hidden_state"].shape[-1])
+        #Remove first and last since these are not residues but embedding of the start and end of the sequence
+        embedding = embedding[1:-1]
+        #Make it into a numpy array 
+        embedding.detach().numpy()
+        return embedding
