@@ -94,12 +94,12 @@ class ESM2(ProteinLanguageModel):
         
         #! @JAKUB: This requires implementing ESM2 in ModalFold
         if self.use_modal:
-            return self._reduce_output(self._remote_embeddings(self._pre_process(state.chains)))
+            return self._post_process(self._remote_embeddings(self._pre_process(state.chains)))
         else:
             logger.info('Given that use_modal is False, trying to fold with ESMFold locally...')
             logger.info('Assuming that all packages are available locally...')
             # TODO: Hugging Face Cache might need to be set here properly to make it work
-            return self._reduce_output(self._local_embeddings(self._pre_process(state.chains)))
+            return self._post_process(self._local_embeddings(self._pre_process(state.chains)))
 
     def _remote_embeddings(self, sequence: List[str]) -> ESM2Output:
         return self.model.embeddings.remote(sequence)
@@ -107,7 +107,7 @@ class ESM2(ProteinLanguageModel):
     def _local_embeddings(self, sequence: List[str]) -> ESM2Output:
         return self.model.embeddings.local(sequence)
 
-    def _reduce_output(self, output: ESM2Output) -> Tensor:
+    def _post_process(self, output: ESM2Output) -> Tensor:
         """
         Reduce ESM2Output (from ModalFold) to a Tensor of size batch x N_residues x N_features
         containing the embeddings only.

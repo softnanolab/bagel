@@ -65,15 +65,12 @@ class MutationProtocol(ABC):
         amino_acid = np.random.choice(list(self.mutation_bias.keys()), p=list(self.mutation_bias.values()))
         chain.mutate_residue(index=index, amino_acid=amino_acid)
 
-    #! Stefano: need to modify to reset all oracles outputs
     def reset_system(self, system: System) -> System:
         print('Resetting system RESET ALL ORACLES OUTPUTS')
         system.total_energy = None
         for state in system.states:
             state._energy_terms_value = {}
             state._oracles_output = {}
-            #state._structure = None
-            #state._folding_metrics = None
         return system
 
 

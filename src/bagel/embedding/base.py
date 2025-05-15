@@ -31,6 +31,15 @@ class ProteinLanguageModel(ABC):
         """
         pass
 
+    @abstractmethod
+    def _post_process(self, chains: list[Chain]) -> list[str]:
+        """
+        Takes the output from the oracle and post-process it to make it in the right format expected, if needed.
+        For example, a protein language model might return a tensor of shape (N_residues, N_features), but we 
+        want to have a list of 1D tensors of shape (N_features,). 
+        """
+        pass
+
     @abstractmethod 
     def calculate_embeddings(self, state) -> None:
         """

@@ -9,7 +9,7 @@ Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
 from abc import abstractmethod
 from .chain import Chain
 from .folding import FoldingAlgorithm, FoldingMetrics
-from .embedding.protein_LM import proteinLanguageModel
+from .embedding.base import ProteinLanguageModel
 from .energies import EnergyTerm
 from typing import Optional
 from pathlib import Path
@@ -74,7 +74,7 @@ class EmbeddingOracle(Oracle):
     Parameters        
 
     """
-    def __init__(self, name: str, protein_language_model : proteinLanguageModel ) -> None:
+    def __init__(self, name: str, protein_language_model : ProteinLanguageModel ) -> None:
         super().__init__(name)
         self.pLM = protein_language_model 
     
