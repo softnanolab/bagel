@@ -55,7 +55,7 @@ class State:
 
     name: str
     chains: List[Chain]  # This is a list of single monomeric chains
-    oracles: dict 
+    oracles: list[Oracles] 
     energy_terms: List[EnergyTerm]
     energy_terms_weights: List[float]
     _energy: Optional[float] = field(default=None, init=False)
@@ -78,12 +78,12 @@ class State:
         """Calculate energy of state using energy terms ."""
         if self._energy_terms_value == {}:  # If energies not yet calculated
             # Check if the output of the oracle is already calculated, otherwise calculate it
-            for name, output in self._oracles_output.items():
-                if output is None:
-                    self._oracles_output[ name ] = self.oracles[ name ].make_prediction( state = self )
+            for oracle in self.oracles:
+                if self._oracles_output[oracle] is None:
+                    self._oracles_output[oracle] = oracle.make_prediction(state=self)
 
             for term in self.energy_terms:
-                energy = term.compute( self._oracles_output ) 
+                energy = term.compute(self._oracles_output)
                 self._energy_terms_value[term.name] = energy
                 logger.debug(f'Energy term {term.name} has value {energy}')
 
