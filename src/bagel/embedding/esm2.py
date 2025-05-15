@@ -112,5 +112,7 @@ class ESM2(ProteinLanguageModel):
         Reduce ESM2Output (from ModalFold) to a Tensor of size batch x N_residues x N_features
         containing the embeddings only.
         """
-        #! @JAKUB: Not sure this is correct, I think this only works if N_batch = 1 tbh...
+        #! @JAKUB: Not sure this is correct, I think this only works if N_batch = 1, I made an assertion for that 
+        assert output["last_hidden_state"].shape[0] == 1, f"Return next only works correctly for batch of size 1, got {len(output['last_hidden_state'].shape)}D tensor"
+        
         return output["last_hidden_state"].reshape(-1, output["last_hidden_state"].shape[-1]) 
