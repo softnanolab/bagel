@@ -45,6 +45,11 @@ def folder(request) -> bg.folding.ESMFolder:
         yield model
         del model
 
+@pytest.fixture
+def very_high_temp() -> float:
+    """High temperature to make acceptance of any move 100%"""
+    return 1e10 
+
 
 @pytest.fixture
 def short_chain() -> bg.Chain:
