@@ -2,6 +2,7 @@ import random
 import bagel as bg
 import os
 from typing import Any
+from typing import Any
 
 def run_simple_binder() -> Any:
     # Get the value of an environment variable
@@ -20,7 +21,7 @@ def run_simple_binder() -> Any:
 
     # Define a chain providing a list of residues
     residues_target = [
-        bg.Residue(name=aa, chain_ID='Maxi', index=i, mutable=mut)
+        bg.Residue(name=aa, chain_ID='A', index=i, mutable=mut)
         for i, (aa, mut) in enumerate(zip(target_sequence, mutability))
     ]
 
@@ -37,7 +38,7 @@ def run_simple_binder() -> Any:
 
     # Define the chain
     residues_binder = [
-        bg.Residue(name=aa, chain_ID='Stef', index=i, mutable=mut)
+        bg.Residue(name=aa, chain_ID='B', index=i, mutable=mut)
         for i, (aa, mut) in enumerate(zip(binder_sequence, mutability))
     ]
     binder_chain = bg.Chain(residues=residues_binder)
@@ -85,7 +86,7 @@ def run_simple_binder() -> Any:
         preserve_best_system=True,
         log_frequency=5,
         experiment_name='simple_binder',
-        log_path='logs/simple_binder.log',
+        log_path='data',
     )
 
     best_system = minimizer.minimize_system(system=initial_system)
