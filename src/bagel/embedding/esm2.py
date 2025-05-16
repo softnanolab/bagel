@@ -12,6 +12,7 @@ from typing import List, Any
 from modalfold import app  
 from modalfold.esm2 import ESM2, ESM2Output 
 
+from pydantic import BaseModel
 
 import logging
 
@@ -41,7 +42,7 @@ class ESM2(ProteinLanguageModel):
         self.default_config = {
             'output_embeddings': True,
             'output_all_layers': False,
-            'esm2_name': 'esm2_t33_650M_UR50S',
+            'model_name': 'esm2_t33_650M_UR50S',
         }
         self._load(config)
 
@@ -50,11 +51,6 @@ class ESM2(ProteinLanguageModel):
             # ephermal app is left running when the object is destroyed
             import atexit
             atexit.register(self.__del__)
-
-        models_name = [ "esm2_t48_15B_UR50D", "esm2_t36_3B_UR50D", "esm2_t33_650M_UR50D", 
-                        "esm2_t30_150M_UR50D", "esm2_t12_35M_UR50D", "esm2_t6_8M_UR50D", ]	
-
-        assert config[ esm2_name ] in models_name, f"Model {esm2_name} not supported"
 
         self.name = name
         #! @JAKUB: This will require implementing ESM2 in modalfold.
