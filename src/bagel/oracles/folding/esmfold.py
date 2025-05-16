@@ -108,6 +108,13 @@ class ESMFold(FoldingOracle):
             import atexit
 
             atexit.register(self.__del__)
+        else:
+            logger.warning(
+                "ESMFold will be run using the GPU on this local machine\n"
+                "If you're getting an error about /mnt/models... then set the HF_MODEL_DIR"
+                "environment variable to a writable location, or just the normal huggingface cache"
+                "location, e.g.: export HF_MODEL_DIR=~/.cache/huggingface/hub"
+            )
 
     def __del__(self) -> None:
         """Cleanup the app context when the object is destroyed or at exit"""
