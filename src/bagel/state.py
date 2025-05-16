@@ -7,8 +7,7 @@ Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
 """
 
 from .chain import Chain
-from .oracles import Oracles
-from .folding import FoldingAlgorithm, FoldingMetrics
+from .oracles import Oracle
 from .energies import EnergyTerm
 from typing import Optional
 from pathlib import Path
@@ -55,16 +54,16 @@ class State:
 
     name: str
     chains: List[Chain]  # This is a list of single monomeric chains
-    oracles: list[Oracles] 
+    oracles: list[Oracle] 
     energy_terms: List[EnergyTerm]
-    energy_terms_weights: List[float]
+    #energy_terms_weights: List[float]
     _energy: Optional[float] = field(default=None, init=False)
     _oracles_output: Optional[dict] = field(default=None, init=False)
     _energy_terms_value: dict[(str, float)] = field(default_factory=lambda: {}, init=False)
 
     def __post_init__(self) -> None:
         """Sanity check."""
-        assert len(self.energy_terms_weights) == len(self.energy_terms), 'wrong number of energy term weights supplied'
+        return
 
     def __copy__(self) -> Any:
         """Copy the state object, setting the structure and energy to None."""
@@ -82,14 +81,13 @@ class State:
                 if self._oracles_output[oracle] is None:
                     self._oracles_output[oracle] = oracle.make_prediction(state=self)
 
-            for term in self.energy_terms:
-                energy = term.compute(self._oracles_output)
-                self._energy_terms_value[term.name] = energy
-                logger.debug(f'Energy term {term.name} has value {energy}')
+        total_energy = 0.0
+        for term in self.energy_terms:
+            energy, weighted_energy = term.compute(self._oracles_output)
+            total_energy += weighted_energy
+            self._energy_terms_value[term.name] = energy
+            logger.debug(f'Energy term {term.name} has value {energy}')
 
-        total_energy = sum(
-            [energy * weight for energy, weight in zip(self._energy_terms_value.values(), self.energy_terms_weights)]
-        )
         self._energy = total_energy
 
         logger.debug(f'**Weighted** energy for state {self.name} is {self._energy}')

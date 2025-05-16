@@ -12,7 +12,6 @@ def test_tempering_does_not_mutate_immutable_residues(folder: bg.folding.ESMFold
     state = bg.State(
         chains=[bg.Chain(residues)],
         energy_terms=[bg.energies.PTMEnergy(), bg.energies.OverallPLDDTEnergy(), bg.energies.HydrophobicEnergy()],
-        energy_terms_weights=[1.0, 1.0, 5.0],
         name='state_A',
     )
 

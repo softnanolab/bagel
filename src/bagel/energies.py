@@ -36,7 +36,7 @@ class EnergyTerm(ABC):
     Like the __init__ method, __post__init__ is also **automatically** called upon
     instantiating an object of the class.
     """
-    def __init__(self, name:str, oracle:Oracle, input_key:str ) -> None:
+    def __init__(self, name:str, oracle:Oracle, input_key:str, weight:float = 1.0 ) -> None:
         """Initialises EnergyTerm class.
 
         Parameters
@@ -45,6 +45,7 @@ class EnergyTerm(ABC):
         self.name = name
         self.oracle = oracle
         self.input_key = input_key
+        self.weight = weight
         
     def __post_init__(self) -> None:
         """Checks required attributes have been set after class is initialised"""
@@ -142,7 +143,7 @@ class PTMEnergy(EnergyTerm):
     model was trained on.
     """
 
-    def __init__(self, oracle:Oracle ) -> None:
+    def __init__(self, oracle:Oracle, weight:float = 1.0 ) -> None:
         """Initialises Predicted Template Modelling Score Energy class.
 
         Parameters
@@ -153,12 +154,13 @@ class PTMEnergy(EnergyTerm):
         self.oracle = oracle
         self.inheritable = True
         self.residue_groups = []
+        self.weight = weight
 
     def compute(self, state: "State" ) -> float:
         folding_metrics = state.oracles_output[self.oracle][ self.input_key ]
         assert hasattr(folding_metrics, 'ptm'), 'PTM metric not returned by folding algorith'
         self.value = -folding_metrics.ptm
-        return self.value
+        return self.value, self.value * self.weight
 
 class ChemicalPotentialEnergy(EnergyTerm):
     """
@@ -166,7 +168,7 @@ class ChemicalPotentialEnergy(EnergyTerm):
     For some choices of parameters, this is equivalent to a chemical potential contribution to the grand-canonical
     free energy Omega = E - mu * N
     """
-    def __init__(self, oracle:Oracle, power : float = 1.0, target_size : int = 0, chemical_potential : float = 1.0 ) -> None:
+    def __init__(self, oracle:Oracle, power : float = 1.0, target_size : int = 0, chemical_potential : float = 1.0, weight:float = 1.0 ) -> None:
         """Initialises Chemical Potential Energy class. 
 
         Parameters
@@ -177,7 +179,8 @@ class ChemicalPotentialEnergy(EnergyTerm):
         self.residue_groups = []
         self.power = power 
         self.target_size = target_size
-        self.chemical_potential = chemical_potential 
+        self.chemical_potential = chemical_potential
+        self.weight = weight 
 
     def compute(self, state: "State") -> float:
         structure = state.oracles_output[self.oracle][ self.input_key ]
@@ -191,7 +194,7 @@ class ChemicalPotentialEnergy(EnergyTerm):
 
         self.value = self.chemical_potential * ( abs( num_residues - self.target_size ) )**self.power
 
-        return self.value
+        return self.value, self.value * self.weight
 
 
 class PLDDTEnergy(EnergyTerm):
@@ -202,7 +205,7 @@ class PLDDTEnergy(EnergyTerm):
     relevant atoms.
     """
 
-    def __init__(self, oracle:Oracle, residues: list[Residue], inheritable: bool = True) -> None:
+    def __init__(self, oracle:Oracle, residues: list[Residue], inheritable: bool = True, weight:float = 1.0) -> None:
         """Initialises Local Predicted Local Distance Difference Test Energy class.
 
         Parameters
@@ -216,6 +219,7 @@ class PLDDTEnergy(EnergyTerm):
         super().__init__(oracle=oracle, name='local_pLDDT', input_key="folding_metrics")
         self.inheritable = inheritable
         self.residue_groups = [residue_list_to_group(residues)]
+        self.weight = weight
 
     def compute(self, state:"State") -> float:
         folding_metrics = state.oracles_output[self.oracle][self.input_key]
@@ -223,7 +227,7 @@ class PLDDTEnergy(EnergyTerm):
         plddt = folding_metrics.local_plddt[0]  # [n_residues] array
         mask = self.get_residue_mask(structure, residue_group_index=0)
         self.value = -np.mean(plddt[mask])
-        return self.value
+        return self.value, self.value * self.weight
 
 
 class OverallPLDDTEnergy(EnergyTerm):
@@ -234,7 +238,7 @@ class OverallPLDDTEnergy(EnergyTerm):
     over all atoms.
     """
 
-    def __init__(self, oracle:Oracle) -> None:
+    def __init__(self, oracle:Oracle, weight:float = 1.0 ) -> None:
         """Initialises Overall Predicted Local Distance Difference Test Energy class.
 
         Parameters
@@ -243,13 +247,14 @@ class OverallPLDDTEnergy(EnergyTerm):
         super().__init__(oracle=oracle, name='global_pLDDT', input_key="folding_metrics")
         self.inheritable = True
         self.residue_groups = []
+        self.weight = weight
 
     def compute(self, state:"State" ) -> float:
         folding_metrics = state.oracles_output[self.oracle][self.input_key]
         assert hasattr(folding_metrics, 'local_plddt'), 'local_plddt metric not returned by folding algorithm'
         plddt = folding_metrics.local_plddt[0]  # [n_residues] array
         self.value = -np.mean(plddt)
-        return self.value
+        return self.value, self.value * self.weight
 
 
 class SurfaceAreaEnergy(EnergyTerm):
@@ -266,6 +271,7 @@ class SurfaceAreaEnergy(EnergyTerm):
         inheritable: bool = True,
         probe_radius: float | None = None,
         max_sasa: float | None = None,
+        weight: float = 1.0,
     ) -> None:
         """
         Initialises Surface Area Energy Class.
@@ -288,6 +294,7 @@ class SurfaceAreaEnergy(EnergyTerm):
         self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
         self.probe_radius = probe_radius_water if probe_radius is None else probe_radius
         self.max_sasa = max_sasa_values['S'] if max_sasa is None else max_sasa
+        self.weight = weight
 
     def compute(self, state:"State" ) -> float:
         structure = state.oracles_output[self.oracle][self.input_key]
@@ -298,7 +305,7 @@ class SurfaceAreaEnergy(EnergyTerm):
 
         sasa_values = sasa(structure, probe_radius=self.probe_radius)
         self.value = np.mean(sasa_values[atom_mask]) / self.max_sasa
-        return self.value
+        return self.value, self.value * self.weight
 
 
 class HydrophobicEnergy(EnergyTerm):
@@ -314,6 +321,7 @@ class HydrophobicEnergy(EnergyTerm):
         residues: list[Residue] | None = None,
         inheritable: bool = True,
         surface_only: bool = False,
+        weight: float = 1.0,
     ) -> None:
         """
         Initialises hydrophobic energy class.
@@ -336,6 +344,7 @@ class HydrophobicEnergy(EnergyTerm):
         self.inheritable = inheritable
         self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
         self.surface_only = surface_only
+        self.weight = weight
 
     def compute(self, state:"State" ) -> float:
         structure = state.oracles_output[self.oracle][self.input_key]
@@ -351,7 +360,7 @@ class HydrophobicEnergy(EnergyTerm):
             normalized_sasa = sasa(structure, probe_radius=probe_radius_water) / max_sasa_values['S']
             self.value *= np.mean(normalized_sasa[relevance_mask & hydrophobic_mask])
 
-        return self.value
+        return self.value, self.value * self.weight
 
 
 class PAEEnergy(EnergyTerm):
@@ -368,6 +377,7 @@ class PAEEnergy(EnergyTerm):
         group_2_residues: list[Residue] | None = None,
         cross_term_only: bool = True,
         inheritable: bool = True,
+        weight: float = 1.0,
     ) -> None:
         """
         Initialises the alignment error energy class.
@@ -391,6 +401,7 @@ class PAEEnergy(EnergyTerm):
         group_2_residues = group_1_residues if group_2_residues is None else group_2_residues
         self.residue_groups = [residue_list_to_group(group_1_residues), residue_list_to_group(group_2_residues)]
         self.cross_term_only = cross_term_only
+        self.weight = weight
 
     def compute(self, state:"State" ) -> float:
         folding_metrics = state.oracles_output[self.oracle][self.input_key]
@@ -413,7 +424,7 @@ class PAEEnergy(EnergyTerm):
         pae_mask[diagonal_mask] = False  # should ignore uncertainty in distance between atom and itself
 
         self.value = np.mean(pae[pae_mask]) / max_pae
-        return self.value
+        return self.value, self.value * self.weight
 
 
 class PAEEnergyV2(EnergyTerm):
@@ -430,6 +441,7 @@ class PAEEnergyV2(EnergyTerm):
         group_2_residues: list[Residue] | None = None,
         cross_term_only: bool = True,
         inheritable: bool = True,
+        weight: float = 1.0,
     ) -> None:
         """
         Initialises the alignment error energy class.
@@ -454,6 +466,7 @@ class PAEEnergyV2(EnergyTerm):
         group_2_residues = group_1_residues if group_2_residues is None else group_2_residues
         self.residue_groups = [residue_list_to_group(group_1_residues), residue_list_to_group(group_2_residues)]
         self.cross_term_only = cross_term_only
+        self.weight = weight
 
     def find_residue_in_pae(self, chain_id: str, res_id: int, ordered_chain_lengths: list[tuple[str, int]]) -> int:
         """Finds the number of a residue in the PAE matrix
@@ -529,7 +542,7 @@ class PAEEnergyV2(EnergyTerm):
         max_pae = 30  # NOTE: this is an approximate maximum value for the PAE, not exactly the maximum
         pae_mask = self.calculate_pae_mask(structure)
         self.value = np.mean(pae[pae_mask]) / max_pae
-        return self.value
+        return self.value, self.value * self.weight
 
 
 class RingSymmetryEnergy(EnergyTerm):
@@ -545,6 +558,7 @@ class RingSymmetryEnergy(EnergyTerm):
         symmetry_groups: list[list[Residue]],
         direct_neighbours_only: bool = False,
         inheritable: bool = True,
+        weight: float = 1.0,
     ) -> None:
         """Initialises ring symmetry energy class.
 
@@ -566,6 +580,7 @@ class RingSymmetryEnergy(EnergyTerm):
         assert (len(symmetry_groups) > 1) and (len(symmetry_groups[0]) >= 1), 'Multiple symmetry groups required.'
         self.residue_groups = [residue_list_to_group(symmetry_group) for symmetry_group in symmetry_groups]
         self.direct_neighbours_only: bool = direct_neighbours_only
+        self.weight = weight
 
     def compute(self, state:"State" ) -> float:
         structure = state.oracles_output[self.oracle][self.input_key]
@@ -586,7 +601,7 @@ class RingSymmetryEnergy(EnergyTerm):
             unique_distances = distance_matrix[~np.tri(N=num_groups, dtype=bool)]
             self.value = np.std(unique_distances)
 
-        return self.value
+        return self.value, self.value * self.weight
 
 
 class SeparationEnergy(EnergyTerm):
@@ -603,6 +618,7 @@ class SeparationEnergy(EnergyTerm):
         group_2_residues: list[Residue],
         normalize: bool = True,
         inheritable: bool = True,
+        weight: float = 1.0,
     ) -> None:
         """
         Initialises separation energy class.
@@ -624,6 +640,7 @@ class SeparationEnergy(EnergyTerm):
         self.inheritable = inheritable
         self.residue_groups = [residue_list_to_group(group_1_residues), residue_list_to_group(group_2_residues)]
         self.normalize = normalize
+        self.weight = weight
 
     def compute(self, state:"State" ) -> float:
         structure = state.oracles_output[self.oracle][self.input_key]
@@ -641,7 +658,7 @@ class SeparationEnergy(EnergyTerm):
             distance /= len(group_1_atoms) + len(group_2_atoms)
 
         self.value = distance  # type: ignore
-        return self.value
+        return self.value, self.value * self.weight
 
 
 class GlobularEnergy(EnergyTerm):
@@ -657,7 +674,9 @@ class GlobularEnergy(EnergyTerm):
                 input_key: str,
                 residues: list[Residue] | None = None, 
                 normalize: bool = True, 
-                inheritable: bool = True) -> None:
+                inheritable: bool = True,
+                weight: float = 1.0, 
+                ) -> None:
         """
         Initialises globular energy class.
 
@@ -676,6 +695,7 @@ class GlobularEnergy(EnergyTerm):
         self.inheritable = inheritable
         self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
         self.normalize = normalize
+        self.weight = weight
 
     def compute(self, state:"State" ) -> float:
         structure = state.oracles_output[self.oracle][self.input_key]
@@ -692,7 +712,7 @@ class GlobularEnergy(EnergyTerm):
             centroid_distances /= len(relevant_atoms)
 
         self.value = np.std(centroid_distances)
-        return self.value
+        return self.value, self.value * self.weight
 
 
 class TemplateMatchEnergy(EnergyTerm):
@@ -709,6 +729,7 @@ class TemplateMatchEnergy(EnergyTerm):
         residues: list[Residue],
         backbone_only: bool = False,
         distogram_separation: bool = False,
+        weight: float = 1.0,
     ) -> None:
         """
         Initialises template match energy class.
@@ -733,6 +754,7 @@ class TemplateMatchEnergy(EnergyTerm):
         self.backbone_only = backbone_only
         self.distogram_separation = distogram_separation
         self.inheritable = False
+        self.weight = weight
 
     def compute(self, state:"State" ) -> float:
         structure = state.oracles_output[self.oracle][self.input_key]
@@ -758,7 +780,7 @@ class TemplateMatchEnergy(EnergyTerm):
             separation = np.mean(unique_distance_matrix_differences**2) ** 0.5
 
         self.value = separation
-        return self.value
+        return self.value, self.value * self.weight
 
 
 class SecondaryStructureEnergy(EnergyTerm):
@@ -773,7 +795,9 @@ class SecondaryStructureEnergy(EnergyTerm):
                 input_key: str,
                 residues: list[Residue], 
                 target_secondary_structure: str, 
-                inheritable: bool = True) -> None:
+                inheritable: bool = True,
+                weight: float = 1.0,
+                ) -> None:
         """
         Initialises the secondary structure energy class.
 
@@ -794,6 +818,7 @@ class SecondaryStructureEnergy(EnergyTerm):
         options = ('alpha-helix', 'beta-sheet', 'coil')
         assert target_secondary_structure in options, f'{target_secondary_structure} not recognised. options: {options}'
         self.target_secondary_structure = target_secondary_structure
+        self.weight = weight
 
     def compute(self, state:"State" ) -> float:
         structure = state.oracles_output[self.oracle][self.input_key]
@@ -802,7 +827,7 @@ class SecondaryStructureEnergy(EnergyTerm):
         selection_mask = self.get_residue_mask(structure, residue_group_index=0)
 
         self.value = np.mean(calculated_labels[selection_mask] != target_label)
-        return self.value
+        return self.value, self.value * self.weight
 
 
 class EllipsoidEnergy(EnergyTerm):
@@ -823,6 +848,7 @@ class EllipsoidEnergy(EnergyTerm):
         aspect_ratio: tuple[float, float, float],
         k_attractive: float = 1.0,
         k_repulsive: float = 10.0,
+        weight: float = 1.0,
     ) -> None:
         """
         Initializes elipsoid energy class.
@@ -844,6 +870,7 @@ class EllipsoidEnergy(EnergyTerm):
         self.residue_groups = []
         self.k_attractive = k_attractive
         self.k_repulsive = k_repulsive
+        self.weight = weight
 
         # largest aspect ratio first (corresponds to the first principle axis that captures the most positional variance)
         self.aspect_ratio = np.sort(aspect_ratio)[::-1]
@@ -884,7 +911,7 @@ class EllipsoidEnergy(EnergyTerm):
         repulsive_energy = self.k_repulsive * np.exp(-pairwise_distance_matrix / max([a, b, c])).mean()
 
         self.value = attractive_energy + repulsive_energy
-        return self.value
+        return self.value, self.value * self.weight
 
 
 class CuboidEnergy(EnergyTerm):
@@ -907,6 +934,7 @@ class CuboidEnergy(EnergyTerm):
         k_attractive: float = 1.0,
         k_repulsive: float = 10.0,
         sharpness: float = 2.0,
+        weight: float = 1.0,
     ) -> None:
         """
         Initializes cuboid energy class.
@@ -932,6 +960,7 @@ class CuboidEnergy(EnergyTerm):
         self.k_attractive = k_attractive
         self.k_repulsive = k_repulsive
         self.sharpness = sharpness
+        self.weight = weight
 
         # largest aspect ratio first (as first principle axis captures the most positional variance)
         self.aspect_ratio = np.sort(aspect_ratio)[::-1]
@@ -968,7 +997,7 @@ class CuboidEnergy(EnergyTerm):
         repulsive_energy = self.k_repulsive * np.exp(-pairwise_distance_matrix / max([a, b, c])).mean()
 
         self.value = attractive_energy + repulsive_energy
-        return self.value
+        return self.value, self.value * self.weight
 
 class EmbeddingsSimilarityEnergy(EnergyTerm):
     """
@@ -981,6 +1010,7 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
                 reference_embeddings: np.ndarray,
                 input_key: str = "embeddings",  
                 inheritable: bool = False,
+                weight: float = 1.0,
                 ) -> None:
         """Initialises EmbeddingsSimilarityEnergy class.
 
@@ -1006,6 +1036,7 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
         self.residue_groups = [residue_list_to_group(group_1_residues)]
         self.reference_embeddings = reference_embeddings
         self.inheritable = inheritable
+        self.weight = weight
         assert self.reference_embeddings.shape[0] == len(self.conserved_residues_map), f'Conserved residues map {self.conserved_residues_map} does not match reference embeddings {self.reference_embeddings.shape}'
 
     def compute(self, state:"State") -> float:
@@ -1025,7 +1056,7 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
         similarity = np.mean( cosine )
 
         self.value = 1.0 - similarity
-        return self.value
+        return self.value, self.value * self.weight
     
     @property
     def conserved_index_list( self ):
