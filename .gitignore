@@ -13,6 +13,7 @@ __pycache__
 .venv
 env
 venv
+*lock
 
 # Build and distribution
 *.egg-info
