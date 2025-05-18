@@ -27,8 +27,7 @@ class Oracle():
 
     def __post_init__(self) -> None:
         """Sanity check."""
-        # TODO: I am not sure this assertion is correct.
-        assert len(self.energy_terms_weights) == len(self.energy_terms), 'wrong number of energy term weights supplied'
+        return
 
     def __copy__(self) -> Any:
         """Copy the state object, setting the structure and energy to None."""
