@@ -10,7 +10,7 @@ from abc import abstractmethod
 from dataclasses import dataclass
 from pydantic import BaseModel
 from ..chain import Chain
-from .embedding.base import ProteinLanguageModel
+from .embedding.base import LanguageModel
 from biotite.structure import AtomArray
 from typing import List, Any
 from copy import deepcopy
@@ -82,10 +82,9 @@ class EmbeddingOracle(Oracle):
     An EmbeddingOracle is a specific type of Oracle that uses a sequence-based model to predict the residues' embeddings.
     """
     
-    def __init__(self, name: str, protein_language_model : ProteinLanguageModel ) -> None:
-        super().__init__(name)
-        self.pLM = protein_language_model 
+    def __init__(self, language_model : LanguageModel ) -> None:
+        self.LM = language_model 
     
     def make_prediction(self, state: "State"):
-        embeddings = self.pLM.calculate_embeddings( state )
+        embeddings = self.LM.calculate_embeddings( state )
         return embeddings

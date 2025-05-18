@@ -7,7 +7,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 @dataclass
-class ProteinLanguageModel(ABC):
+class LanguageModel(ABC):
     """
     Template for an object that predicts residues embeddings from the aminoacid sequence."""
     """

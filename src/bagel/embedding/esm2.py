@@ -7,7 +7,7 @@ import numpy.typing as npt
 from ..chain import Chain
 #from .utils import reindex_chains
 from pydantic import field_validator
-from .base import ProteinLanguageModel 
+from .base import LanguageModel 
 from typing import List, Any
 from modalfold import app  
 from modalfold.esm2 import ESM2, ESM2Output 
@@ -29,7 +29,7 @@ class ESM2Output(BaseModel):
 class Config:
         arbitrary_types_allowed = True  # This is needed for numpy array support
 
-class ESM2(ProteinLanguageModel):
+class ESM2(LanguageModel):
 
     def __init__(self, name: str, esm2_name : str, use_modal:bool = False, config:dict[str,Any] ={} ) -> None:
         """
