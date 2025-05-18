@@ -373,8 +373,7 @@ class PAEEnergy(EnergyTerm):
         self,
         oracle: Oracle,
         input_key: str,
-        group_1_residues: list[Residue],
-        group_2_residues: list[Residue] | None = None,
+        residues: tuple[list[Residue], list[Residue]],
         cross_term_only: bool = True,
         inheritable: bool = True,
         weight: float = 1.0,
@@ -384,10 +383,8 @@ class PAEEnergy(EnergyTerm):
 
         Parameters
         ----------
-        group_1_residues: list[Residue]
-            Which residues to include in the first group.
-        group_2_residues: list[Residue] or None, default=None
-            Which residues to include in the second group. If set to None, will use the same residues as in group 1.
+        residues: tuple[list[Residue], list[Residue]] 
+            Which residues to include in the first and second group.
         cross_term_only: bool, default=True
             Whether to only consider the uncertainty in distance between group 1 and group 2 atoms. If set to False,
             also considers the uncertainty in distances between atoms within the same group.
@@ -398,8 +395,7 @@ class PAEEnergy(EnergyTerm):
         super().__init__(name='PAE', oracle=oracle)
         self.name = f'{"cross_" if cross_term_only else ""}PAE'
         self.inheritable = inheritable
-        group_2_residues = group_1_residues if group_2_residues is None else group_2_residues
-        self.residue_groups = [residue_list_to_group(group_1_residues), residue_list_to_group(group_2_residues)]
+        self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
         self.cross_term_only = cross_term_only
         self.weight = weight
 
@@ -437,8 +433,7 @@ class PAEEnergyV2(EnergyTerm):
         self,
         oracle: Oracle,
         input_key: str,
-        group_1_residues: list[Residue],
-        group_2_residues: list[Residue] | None = None,
+        residues: tuple[ list[Residue], list[Residue]],
         cross_term_only: bool = True,
         inheritable: bool = True,
         weight: float = 1.0,
@@ -448,10 +443,8 @@ class PAEEnergyV2(EnergyTerm):
 
         Parameters
         ----------
-        group_1_residues: list[Residue]
-            Which residues to include in the first group.
-        group_2_residues: list[Residue] or None, default=None
-            Which residues to include in the second group. If set to None, will use the same residues as in group 1.
+        residues: tuple[list[Residue], list[Residue]] 
+            Which residues to include in the first and second group.
         cross_term_only: bool, default=True
             Whether to only consider the uncertainty in distance between group 1 and group 2 atoms. If set to False,
             also considers the uncertainty in distances between atoms within the same group.
@@ -463,8 +456,7 @@ class PAEEnergyV2(EnergyTerm):
         warnings.warn(message='This class has known issues and is to be removed', category=DeprecationWarning)
         self.name = f'{"cross_" if cross_term_only else ""}alignment_error'
         self.inheritable = inheritable
-        group_2_residues = group_1_residues if group_2_residues is None else group_2_residues
-        self.residue_groups = [residue_list_to_group(group_1_residues), residue_list_to_group(group_2_residues)]
+        self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
         self.cross_term_only = cross_term_only
         self.weight = weight
 
@@ -614,8 +606,7 @@ class SeparationEnergy(EnergyTerm):
         self,
         oracle: Oracle,
         input_key: str,
-        group_1_residues: list[Residue],
-        group_2_residues: list[Residue],
+        residues: tuple[list[Residue],list[Residue]],
         normalize: bool = True,
         inheritable: bool = True,
         weight: float = 1.0,
@@ -625,10 +616,8 @@ class SeparationEnergy(EnergyTerm):
 
         Parameters
         ----------
-        group_1_residues: list[Residue]
-            Which residues to include in the first group.
-        group_2_residues: list[Residue]
-            Which residues to include in the second group.
+        residues: tuple[list[Residue],list[Residue]]
+            A tuple containing two lists of residues, those to include in the first [0] and second [1] group.
         normalize: bool, default=True
             Whether the distance calculated is divided by the number of atoms in both groups.
         inheritbale: bool, default=True
@@ -638,7 +627,7 @@ class SeparationEnergy(EnergyTerm):
         super().__init__( oracle=oracle, input_key = input_key, name='separation' )
         self.name = f'{"normalized_" if normalize else ""}separation'
         self.inheritable = inheritable
-        self.residue_groups = [residue_list_to_group(group_1_residues), residue_list_to_group(group_2_residues)]
+        self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
         self.normalize = normalize
         self.weight = weight
 
@@ -1006,7 +995,7 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
     """
 
     def __init__(self, oracle:Oracle, 
-                group_1_residues: list[Residue],
+                residues: list[Residue],
                 reference_embeddings: np.ndarray,
                 input_key: str = "embeddings",  
                 inheritable: bool = False,
@@ -1033,7 +1022,7 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
         super().__init__( oracle=oracle, 
                         name='embeddings_similarity', 
                         input_key = input_key )
-        self.residue_groups = [residue_list_to_group(group_1_residues)]
+        self.residue_groups = [residue_list_to_group(residues)]
         self.reference_embeddings = reference_embeddings
         self.inheritable = inheritable
         self.weight = weight

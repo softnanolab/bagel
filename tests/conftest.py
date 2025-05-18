@@ -240,6 +240,34 @@ def test_log_path(request) -> pl.Path:
 def base_sequence() -> str:
     return 'MKVWPQGHSTNRYLAEFCID'
 
+#! @Jakub please check here
+@pytest.fixture
+def protein_language_model() -> bg.embedding.ESM2:
+    """Returns a protein language model object."""
+    # This is a mock of the ESM2 class, which is not implemented in the provided code.
+    # In a real scenario, this would be replaced with the actual ESM2 class from the bagel module.
+    return bg.embedding.ESM2(use_modal=True)
+
+@pytest.fixture
+def plm_only_state() -> bg.State:
+    sequence = np.random.choice(list(bg.constants.aa_dict.keys()), size=5)
+    residues = [bg.Residue(name=aa, chain_ID='A', index=i, mutable=True) for i, aa in enumerate(sequence)]
+    oracle = bg.EmbeddingOracle( language_model = bg.embedding.ESM2(use_modal=True) )
+    # This really should be taken from the ESM2 class
+    n_features = 1280
+    reference_embeddings = np.zeros( ( 2, n_features ))
+    reference_embeddings[0, 0] = 1.0
+    reference_embeddings[1, 0] = 1.0
+    energy = bg.energies.PTMEnergy( weight = 0.5, residues=residues[:2], oracle=oracle, input_key='embedding',
+                                   reference_embeddings=reference_embeddings )
+    state = bg.State(
+        oracles=[oracle],
+        chains=[bg.Chain(residues)],
+        energy_terms=[energy],
+        name='state_A',
+     )
+    return state
+
 
 @pytest.fixture
 def simple_state() -> bg.State:
