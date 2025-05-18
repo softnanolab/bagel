@@ -3,7 +3,7 @@ import bagel as bg
 import os
 import modal
 
-with modal.enable_output():
+def run_simple_binder():
     # Get the value of an environment variable
     use_modal = True if os.getenv('USE_MODAL', 'True').lower() in ('true', '1', 'yes') else False
 
@@ -19,13 +19,16 @@ with modal.enable_output():
 
     target_sequence = 'SAKELRCQCIKTYSKPFHPKFIKELRVIESGPHCANTEIIVKLSDGRELCLDPKENWVQRVVEKFLKRAENS'
     target_sequence = target_sequence[:20]
+    
     # Now define the mutability of the residues, all immutable in this case since this is the target sequence
     mutability = [False for _ in range(len(target_sequence))]
+    
     # Now define the chain
     residues_target = [
         bg.Residue(name=aa, chain_ID='Maxi', index=i, mutable=mut)
         for i, (aa, mut) in enumerate(zip(target_sequence, mutability))
     ]
+    
     # Now define residues in the hotspot where you want to bind. Here we choose those between residues 40-60
     residues_hotspot = [residues_target[i] for i in range(10, 20)]
     target_chain = bg.Chain(residues=residues_target)
@@ -33,8 +36,10 @@ with modal.enable_output():
     # For the binder, start with a random sequence of amino acids selecting randomly from the 30 amino acids
     binder_length = 10
     binder_sequence = ''.join([random.choice(list(bg.constants.aa_dict.keys())) for _ in range(binder_length)])
+    
     # Now define the mutability of the residues, all mutable in this case since this is the design sequence
     mutability = [True for _ in range(len(target_sequence))]
+    
     # Now define the chain
     residues_binder = [
         bg.Residue(name=aa, chain_ID='Stef', index=i, mutable=mut)
@@ -42,47 +47,47 @@ with modal.enable_output():
     ]
     binder_chain = bg.Chain(residues=residues_binder)
 
-    # Now define the energy terms to be applied to the chain. In this example, all terms apply to all residues
+    # Now define the energy terms to be applied to the chain. apply them to residues, and specify the weight
     energy_terms = [
-        bg.energies.PTMEnergy(),
-        bg.energies.OverallPLDDTEnergy(),
-        bg.energies.HydrophobicEnergy(),
+        bg.energies.PTMEnergy(
+            weight=1.0,
+        ),
+        bg.energies.OverallPLDDTEnergy(
+            weight=1.0,
+        ),
+        bg.energies.HydrophobicEnergy(
+            weight=5.0,
+        ),
         bg.energies.AlignmentErrorEnergy(
             group_1_residues=residues_hotspot,
             group_2_residues=residues_binder,
+            weight=5.0,
         ),
     ]
 
-    # Now define the energy term weights
-    energy_terms_weights = [1.0, 1.0, 5.0, 5.0]
-
-    # Now define the state
-    state = bg.State(
-        chains=[binder_chain, target_chain],
-        energy_terms=energy_terms,
-        energy_terms_weights=energy_terms_weights,
-        name='state_A',
-    )
-
-    # Now define the system
-    initial_system = bg.System(states=[state])
-
-    # Now define the folding algorithm, run locally not on modal
+    # Now define the folding algorithm
     config = {
         'output_pdb': True,
         'output_cif': False,
         'glycine_linker': 'GGGG',
         'position_ids_skip': 100,
     }
-    esmfold = bg.folding.ESMFolder(
-        use_modal=use_modal, config=config
-    )  # Looks like it is calling modal regardless of the flag, why?
+    esmfold = bg.folding.ESMFolder(use_modal=use_modal, config=config)
+
+    # Now define the state
+    state = bg.State(
+        name='state_A',
+        chains=[binder_chain, target_chain],
+        oracles=[esmfold],
+        energy_terms=energy_terms,
+    )
+
+    # Now define the system
+    initial_system = bg.System(states=[state])
 
     # Now define the minimizer
     minimizer = bg.minimizer.SimulatedTempering(
-        all_folding_algorithms={'EsmFold': esmfold},
         mutation_protocol=bg.mutation.Canonical(),
-        algorithm_name='EsmFold',
         max_mutations_per_step=1,
         high_temperature=2,
         low_temperature=0.1,
@@ -94,3 +99,8 @@ with modal.enable_output():
     )
 
     best_system = minimizer.minimize_system(system=initial_system)
+
+    return best_system
+
+if __name__ == '__main__':
+    run_simple_binder()

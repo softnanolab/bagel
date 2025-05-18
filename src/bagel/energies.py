@@ -157,7 +157,7 @@ class PTMEnergy(EnergyTerm):
         self.weight = weight
 
     def compute(self, state: "State" ) -> float:
-        folding_metrics = state.oracles_output[self.oracle][ self.input_key ]
+        folding_metrics = state._oracles_output[self.oracle][self.input_key]
         assert hasattr(folding_metrics, 'ptm'), 'PTM metric not returned by folding algorith'
         self.value = -folding_metrics.ptm
         return self.value, self.value * self.weight
@@ -183,7 +183,7 @@ class ChemicalPotentialEnergy(EnergyTerm):
         self.weight = weight 
 
     def compute(self, state: "State") -> float:
-        structure = state.oracles_output[self.oracle][ self.input_key ]
+        structure = state._oracles_output[self.oracle][ self.input_key ]
         assert isinstance(structure, AtomArray), 'structure should be an AtomArray object but is not {type(structure)}'
 
     	# The following works even if some residues have the same number but different chain IDs because res_ids 
@@ -222,7 +222,7 @@ class PLDDTEnergy(EnergyTerm):
         self.weight = weight
 
     def compute(self, state:"State") -> float:
-        folding_metrics = state.oracles_output[self.oracle][self.input_key]
+        folding_metrics = state._oracles_output[self.oracle][self.input_key]
         assert hasattr(folding_metrics, 'local_plddt'), 'local_plddt metric not returned by folding algorithm'
         plddt = folding_metrics.local_plddt[0]  # [n_residues] array
         mask = self.get_residue_mask(structure, residue_group_index=0)
@@ -250,7 +250,7 @@ class OverallPLDDTEnergy(EnergyTerm):
         self.weight = weight
 
     def compute(self, state:"State" ) -> float:
-        folding_metrics = state.oracles_output[self.oracle][self.input_key]
+        folding_metrics = state._oracles_output[self.oracle][self.input_key]
         assert hasattr(folding_metrics, 'local_plddt'), 'local_plddt metric not returned by folding algorithm'
         plddt = folding_metrics.local_plddt[0]  # [n_residues] array
         self.value = -np.mean(plddt)
@@ -297,7 +297,7 @@ class SurfaceAreaEnergy(EnergyTerm):
         self.weight = weight
 
     def compute(self, state:"State" ) -> float:
-        structure = state.oracles_output[self.oracle][self.input_key]
+        structure = state._oracles_output[self.oracle][self.input_key]
         if len(self.residue_groups) != 0:
             atom_mask: npt.NDArray[np.bool_] = self.get_atom_mask(structure, residue_group_index=0)
         else:
@@ -347,7 +347,7 @@ class HydrophobicEnergy(EnergyTerm):
         self.weight = weight
 
     def compute(self, state:"State" ) -> float:
-        structure = state.oracles_output[self.oracle][self.input_key]
+        structure = state._oracles_output[self.oracle][self.input_key]
         if len(self.residue_groups) > 0:
             relevance_mask: npt.NDArray[np.bool_] = self.get_atom_mask(structure, residue_group_index=0)
         else:
@@ -404,7 +404,7 @@ class PAEEnergy(EnergyTerm):
         self.weight = weight
 
     def compute(self, state:"State" ) -> float:
-        folding_metrics = state.oracles_output[self.oracle][self.input_key]
+        folding_metrics = state._oracles_output[self.oracle][self.input_key]
         assert hasattr(folding_metrics, 'pae'), 'pae metric not returned by folding algorithm'
         pae = folding_metrics.pae[0]  # [n_residues, n_residues] pairwise predicted alignment error matrix
         max_pae = 30  # approximate max. Sometimes pae can be higher
@@ -535,7 +535,7 @@ class PAEEnergyV2(EnergyTerm):
         return pae_mask
 
     def compute(self, state:"State") -> float:
-        folding_metrics = state.oracles_output[self.oracle][self.input_key]
+        folding_metrics = state._oracles_output[self.oracle][self.input_key]
         assert hasattr(folding_metrics, 'pae'), 'pae metric not returned by folding algorith'
         pae = folding_metrics.pae[0]  # [n_residues, n_residues] pairwise predicted alignment error matrix
         assert len(pae.shape) == 2, 'PAE matrix has incorrect shape'
@@ -583,7 +583,7 @@ class RingSymmetryEnergy(EnergyTerm):
         self.weight = weight
 
     def compute(self, state:"State" ) -> float:
-        structure = state.oracles_output[self.oracle][self.input_key]
+        structure = state._oracles_output[self.oracle][self.input_key]
         num_groups = len(self.residue_groups)
         centroids = np.zeros(shape=(num_groups, 3))
         backbone_mask = np.isin(structure.atom_name, backbone_atoms)
@@ -643,7 +643,7 @@ class SeparationEnergy(EnergyTerm):
         self.weight = weight
 
     def compute(self, state:"State" ) -> float:
-        structure = state.oracles_output[self.oracle][self.input_key]
+        structure = state._oracles_output[self.oracle][self.input_key]
         backbone_mask = np.isin(structure.atom_name, backbone_atoms)
         group_1_mask = self.get_atom_mask(structure, residue_group_index=0)
         group_2_mask = self.get_atom_mask(structure, residue_group_index=1)
@@ -698,7 +698,7 @@ class GlobularEnergy(EnergyTerm):
         self.weight = weight
 
     def compute(self, state:"State" ) -> float:
-        structure = state.oracles_output[self.oracle][self.input_key]
+        structure = state._oracles_output[self.oracle][self.input_key]
         backbone_mask = np.isin(structure.atom_name, backbone_atoms)
         if len(self.residue_groups) > 0:
             selected_mask = self.get_atom_mask(structure, residue_group_index=0)
@@ -757,7 +757,7 @@ class TemplateMatchEnergy(EnergyTerm):
         self.weight = weight
 
     def compute(self, state:"State" ) -> float:
-        structure = state.oracles_output[self.oracle][self.input_key]
+        structure = state._oracles_output[self.oracle][self.input_key]
         structure_atoms = structure[self.get_atom_mask(structure, residue_group_index=0)]
         template_atoms = self.template_atoms
         if self.backbone_only:
@@ -821,7 +821,7 @@ class SecondaryStructureEnergy(EnergyTerm):
         self.weight = weight
 
     def compute(self, state:"State" ) -> float:
-        structure = state.oracles_output[self.oracle][self.input_key]
+        structure = state._oracles_output[self.oracle][self.input_key]
         target_label = self.target_secondary_structure[0]  # How Biotite labels secondary structures
         calculated_labels = annotate_sse(structure)
         selection_mask = self.get_residue_mask(structure, residue_group_index=0)
@@ -878,7 +878,7 @@ class EllipsoidEnergy(EnergyTerm):
         warnings.warn('This energy is yet to have any unit tests and is not guaranteed to work')
 
     def compute( self, state:"State" ) -> float:
-        structure = state.oracles_output[self.oracle][self.input_key]
+        structure = state._oracles_output[self.oracle][self.input_key]
         atoms = structure[np.isin(structure.atom_name, backbone_atoms)]
 
         # transforming to principle component axes
@@ -968,7 +968,7 @@ class CuboidEnergy(EnergyTerm):
         warnings.warn('This energy is yet to have any unit tests and is not guaranteed to work')
 
     def compute(self, state:"State" ) -> float:
-        structure = state.oracles_output[self.oracle][self.input_key]
+        structure = state._oracles_output[self.oracle][self.input_key]
         atoms = structure[np.isin(structure.atom_name, backbone_atoms)]
 
         # transforming to principle component axes
@@ -1040,7 +1040,7 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
         assert self.reference_embeddings.shape[0] == len(self.conserved_residues_map), f'Conserved residues map {self.conserved_residues_map} does not match reference embeddings {self.reference_embeddings.shape}'
 
     def compute(self, state:"State") -> float:
-        embeddings = state.oracles_output[self.oracle][self.input_key]
+        embeddings = state._oracles_output[self.oracle][self.input_key]
         assert isinstance( embeddings, np.ndarray ), f'Embeddings is expected to be a numpy array...but is type: {type(embeddings)}'
         assert len(embeddings.shape) == 2, f'Embeddings is expected to be a 2D tensor...but is shape: {embeddings.shape}. This does not work with batches.'
         

@@ -7,7 +7,7 @@ import numpy.typing as npt
 from ..chain import Chain
 from .utils import reindex_chains
 from pydantic import field_validator
-from .base import FoldingAlgorithm, FoldingMetrics
+from ..oracles import FoldingOracle, FoldingMetrics
 from typing import List, Any
 from modalfold import app  # type: ignore
 from modalfold.esmfold import ESMFold, ESMFoldOutput  # type: ignore
@@ -70,7 +70,7 @@ class ESMFoldingMetrics(FoldingMetrics):
         return validate_array_range(v, 'ptm', 0, 1)
 
 
-class ESMFolder(FoldingAlgorithm):
+class ESMFolder(FoldingOracle):
     """
     Object that uses ESMFold to predict structure of proteins from sequence.
 

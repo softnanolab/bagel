@@ -39,8 +39,6 @@ class State:
         An oracle for example is a protein structure prediction model, or a protein language model.
     energy_terms : List[:class:`.EnergyTerm`]
         Collection of EnergyTerms that define the State.
-    energy_terms_weights : List[float] # TODO: this will be moved into EnergyTerms
-        Weights for each EnergyTerm.
 
     Attributes
     ----------
@@ -53,10 +51,9 @@ class State:
     """
 
     name: str
-    chains: List[Chain]  # This is a list of single monomeric chains
-    oracles: list[Oracle] 
+    chains: List[Chain]
+    oracles: list[Oracle]
     energy_terms: List[EnergyTerm]
-    #energy_terms_weights: List[float]
     _energy: Optional[float] = field(default=None, init=False)
     _oracles_output: Optional[dict] = field(default=None, init=False)
     _energy_terms_value: dict[(str, float)] = field(default_factory=lambda: {}, init=False)
