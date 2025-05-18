@@ -82,7 +82,7 @@ class ESM2(LanguageModel):
         monomers = [chain.sequence for chain in chains]
         return [':'.join(monomers)]
 
-    def calculate_embeddings(self, state) -> Tensor:
+    def calculate_embeddings(self, state) -> np.ndarray:
         """
         Calculate the embeddings of the residues in the state.
         """
@@ -103,7 +103,7 @@ class ESM2(LanguageModel):
     def _local_embeddings(self, sequence: List[str]) -> ESM2Output:
         return self.model.embeddings.local(sequence)
 
-    def _post_process(self, output: ESM2Output) -> Tensor:
+    def _post_process(self, output: ESM2Output) -> np.ndarray:
         """
         Reduce ESM2Output (from ModalFold) to a Tensor of size batch x N_residues x N_features
         containing the embeddings only.
