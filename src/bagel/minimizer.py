@@ -127,132 +127,10 @@ class Minimizer(ABC):
         system.dump_logs(real_step, self.log_path / 'current', save_structure=real_step % self.log_frequency == 0)
         best_system.dump_logs(real_step, self.log_path / 'best', save_structure=new_best)
 
-
 @dataclass
-class MonteCarlo(Minimizer):
+class FlexibleMinimizer(Minimizer):
     mutator: MutationProtocol
-    experiment_name: str
-    log_frequency: int
-    log_path: pl.Path | str | None = None
-
-    def __post_init__(self) -> NoReturn:
-        raise NotImplementedError('Monte Carlo is not implemented yet')
-
-    def minimize_system(self, system: System) -> NoReturn:
-        """
-        This method is not implemented yet and will raise an exception.
-
-        The return type NoReturn tells mypy that this function never returns normally.
-        """
-        raise NotImplementedError('Monte Carlo is not implemented yet')
-
-
-@dataclass
-class SimulatedAnnealing(Minimizer):
-    mutator: MutationProtocol
-    initial_temperature: float
-    final_temperature: float
-    n_steps: int
-    log_frequency: int = 100
-    # ? move this into MutationProtocol (as that is the design)?
-    experiment_name: str = field(default_factory=lambda: f'simulated_annealing_{time_stamp()}')
-    log_path: pl.Path | str | None = None
-
-    def __post_init__(self) -> None:
-        super().__post_init__()
-        self.temperatures = np.linspace(start=self.initial_temperature, stop=self.final_temperature, num=self.n_steps)
-        self.acceptance: list[bool] = []
-
-    def dump_logs(self, output_folder: pl.Path, step: int, **kwargs: Any) -> None:
-        self.acceptance.append(kwargs['accept'])
-        kwargs['acceptance_rate'] = sum(self.acceptance) / len(self.acceptance)
-        super().dump_logs(output_folder, step, **kwargs)
-
-    def minimize_system(self, system: System) -> System:
-        system.get_total_energy() # update the energy internally
-        best_system = system.__copy__()
-        assert best_system.total_energy is not None, 'Cannot start without best system has a calculated energy'
-        self.logging_step(-1, system, best_system, False)
-        for step in range(self.n_steps):
-            new_best = False
-            system, accept = self.minimize_one_step(self.temperatures[step], system)
-            assert system.total_energy is not None, 'Cannot minimize system before energy is calculated'
-            if system.total_energy < best_system.total_energy:
-                best_system = system.__copy__()  # This automatically records the energy in best_system.total_energy
-                new_best = True
-            self.logging_step(step, system, best_system, new_best, temperature=self.temperatures[step], accept=accept)
-
-        assert best_system.total_energy is not None, f'{best_system=} energy cannot be None!'
-        return best_system
-
-
-@dataclass
-class SimulatedTempering(Minimizer):
-    mutator: MutationProtocol
-    high_temperature: float
-    low_temperature: float
-    n_steps_high: int
-    n_steps_low: int
-    n_cycles: int
-    preserve_best_system: bool = False
-    log_frequency: int = 1000
-    experiment_name: str = field(default_factory=lambda: f'simulated_tempering_{time_stamp()}')
-    log_path: pl.Path | str | None = None
-
-    """
-    Cycling between low and high temperatures.
-    """
-
-    def __post_init__(self) -> None:
-        super().__post_init__()
-        cycle_temperatures = np.concat(
-            [
-                np.full(shape=self.n_steps_low, fill_value=self.low_temperature),
-                np.full(shape=self.n_steps_high, fill_value=self.high_temperature),
-            ]
-        )
-        self.temperatures = np.tile(cycle_temperatures, reps=self.n_cycles)
-        self.n_steps_cycle = self.n_steps_high + self.n_steps_low
-        self.acceptance: list[bool] = []
-
-    def dump_logs(self, output_folder: pl.Path, step: int, **kwargs: Any) -> None:
-        """
-        Dump the logs for the simulated tempering. Before sending it off to the superclass,
-        we can compute additional information, such as the cumulative acceptance rate.
-        """
-        # TODO: this could be done a bit elegantly, if we keep track of self.step as well
-        self.acceptance.append(kwargs['accept'])
-        kwargs['acceptance_rate'] = sum(self.acceptance) / len(self.acceptance)
-        super().dump_logs(output_folder, step, **kwargs)
-
-    def minimize_system(self, system: System) -> System:
-        system.get_total_energy() # update the energy internally
-        best_system = system.__copy__()
-        assert best_system.total_energy is not None, 'Cannot start without best system has a calculated energy'
-        self.logging_step(-1, system, best_system, False)
-        for step, temperature in enumerate(self.temperatures):
-            new_best = False
-            system, accept = self.minimize_one_step(temperature, system)
-            assert system.total_energy is not None, 'Cannot minimize system before energy is calculated'
-
-            if system.total_energy < best_system.total_energy:
-                best_system = system.__copy__()  # This automatically records the energy in best_system.total_energy
-                new_best = True
-
-            self.logging_step(step, system, best_system, new_best, temperature=temperature, accept=accept)
-
-            if self.preserve_best_system and (step + 1) % self.n_steps_cycle == 0:
-                logger.debug(f'Starting new cycle with best system from previous cycle')
-                system = best_system.__copy__()  # begin next cycle using best system from previous cycle
-
-        assert best_system.total_energy is not None, f'{best_system=} energy cannot be None!'
-        return best_system
-
-
-@dataclass
-class FlexibleMinimiser(Minimizer):
-    mutator: MutationProtocol
-    temperature_schedule: Callable[[int], float]
+    temperature_schedule: list[float]
     n_steps: int
     log_frequency: int = 100
     preserve_best_system_every_n_steps: int | None = None
@@ -260,17 +138,18 @@ class FlexibleMinimiser(Minimizer):
     log_path: pl.Path | str | None = None
 
     def minimize_system(self, system: System) -> System:
-        raise NotImplementedError('Flexible minimizer DOES NOT work in new implementation with Oracles, yet')
+        #raise NotImplementedError('Flexible minimizer DOES NOT work in new implementation with Oracles, yet')
     
         system.get_total_energy()  # update the energy internally
         best_system = system.__copy__()
-        assert best_system.total_energy is not None, 'Cannot start without best system has a calculated energy'
+        assert system.total_energy is not None, 'Cannot start without system having a calculated energy'
+        assert best_system.total_energy is not None, 'Cannot start without lowest energy system having a calculated energy'
         self.logging_step(-1, system, best_system, False)
         for step in range(self.n_steps):
             new_best = False
-            temperature = self.temperature_schedule(step)
+            temperature = self.temperature_schedule[step]
             system, accept = self.minimize_one_step(temperature, system)
-            assert system.total_energy is not None, 'Cannot minimize system before energy is calculated'
+            assert system.total_energy is not None, 'Cannot evolve system if current energy not available'
             if system.total_energy < best_system.total_energy:
                 new_best = True
                 best_system = system.__copy__()  # This automatically records the energy in best_system.total_energy
@@ -283,3 +162,201 @@ class FlexibleMinimiser(Minimizer):
 
         assert best_system.total_energy is not None, f'Best energy {best_system.total_energy} cannot be None!'
         return best_system
+
+@dataclass
+class MonteCarloSampler(FlexibleMinimizer):
+
+    def __init__( self, 
+                 mutator: MutationProtocol, 
+                 temperature: float, 
+                 n_steps: int, 
+                 log_frequency: int = 100, 
+                 experiment_name: str = field(default_factory=lambda: f'MC_sampler_{time_stamp()}'), 
+                 log_path: pl.Path | str | None = None
+                 ) -> None:
+        
+                 super().__init__(mutator=mutator, 
+                         temperature_schedule=[temperature] * n_steps, 
+                         n_steps=n_steps, 
+                         log_frequency=log_frequency, 
+                         preserve_best_system_every_n_steps=None, 
+                         experiment_name=experiment_name, 
+                         log_path=log_path
+                         )
+
+@dataclass
+class SimulatedAnnealing(FlexibleMinimizer):
+
+    def __init__( self,
+                mutator: MutationProtocol,
+                initial_temperature: float,
+                final_temperature: float,
+                n_steps: int,
+                log_frequency: int = 100,
+                experiment_name: str = field(default_factory=lambda: f'simulated_annealing_{time_stamp()}'),
+                log_path: pl.Path | str | None = None
+                ) -> None:
+
+                super().__init__(mutator=mutator,
+                         temperature_schedule=np.linspace(start=initial_temperature, stop=final_temperature, num=n_steps),
+                         n_steps=n_steps,
+                         log_frequency=log_frequency,
+                         preserve_best_system_every_n_steps=None,
+                         experiment_name=experiment_name,
+                         log_path=log_path)
+                self.acceptance = []
+                super().__post_init__()
+
+    def dump_logs(self, output_folder: pl.Path, step: int, **kwargs: Any) -> None:
+        self.acceptance.append(kwargs['accept'])
+        kwargs['acceptance_rate'] = sum(self.acceptance) / len(self.acceptance)
+        super().dump_logs(output_folder, step, **kwargs)
+
+@dataclass
+class SimulatedTempering(FlexibleMinimizer):
+    def __init__( self,
+                mutator: MutationProtocol,
+                high_temperature: float,
+                low_temperature: float,
+                n_steps_high: int,
+                n_steps_low: int,
+                n_cycles: int,
+                preserve_best_system_every_n_steps: bool | None = None,
+                log_frequency: int = 100,
+                experiment_name: str = field(default_factory=lambda: f'simulated_annealing_{time_stamp()}'),
+                log_path: pl.Path | str | None = None
+                ) -> None:
+
+                ## Create the temperature schedule
+                # Cycle through low and high temperatures
+                temperature_schedule = np.concatenate(
+                    [
+                        np.full(shape=n_steps_low, fill_value=low_temperature),
+                        np.full(shape=n_steps_high, fill_value=high_temperature),
+                    ]
+                )
+                temperature_schedule = np.tile(temperature_schedule, reps=n_cycles)
+                n_steps = len(temperature_schedule)
+
+                super().__init__(mutator=mutator,
+                         temperature_schedule=temperature_schedule,
+                         n_steps=n_steps,
+                         log_frequency=log_frequency,
+                         preserve_best_system_every_n_steps=preserve_best_system_every_n_steps,
+                         experiment_name=experiment_name,
+                         log_path=log_path)
+                self.acceptance = []
+                super().__post_init__()
+
+    def dump_logs(self, output_folder: pl.Path, step: int, **kwargs: Any) -> None:
+        """
+        Dump the logs for the simulated tempering. Before sending it off to the superclass,
+        we can compute additional information, such as the cumulative acceptance rate.
+        """
+        # TODO: this could be done a bit elegantly, if we keep track of self.step as well
+        self.acceptance.append(kwargs['accept'])
+        kwargs['acceptance_rate'] = sum(self.acceptance) / len(self.acceptance)
+        super().dump_logs(output_folder, step, **kwargs)
+
+
+#! PROPOSE TO REMOVE, AS SOON AS IMPLEMENTATION ABOVE IS DONE
+#@dataclass
+#class SimulatedAnnealing(Minimizer):
+#    mutator: MutationProtocol
+#    initial_temperature: float
+#    final_temperature: float
+#    n_steps: int
+#    log_frequency: int = 100
+#    # ? move this into MutationProtocol (as that is the design)?
+#    experiment_name: str = field(default_factory=lambda: f'simulated_annealing_{time_stamp()}')
+#    log_path: pl.Path | str | None = None
+#
+#    def __post_init__(self) -> None:
+#        super().__post_init__()
+#        self.temperatures = np.linspace(start=self.initial_temperature, stop=self.final_temperature, num=self.n_steps)
+#        self.acceptance: list[bool] = []
+#
+#    def dump_logs(self, output_folder: pl.Path, step: int, **kwargs: Any) -> None:
+#        self.acceptance.append(kwargs['accept'])
+#        kwargs['acceptance_rate'] = sum(self.acceptance) / len(self.acceptance)
+#        super().dump_logs(output_folder, step, **kwargs)
+#
+#    def minimize_system(self, system: System) -> System:
+#        system.get_total_energy() # update the energy internally
+#        best_system = system.__copy__()
+#        assert best_system.total_energy is not None, 'Cannot start without best system has a calculated energy'
+#        self.logging_step(-1, system, best_system, False)
+#        for step in range(self.n_steps):
+#            new_best = False
+#            system, accept = self.minimize_one_step(self.temperatures[step], system)
+#            assert system.total_energy is not None, 'Cannot minimize system before energy is calculated'
+#            if system.total_energy < best_system.total_energy:
+#                best_system = system.__copy__()  # This automatically records the energy in best_system.total_energy
+#                new_best = True
+#            self.logging_step(step, system, best_system, new_best, temperature=self.temperatures[step], accept=accept)
+#
+#        assert best_system.total_energy is not None, f'{best_system=} energy cannot be None!'
+#        return best_system
+
+
+#@dataclass
+#class SimulatedTempering(Minimizer):
+#    mutator: MutationProtocol
+#    high_temperature: float
+#    low_temperature: float
+#    n_steps_high: int
+#    n_steps_low: int
+#    n_cycles: int
+#    preserve_best_system: bool = False
+#    log_frequency: int = 1000
+#    experiment_name: str = field(default_factory=lambda: f'simulated_tempering_{time_stamp()}')
+#    log_path: pl.Path | str | None = None
+#
+#    """
+#    Cycling between low and high temperatures.
+#    """
+#
+#    def __post_init__(self) -> None:
+#        super().__post_init__()
+#        cycle_temperatures = np.concat(
+#            [
+#                np.full(shape=self.n_steps_low, fill_value=self.low_temperature),
+#                np.full(shape=self.n_steps_high, fill_value=self.high_temperature),
+#            ]
+#        )
+#        self.temperatures = np.tile(cycle_temperatures, reps=self.n_cycles)
+#        self.n_steps_cycle = self.n_steps_high + self.n_steps_low
+#        self.acceptance: list[bool] = []
+#
+#    def dump_logs(self, output_folder: pl.Path, step: int, **kwargs: Any) -> None:
+#        """
+#        Dump the logs for the simulated tempering. Before sending it off to the superclass,
+#        we can compute additional information, such as the cumulative acceptance rate.
+#        """
+#        # TODO: this could be done a bit elegantly, if we keep track of self.step as well
+#        self.acceptance.append(kwargs['accept'])
+#        kwargs['acceptance_rate'] = sum(self.acceptance) / len(self.acceptance)
+#        super().dump_logs(output_folder, step, **kwargs)
+#
+#    def minimize_system(self, system: System) -> System:
+#        system.get_total_energy() # update the energy internally
+#        best_system = system.__copy__()
+#        assert best_system.total_energy is not None, 'Cannot start without best system has a calculated energy'
+#        self.logging_step(-1, system, best_system, False)
+#        for step, temperature in enumerate(self.temperatures):
+#            new_best = False
+#            system, accept = self.minimize_one_step(temperature, system)
+#            assert system.total_energy is not None, 'Cannot minimize system before energy is calculated'
+#
+#            if system.total_energy < best_system.total_energy:
+#                best_system = system.__copy__()  # This automatically records the energy in best_system.total_energy
+#                new_best = True
+#
+#            self.logging_step(step, system, best_system, new_best, temperature=temperature, accept=accept)
+#
+#            if self.preserve_best_system and (step + 1) % self.n_steps_cycle == 0:
+#                logger.debug(f'Starting new cycle with best system from previous cycle')
+#                system = best_system.__copy__()  # begin next cycle using best system from previous cycle
+#
+#        assert best_system.total_energy is not None, f'{best_system=} energy cannot be None!'
+#        return best_system
