@@ -31,7 +31,7 @@ class Config:
 
 class ESM2(LanguageModel):
 
-    def __init__(self, name: str, esm2_name : str, use_modal:bool = False, config:dict[str,Any] ={} ) -> None:
+    def __init__(self, use_modal:bool = False, config:dict[str,Any] ={} ) -> None:
         """
         NOTE this can only be called once. Attempting to initialise this object multiple times in one process creates
         breaking exceptions.
@@ -44,17 +44,14 @@ class ESM2(LanguageModel):
             'output_all_layers': False,
             'model_name': 'esm2_t33_650M_UR50S',
         }
-        self._load(config)
-
         if self.use_modal:
             # Register the cleanup function to be called at exit, so no
             # ephermal app is left running when the object is destroyed
             import atexit
             atexit.register(self.__del__)
 
-        self.name = name
         #! @JAKUB: This will require implementing ESM2 in modalfold.
-        self.model = self._load(config[ esm2_name ])
+        self.model = self._load(config)
     
     #FROM ESMFold
     def __del__(self) -> None:
