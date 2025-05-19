@@ -1,13 +1,12 @@
-import random
-import bagel as bg
 import os
-import modal
-from typing import Any, Optional, List, Dict
-from pathlib import Path
 import re
+import random
+from pathlib import Path
+from typing import Any, Optional, List, Dict
 
-import modalfold
-modalfold.utils.MODEL_DIR = os.path.expanduser("~/.cache/huggingface/hub")
+import modal
+import bagel as bg
+
 
 def parse_hotspot_string(hotspot_str: str, chain_residues: Dict[str, List[bg.Residue]]) -> List[bg.Residue]:
     """
@@ -112,12 +111,12 @@ def design_dimer_binder(
 
     # Step 3: Parse hotspot string to get hotspot residues
     target_chains = { 'A': residues_target_1, 'B': residues_target_2 }
-    residues_hotspot = parse_hotspot_string(hotspot, target_chains)
+    target_hotspot_residues = parse_hotspot_string(hotspot, target_chains)
 
-    if not residues_hotspot:
+    if not target_hotspot_residues:
         raise ValueError(f"No hotspot residues found for specification: {hotspot}")
 
-    print(f"Using {len(residues_hotspot)} hotspot residues")
+    print(f"Using {len(target_hotspot_residues)} hotspot residues")
 
     # Step 4: Create binder chain with random sequence
     binder_sequence = ''.join([random.choice(list(bg.constants.aa_dict.keys())) for _ in range(binder_length)])
@@ -131,13 +130,23 @@ def design_dimer_binder(
     energy_terms = [
         bg.energies.PTMEnergy(),
         bg.energies.OverallPLDDTEnergy(),
+        bg.energies.PLDDTEnergy(
+            residues=residues_binder,
+        ),
         bg.energies.HydrophobicEnergy(),
         bg.energies.PAEEnergy(
-            group_1_residues=residues_hotspot,
+            group_1_residues=target_hotspot_residues,
             group_2_residues=residues_binder,
         ),
+        bg.energies.SeparationEnergy(
+            group_1_residues=target_hotspot_residues,
+            group_2_residues=residues_binder,
+        ),
+        # bg.energies.SurfaceAreaEnergy( # swap for SeparationEnergy if you want
+        #     residues=target_hotspot_residues,
+        # ),
     ]
-    energy_terms_weights = [1.0, 1.0, 5.0, 5.0]
+    energy_terms_weights = [1.0, 1.0, 5.0, 5.0, 5.0, 1.0]
 
     # Step 6: Create state and system
     state = bg.State(
@@ -146,6 +155,7 @@ def design_dimer_binder(
         energy_terms_weights=energy_terms_weights,
         name='state_A',
     )
+    print(f"Total residues: {state.total_residues() + len(linker) + binder_length}")
     initial_system = bg.System(states=[state])
 
     # Step 7: Configure folding
@@ -153,7 +163,7 @@ def design_dimer_binder(
         'output_pdb': False,
         'output_cif': False,
         'glycine_linker': linker,
-        'position_ids_skip': 512,
+        'position_ids_skip': 1024,
     }
     os.environ["HF_MODEL_DIR"] = os.path.expanduser("~/.cache/huggingface/hub")
     folder = bg.folding.ESMFolder(use_modal=use_modal, config=config)
@@ -163,10 +173,10 @@ def design_dimer_binder(
         folder=folder,
         mutator=bg.mutation.Canonical(n_mutations=1),
         high_temperature=1.0,
-        low_temperature=0.5,
+        low_temperature=0.1,
         n_steps_high=50,
-        n_steps_low=50,
-        n_cycles=2,
+        n_steps_low=400,
+        n_cycles=100,
         preserve_best_system=True,
         log_frequency=5,
         experiment_name=experiment_name,
@@ -179,10 +189,24 @@ def design_dimer_binder(
 
 if __name__ == "__main__":
     with modal.enable_output():
+        CD3_d="FKIQVTEYEDKVFVTCNTSVMHLDGTVEGWFAKNKTLNLGKGVLDPRGIYLCNGTEQLAKVVSSVQVHYRMCQNCVELDSGTMAGVIFIDLIATLLLALGVYCFA"
+        CD3_e="DDAENIEYKVSISGTSVELTCPLDSDENLKWEKNGQELPQKHDKHLVLQDFSEVEDSGYYVCYTPASNKNTYLYLKARVCEYCVEVDLTAVAIIIIVDICITLGLLMVIYYWS"
+        CD3_g="QTNKAKNLVQVDGSRGDGSVLLTCGLTDKTIKWLKDGSIISPLNATKNTWNLGNNAKDPRGTYQCQGAKETSNPLQVYYRMCENCIELNIGTISGFIFAEVISIFFLALGVYLIA"
+        # TCR_a_nt="DSVTQTEGLVTVTEGLPVKLNCTYQTTYLTIAFFWYVQYLNEAPQVLLKSSTDNKRTEHQGFHATLHKSSSSFHLQKSSAQLSDSALYYCALSEGGNYKYVFGAGTRLKVIAHIQNPEPAVYQLKDPRSQDSTLCLFTDFDSQINVPKTMESGTFITDKTVLDMKAMDSKSNGAIAWSNQTSFTCQDIFKETNATYPSSDVPCDATLTEKSFETD"
+        # TCR_b1_nt="EDLRNVTPPKVSLFEPSKAEIANKQKATLVCLARGFFPDHVELSWWVNGKEVHSGVSTDPQAYKESNYSYCLSSRLRVSATFWHNPRNHFRCQVQFHGLSEEDKWPEGSPKPVTQNISAEAWGRADCGIT"
+        TCR_a_nt="QNPEPAVYQLKDPRSQDSTLCLFTDFDSQINVPKTMESGTFITDKTVLDMKAMDSKSNGAIAWSNQTSFTCQDIFKETNATYPSSDVPCDATLTEKSFETD"
+        TCR_b1_nt="EDLRNVTPPKVSLFEPSKAEIANKQKATLVCLARGFFPDHVELSWWVNGKEVHSGVSTDPQAYKESNYSYCLSSRLRVSATFWHNPRNHFRCQVQFHGLSEEDKWPEGSPKPVTQNISAEAWGRADCGIT"
+        TCR_a="QQKEKHDQQQVRQSPQSLTVWEGGTTVLTCSYEDSTFNYFPWYQQFPGEGPALLISILSVSDKKEDGRFTTFFNKREKKLSLHIIDSQPGDSATYFCAALYGNEKITFGAGTKLTIKPNIQNPEPAVYQLKDPRSQDSTLCLFTDFDSQINVPKTMESGTFITDKTVLDMKAMDSKSNGAIAWSNQTSFTCQDIFKETNATYPSSDVPCDATLTEKSFETDMNLNFQNLSVMGLRILLLKVAGFNLLMTL"
+        TCR_b1="AVTQSPRSKVAVTGGKVTLSCHQTNNHDYMYWYRQDTGHGLRLIHYSYVADSTEKGDIPDGYKASRPSQENFSLILELASLSQTAVYFCASSDAGGRNTLYFGAGTRLSVLEDLRNVTPPKVSLFEPSKAEIANKQKATLVCLARGFFPDHVELSWWVNGKEVHSGVSTDPQAYKESNYSYCLSSRLRVSATFWHNPRNHFRCQVQFHGLSEEDKWPEGSPKPVTQNISAEAWGRADCGITSASYQQGVLSATILYEILLGKATLYAVLVSTLVVMAM"
+        print(f"LENGTH: {len(TCR_a_nt)+len(TCR_b1_nt)+15+60*2}")
+
         best_system = design_dimer_binder(
-            binder_length=10,
-            target_sequence_1='TEIIVKLSDGRELCLDPKENWVQRVVEKFLKRAENS',
-            target_sequence_2='SAKELRCQCIKTYSKPFHPKFIKELRVIESGPHCANT',
-            hotspot="A1-10,B2,B4,B6",  # Example hotspot specification
+            binder_length=5,
+            target_sequence_1=TCR_a_nt[:5],
+            target_sequence_2=TCR_b1_nt[:5],
+            hotspot="B1-5",  # Example hotspot specification
+            experiment_name='dimer_binder_test_PAE',
+            use_modal=True,
+            linker="G"*5
         )
         print(f"Best system energy: {best_system.get_energy()}")
