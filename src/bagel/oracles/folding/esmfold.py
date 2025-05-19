@@ -111,8 +111,8 @@ class ESMFold(FoldingOracle):
         else:
             logger.warning(
                 "ESMFold will be run using the GPU on this local machine\n"
-                "If you're getting an error about /mnt/models... then set the HF_MODEL_DIR"
-                "environment variable to a writable location, or just the normal huggingface cache"
+                "If you're getting an error about /mnt/models... then set the HF_MODEL_DIR "
+                "environment variable to a writable location, or just the normal huggingface cache "
                 "location, e.g.: export HF_MODEL_DIR=~/.cache/huggingface/hub"
             )
 
