@@ -67,7 +67,7 @@ class System:
 
         structure_path = path / 'structures'
         if step == 0:
-            structure_path.mkdir(parents=True)
+            structure_path.mkdir(parents=True, exist_ok=True)
 
         assert path.exists(), 'Path does not exist. Please create the directory first.'
         assert structure_path.exists(), 'Structure path does not exist. Please create the directory first.'
@@ -93,6 +93,11 @@ class System:
                         logger.debug(
                             f'Skipping {oracle.__class__.__name__} for CIF export, as it is not a FoldingOracle'
                         )
+
+                # Dump PAE matrix for post-processing
+                pae_matrix = state._folding_metrics.pae
+                pae_matrix_path = structure_path / f'{state.name}_{step}_pae.npy'
+                np.save(pae_matrix_path, pae_matrix)
 
         energies['system_energy'] = self.total_energy
 
