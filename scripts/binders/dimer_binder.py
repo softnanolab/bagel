@@ -1,6 +1,7 @@
 import os
 import re
 import random
+import argparse
 from pathlib import Path
 from typing import Any, Optional, List, Dict
 
@@ -130,21 +131,14 @@ def design_dimer_binder(
     energy_terms = [
         bg.energies.PTMEnergy(),
         bg.energies.OverallPLDDTEnergy(),
-        bg.energies.PLDDTEnergy(
-            residues=residues_binder,
-        ),
+        bg.energies.PLDDTEnergy(residues=residues_binder),
         bg.energies.HydrophobicEnergy(),
-        bg.energies.PAEEnergy(
-            group_1_residues=target_hotspot_residues,
-            group_2_residues=residues_binder,
-        ),
+        bg.energies.PAEEnergy(group_1_residues=target_hotspot_residues, group_2_residues=residues_binder),
         bg.energies.SeparationEnergy(
-            group_1_residues=target_hotspot_residues,
-            group_2_residues=residues_binder,
+            group_1_residues=target_hotspot_residues, group_2_residues=residues_binder, normalize=False
         ),
-        # bg.energies.SurfaceAreaEnergy( # swap for SeparationEnergy if you want
-        #     residues=target_hotspot_residues,
-        # ),
+        # swap for SeparationEnergy if you want
+        # bg.energies.SurfaceAreaEnergy(residues=target_hotspot_residues)
     ]
     energy_terms_weights = [1.0, 1.0, 5.0, 5.0, 5.0, 1.0]
 
@@ -155,7 +149,7 @@ def design_dimer_binder(
         energy_terms_weights=energy_terms_weights,
         name='state_A',
     )
-    print(f"Total residues: {state.total_residues() + len(linker) + binder_length}")
+    print(f"Total residues: {state.total_residues() + len(linker)*2 + binder_length}")
     initial_system = bg.System(states=[state])
 
     # Step 7: Configure folding
@@ -165,7 +159,7 @@ def design_dimer_binder(
         'glycine_linker': linker,
         'position_ids_skip': 1024,
     }
-    os.environ["HF_MODEL_DIR"] = os.path.expanduser("~/.cache/huggingface/hub")
+    os.environ["HF_MODEL_DIR"] = str(Path.home() / ".cache/huggingface/hub")
     folder = bg.folding.ESMFolder(use_modal=use_modal, config=config)
 
     # Step 8: Configure and run minimization
@@ -173,12 +167,12 @@ def design_dimer_binder(
         folder=folder,
         mutator=bg.mutation.Canonical(n_mutations=1),
         high_temperature=1.0,
-        low_temperature=0.1,
         n_steps_high=50,
-        n_steps_low=400,
+        low_temperature=0.1,
+        n_steps_low=300,
         n_cycles=100,
         preserve_best_system=True,
-        log_frequency=5,
+        log_frequency=100,
         experiment_name=experiment_name,
         log_path=log_path,
     )
@@ -188,25 +182,36 @@ def design_dimer_binder(
     return best_system
 
 if __name__ == "__main__":
-    with modal.enable_output():
-        CD3_d="FKIQVTEYEDKVFVTCNTSVMHLDGTVEGWFAKNKTLNLGKGVLDPRGIYLCNGTEQLAKVVSSVQVHYRMCQNCVELDSGTMAGVIFIDLIATLLLALGVYCFA"
-        CD3_e="DDAENIEYKVSISGTSVELTCPLDSDENLKWEKNGQELPQKHDKHLVLQDFSEVEDSGYYVCYTPASNKNTYLYLKARVCEYCVEVDLTAVAIIIIVDICITLGLLMVIYYWS"
-        CD3_g="QTNKAKNLVQVDGSRGDGSVLLTCGLTDKTIKWLKDGSIISPLNATKNTWNLGNNAKDPRGTYQCQGAKETSNPLQVYYRMCENCIELNIGTISGFIFAEVISIFFLALGVYLIA"
-        # TCR_a_nt="DSVTQTEGLVTVTEGLPVKLNCTYQTTYLTIAFFWYVQYLNEAPQVLLKSSTDNKRTEHQGFHATLHKSSSSFHLQKSSAQLSDSALYYCALSEGGNYKYVFGAGTRLKVIAHIQNPEPAVYQLKDPRSQDSTLCLFTDFDSQINVPKTMESGTFITDKTVLDMKAMDSKSNGAIAWSNQTSFTCQDIFKETNATYPSSDVPCDATLTEKSFETD"
-        # TCR_b1_nt="EDLRNVTPPKVSLFEPSKAEIANKQKATLVCLARGFFPDHVELSWWVNGKEVHSGVSTDPQAYKESNYSYCLSSRLRVSATFWHNPRNHFRCQVQFHGLSEEDKWPEGSPKPVTQNISAEAWGRADCGIT"
-        TCR_a_nt="QNPEPAVYQLKDPRSQDSTLCLFTDFDSQINVPKTMESGTFITDKTVLDMKAMDSKSNGAIAWSNQTSFTCQDIFKETNATYPSSDVPCDATLTEKSFETD"
-        TCR_b1_nt="EDLRNVTPPKVSLFEPSKAEIANKQKATLVCLARGFFPDHVELSWWVNGKEVHSGVSTDPQAYKESNYSYCLSSRLRVSATFWHNPRNHFRCQVQFHGLSEEDKWPEGSPKPVTQNISAEAWGRADCGIT"
-        TCR_a="QQKEKHDQQQVRQSPQSLTVWEGGTTVLTCSYEDSTFNYFPWYQQFPGEGPALLISILSVSDKKEDGRFTTFFNKREKKLSLHIIDSQPGDSATYFCAALYGNEKITFGAGTKLTIKPNIQNPEPAVYQLKDPRSQDSTLCLFTDFDSQINVPKTMESGTFITDKTVLDMKAMDSKSNGAIAWSNQTSFTCQDIFKETNATYPSSDVPCDATLTEKSFETDMNLNFQNLSVMGLRILLLKVAGFNLLMTL"
-        TCR_b1="AVTQSPRSKVAVTGGKVTLSCHQTNNHDYMYWYRQDTGHGLRLIHYSYVADSTEKGDIPDGYKASRPSQENFSLILELASLSQTAVYFCASSDAGGRNTLYFGAGTRLSVLEDLRNVTPPKVSLFEPSKAEIANKQKATLVCLARGFFPDHVELSWWVNGKEVHSGVSTDPQAYKESNYSYCLSSRLRVSATFWHNPRNHFRCQVQFHGLSEEDKWPEGSPKPVTQNISAEAWGRADCGITSASYQQGVLSATILYEILLGKATLYAVLVSTLVVMAM"
-        print(f"LENGTH: {len(TCR_a_nt)+len(TCR_b1_nt)+15+60*2}")
+    # Create argument parser
+    parser = argparse.ArgumentParser(description='Design a protein binder for a dimer target')
 
+    # Add arguments
+    parser.add_argument('-len', '--binder_length', type=int, default=15,
+                        help='Length of the binder peptide to design')
+    parser.add_argument('-seq1', '--target_sequence_1', type=str, required=True,
+                        help='Amino acid sequence for the first chain of the target')
+    parser.add_argument('-seq2', '--target_sequence_2', type=str, required=True,
+                        help='Amino acid sequence for the second chain of the target')
+    parser.add_argument('-hot', '--hotspot', type=str, default="A10-20",
+                        help='String describing the hotspot residues (e.g., "A1-10,B2,B4,B6")')
+    parser.add_argument('-link', '--linker_length', type=int, default=5,
+                        help='Length of the linker')
+    parser.add_argument('-out_name', '--experiment_name', type=str, default='dimer_binder',
+                        help='Name for the experiment')
+    parser.add_argument('-out_dir', '--log_path', type=str, default='data',
+                        help='Path to save logs')
+
+    # Parse arguments
+    args = parser.parse_args()
+
+    with modal.enable_output():
         best_system = design_dimer_binder(
-            binder_length=5,
-            target_sequence_1=TCR_a_nt[:5],
-            target_sequence_2=TCR_b1_nt[:5],
-            hotspot="B1-5",  # Example hotspot specification
-            experiment_name='dimer_binder_test_PAE',
-            use_modal=True,
-            linker="G"*5
+            binder_length=args.binder_length,
+            target_sequence_1=args.target_sequence_1,
+            target_sequence_2=args.target_sequence_2,
+            hotspot=args.hotspot,
+            experiment_name=args.experiment_name,
+            linker="G"*args.linker_length,
+            log_path=Path(args.log_path),
         )
         print(f"Best system energy: {best_system.get_energy()}")
