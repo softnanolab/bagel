@@ -44,8 +44,8 @@ class State:
     ----------
     _energy : Optional[float]
         Cached total (weighted) energy value for the State.
-    _oracles_output : Optional[dict]
-        Output of different oracles, e.g., structure, folding_metrics, residues embedding...
+    _oracles_result : Optional[dict]
+        Results of different oracles, e.g., folding, embedding, etc.
     _energy_terms_value : dict[(str, float)]
         Cached (unweighted)values of individual :class:`.EnergyTerm` objects.
     """
@@ -55,7 +55,7 @@ class State:
     oracles: list[Oracle]
     energy_terms: List[EnergyTerm]
     _energy: Optional[float] = field(default=None, init=False)
-    _oracles_output: Optional[dict] = field(default=None, init=False)
+    _oracles_result: Optional[dict] = field(default=None, init=False)
     _energy_terms_value: dict[(str, float)] = field(default_factory=lambda: {}, init=False)
 
     def __post_init__(self) -> None:
@@ -75,15 +75,15 @@ class State:
         if self._energy_terms_value == {}:  # If energies not yet calculated
             # Check if the output of the oracle is already calculated, otherwise calculate it
             for oracle in self.oracles:
-                if self._oracles_output[oracle] is None:
-                    self._oracles_output[oracle] = oracle.make_prediction(state=self)
+                if self._oracles_result[oracle] is None:
+                    self._oracles_result[oracle] = oracle.predict(chains=self.chains)
 
         total_energy = 0.0
         for term in self.energy_terms:
-            energy, weighted_energy = term.compute(self._oracles_output)
+            unweighted_energy, weighted_energy = term.compute(self._oracles_result)
             total_energy += weighted_energy
-            self._energy_terms_value[term.name] = energy
-            logger.debug(f'Energy term {term.name} has value {energy}')
+            self._energy_terms_value[term.name] = unweighted_energy
+            logger.debug(f'Energy term {term.name} has value {unweighted_energy}')
 
         self._energy = total_energy
 

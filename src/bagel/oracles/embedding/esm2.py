@@ -5,22 +5,23 @@ standard template and objects for structure prediction
 import numpy as np
 import numpy.typing as npt
 from ...chain import Chain
-from .base import EmbeddingResults, EmbeddingOracle
+from .base import EmbeddingResult, EmbeddingOracle
 from typing import List, Any
 from modalfold import app
-from modalfold.esm2 import ESM2, ESM2Output
+from modalfold.esm2 import ESM2Output
+from modalfold.esm2 import ESM2 as ESM2Boiler
 
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-class ESM2Results(EmbeddingResults):
+class ESM2Result(EmbeddingResult):
     """
     Stores statistics from ESM-2.
     """
 
-    embedding: npt.NDArray[np.float64]
+    embeddings: npt.NDArray[np.float64]
 
 
 class ESM2(EmbeddingOracle):
@@ -56,7 +57,7 @@ class ESM2(EmbeddingOracle):
             self.modal_app_context = app.run()
             self.modal_app_context.__enter__()  # type: ignore
         config = {**self.default_config, **config}
-        return ESM2(config)
+        return ESM2Boiler(config)
 
     def _pre_process(self, chains: list[Chain]) -> list[str]:
         """
@@ -65,7 +66,7 @@ class ESM2(EmbeddingOracle):
         monomers = [chain.sequence for chain in chains]
         return [':'.join(monomers)]
 
-    def embed(self, chains: list[Chain]) -> ESM2Results:
+    def embed(self, chains: list[Chain]) -> ESM2Result:
         """
         Calculate the embeddings of the residues in the chains.
         """
@@ -88,9 +89,9 @@ class ESM2(EmbeddingOracle):
         return self.model.embed.local(sequence)
 
     def _post_process(self, output: ESM2Output) -> np.ndarray:
-        embedding = output.embeddings[0, 1:-1, :]  # remove first and last token embeddings (not a residue)
-        assert len(embedding.shape) == 2, (
-            f'Embeddings is expected to be a 2D tensor, not shape: {embedding.shape}. '
+        embeddings = output.embeddings[0, 1:-1, :]  # remove first and last token embeddings (not a residue)
+        assert len(embeddings.shape) == 2, (
+            f'Embeddings is expected to be a 2D tensor, not shape: {embeddings.shape}. '
             'The ESM2 Oracle does not support batches.'
         )
-        return embedding
+        return ESM2Result(embeddings=embeddings)

@@ -32,7 +32,7 @@ This was leading to test breaking exceptions.
 
 
 @pytest.fixture(scope='session')  # ensures only 1 modal container is requested per process
-def folder(request) -> bg.oracles.folding.ESMFolder:
+def esmfold(request) -> bg.oracles.folding.ESMFold:
     """
     Fixture that must be called in tests that require folding. Behaviour based on  the --folding flag of the
     origional pytest call.
@@ -41,7 +41,7 @@ def folder(request) -> bg.oracles.folding.ESMFolder:
     if flag == 'skip':
         pytest.skip(reason='--folding flag of the origional pytest call set to skip')
     else:
-        model = bg.oracles.folding.ESMFolder(use_modal=flag == 'modal')
+        model = bg.oracles.folding.ESMFold(use_modal=flag == 'modal')
         yield model
         del model
 
@@ -103,11 +103,13 @@ def small_structure_chains(small_structure_residues: list[bg.Residue]) -> list[b
 def small_structure_state(
     small_structure_chains: list[bg.Chain], small_structure_residues: list[bg.Residue], small_structure: AtomArray
 ) -> bg.State:
-    energy_terms = [bg.energies.PTMEnergy(), bg.energies.SurfaceAreaEnergy(residues=small_structure_residues[1:])]
+    energy_terms = [
+        bg.energies.PTMEnergy(weight=1.0),
+        bg.energies.SurfaceAreaEnergy(residues=small_structure_residues[1:], weight=1.0),
+    ]
     state = bg.State(
         chains=small_structure_chains,
         energy_terms=energy_terms,
-        energy_terms_weights=[1.0 for term in energy_terms],
         name='small',
     )
     state._energy = -0.5
@@ -196,15 +198,17 @@ def mixed_structure_state(
 ) -> bg.State:
     # energy_terms = [bg.energies.PTMEnergy(), bg.energies.GlobularEnergy()]
     energy_terms = [
-        bg.energies.PLDDTEnergy(residues=line_structure_residues + square_structure_residues),
+        bg.energies.PLDDTEnergy(residues=line_structure_residues + square_structure_residues, weight=1.0),
         bg.energies.PAEEnergy(
-            group_1_residues=line_structure_residues, group_2_residues=square_structure_residues, inheritable=False
+            group_1_residues=line_structure_residues,
+            group_2_residues=square_structure_residues,
+            inheritable=False,
+            weight=1.0,
         ),
     ]
     state = bg.State(
         chains=line_structure_chains + square_structure_chains,
         energy_terms=energy_terms,
-        energy_terms_weights=[1.0 for term in energy_terms],
         name='mixed',
     )
     state._energy = 0.1
@@ -283,8 +287,7 @@ def simple_state() -> bg.State:
     residues = [bg.Residue(name=aa, chain_ID='C-A', index=i, mutable=True) for i, aa in enumerate(sequence)]
     state = bg.State(
         chains=[bg.Chain(residues)],
-        energy_terms=[bg.energies.PTMEnergy(), bg.energies.OverallPLDDTEnergy()],
-        energy_terms_weights=[1.0, 1.0],
+        energy_terms=[bg.energies.PTMEnergy(weight=1.0), bg.energies.OverallPLDDTEnergy(weight=1.0)],
         name='state_A',
     )
     state._structure = AtomArray(length=len(residues))
@@ -306,15 +309,19 @@ def shared_chain_system() -> bg.State:
 
     A_state = bg.State(
         chains=[shared_chain],
-        energy_terms=[bg.energies.PLDDTEnergy(residues), bg.energies.SurfaceAreaEnergy(residues)],
-        energy_terms_weights=[1.0, 1.0],
+        energy_terms=[
+            bg.energies.PLDDTEnergy(residues, weight=1.0),
+            bg.energies.SurfaceAreaEnergy(residues, weight=1.0),
+        ],
         name='A',
     )
 
     B_state = bg.State(
         chains=[shared_chain],
-        energy_terms=[bg.energies.PLDDTEnergy(residues), bg.energies.SurfaceAreaEnergy(residues)],
-        energy_terms_weights=[1.0, 1.0],
+        energy_terms=[
+            bg.energies.PLDDTEnergy(residues, weight=1.0),
+            bg.energies.SurfaceAreaEnergy(residues, weight=1.0),
+        ],
         name='B',
     )
     return bg.System([A_state, B_state])
@@ -326,8 +333,7 @@ def huge_system() -> bg.State:
     residues = [bg.Residue(name=aa, chain_ID='C-A', index=i, mutable=True) for i, aa in enumerate(sequence)]
     state = bg.State(
         chains=[bg.Chain(residues)],
-        energy_terms=[bg.energies.PTMEnergy(), bg.energies.OverallPLDDTEnergy()],
-        energy_term_weights=[1.0, 2.0],
+        energy_terms=[bg.energies.PTMEnergy(weight=1.0), bg.energies.OverallPLDDTEnergy(weight=2.0)],
         name='state_A',
     )
     return bg.System([state])
@@ -341,16 +347,20 @@ def energies_system() -> bg.State:
     A_residues = [bg.Residue(name=aa, chain_ID='A', index=i, mutable=True) for i, aa in enumerate(sequence)]
     A_state = bg.State(
         chains=[bg.Chain(A_residues)],
-        energy_terms=[bg.energies.PLDDTEnergy(A_residues), bg.energies.SurfaceAreaEnergy(A_residues)],
-        energy_terms_weights=[1.0, 1.0],
+        energy_terms=[
+            bg.energies.PLDDTEnergy(A_residues, weight=1.0),
+            bg.energies.SurfaceAreaEnergy(A_residues, weight=1.0),
+        ],
         name='A',
     )
 
     B_residues = [bg.Residue(name=aa, chain_ID='B', index=i, mutable=True) for i, aa in enumerate(sequence)]
     B_state = bg.State(
         chains=[bg.Chain(B_residues)],
-        energy_terms=[bg.energies.PLDDTEnergy(B_residues), bg.energies.SurfaceAreaEnergy(B_residues)],
-        energy_terms_weights=[1.0, 1.0],
+        energy_terms=[
+            bg.energies.PLDDTEnergy(B_residues, weight=1.0),
+            bg.energies.SurfaceAreaEnergy(B_residues, weight=1.0),
+        ],
         name='B',
     )
     return bg.System([A_state, B_state])
@@ -422,15 +432,13 @@ def nominal_mixed_system(trimer: list[bg.Chain]) -> bg.System:
     """system with 3 mutable 20 amino acid chains. These are shared between 2 states with easier energies."""
     state_1 = bg.State(
         chains=trimer[:2],
-        energy_terms=[bg.energies.PTMEnergy()],
-        energy_term_weights=[1.0],
+        energy_terms=[bg.energies.PTMEnergy(weight=1.0)],
         name='state_1',
     )
 
     state_2 = bg.State(
         chains=trimer[1:],
-        energy_terms=[bg.energies.OverallPLDDTEnergy()],
-        energy_term_weights=[1.0],
+        energy_terms=[bg.energies.OverallPLDDTEnergy(weight=1.0)],
         name='state_2',
     )
 

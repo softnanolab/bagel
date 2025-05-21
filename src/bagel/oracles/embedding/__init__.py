@@ -1,3 +1,4 @@
-from .esm2 import ESM2, ESM2Results
+from .base import EmbeddingOracle
+from .esm2 import ESM2, ESM2Result
 
-__all__ = ['ESM2', 'ESM2Results']
+__all__ = ['EmbeddingOracle', 'ESM2', 'ESM2Result']

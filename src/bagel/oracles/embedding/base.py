@@ -7,19 +7,18 @@ Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
 """
 
 from abc import abstractmethod
-from pydantic import BaseModel
-from ..base import Oracle
+from ..base import Oracle, OracleResult
 from ...chain import Chain
 import numpy as np
 import numpy.typing as npt
 
 
-class EmbeddingResults(BaseModel):
+class EmbeddingResult(OracleResult):
     """
     Stores statistics from the embedding algorithm.
     """
 
-    embedding: npt.NDArray[np.float64]
+    embeddings: npt.NDArray[np.float64]
 
     class Config:
         arbitrary_types_allowed = True  # This is needed for numpy array support
@@ -30,12 +29,11 @@ class EmbeddingOracle(Oracle):
     An EmbeddingOracle is a specific type of Oracle that uses a sequence-based model to predict the residues' embeddings.
     """
 
-    def make_prediction(self, state: 'State'):
-        results = self.embed(state)
-        return results
+    def predict(self, chains: list[Chain]) -> EmbeddingResult:
+        return self.embed(chains=chains)
 
     @abstractmethod
-    def embed(self, state: 'State') -> EmbeddingResults:
+    def embed(self, chains: list[Chain]) -> EmbeddingResult:
         raise NotImplementedError('This method should be implemented by the embedding algorithm')
 
     @abstractmethod

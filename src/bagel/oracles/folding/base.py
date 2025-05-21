@@ -9,12 +9,12 @@ Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
 from abc import abstractmethod
 from pydantic import BaseModel
 from ...chain import Chain
-from ..base import Oracle
+from ..base import Oracle, OracleResult
 from biotite.structure import AtomArray
 from typing import List
 
 
-class FoldingResults(BaseModel):
+class FoldingResult(OracleResult):
     """
     Stores statistics from the folding algorithm.
     """
@@ -30,19 +30,14 @@ class FoldingOracle(Oracle):
     A FoldingOracle is a specific type of Oracle that uses a folding algorithm to predict the 3D structure of a State.
     """
 
-    _structure: AtomArray
-    _folding_results: FoldingResults
+    result_class = FoldingResult
 
-    def make_prediction(self, state: 'State'):
+    def predict(self, chains: list[Chain]) -> FoldingResult:
         """
-        Predict new structure of state.
-        Stores structure and folding metrics as private attributes.
+        Predict new structure of chains.
         """
-        assert self._structure is None, 'State already has a structure'
-        assert self._folding_results is None, 'State already has folding results'
-        self._structure, self._folding_results = self.fold(chains=state.chains)
-        return self._structure, self._folding_results
+        return self.fold(chains=chains)
 
     @abstractmethod
-    def fold(self, chains: List[Chain]) -> tuple[AtomArray, FoldingResults]:
+    def fold(self, chains: list[Chain]) -> FoldingResult:
         raise NotImplementedError('This method should be implemented by the folding algorithm')

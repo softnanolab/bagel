@@ -4,11 +4,11 @@ import numpy as np
 
 
 def test_state_calculate_internal_structure_and_energies_method_outputs_correct_value(simple_state: bg.State) -> None:
-    mock_folding_metrics = Mock(bg.folding.FoldingMetrics)
-    mock_folding_metrics.ptm = 3.0
-    mock_folding_metrics.local_plddt = [[2.0, 2.0]]
-    mock_folder = Mock(bg.folding.ESMFolder)
-    mock_folder.fold = Mock(return_value=[1.0, mock_folding_metrics])
+    mock_folding_result = Mock(bg.folding.FoldingResult)
+    mock_folding_result.ptm = 3.0
+    mock_folding_result.local_plddt = [[2.0, 2.0]]
+    mock_folder = Mock(bg.oracles.folding.ESMFold)
+    mock_folder.fold = Mock(return_value=mock_folding_result)
 
     simple_state.get_energy(mock_folder)
     # energy term energies = -3.0 and -2.0. energy term weights = 1.0 and 2.0

@@ -7,10 +7,11 @@ import numpy.typing as npt
 from ...chain import Chain
 from .utils import reindex_chains
 from pydantic import field_validator
-from .base import FoldingOracle, FoldingResults
+from .base import FoldingOracle, FoldingResult
 from typing import List, Any
 from modalfold import app  # type: ignore
-from modalfold.esmfold import ESMFold, ESMFoldOutput  # type: ignore
+from modalfold.esmfold import ESMFoldOutput  # type: ignore
+from modalfold.esmfold import ESMFold as ESMFoldBoiler
 
 
 # TODO: add proper types to next modalfold version
@@ -39,7 +40,7 @@ def validate_array_range(
     return array
 
 
-class ESMFoldingResults(FoldingResults):
+class ESMFoldingResult(FoldingResult):
     """
     Stores statistics from the ESMFold folding algorithm.
 
@@ -49,6 +50,7 @@ class ESMFoldingResults(FoldingResults):
     To be discussed.
     """
 
+    structure: AtomArray  # structure of the predicted model
     local_plddt: npt.NDArray[np.float64]  # global template modelling score (0 to 1)
     ptm: npt.NDArray[np.float64]  # global predicted local distance difference test score (0 to 1)
     pae: npt.NDArray[np.float64]  # pairwise predicted alignment error
@@ -70,12 +72,14 @@ class ESMFoldingResults(FoldingResults):
         return validate_array_range(v, 'ptm', 0, 1)
 
 
-class ESMFolder(FoldingOracle):
+class ESMFold(FoldingOracle):
     """
     Object that uses ESMFold to predict structure of proteins from sequence.
 
     WIP: For now we will be using ModalFold to do this reliably without much env issues.
     """
+
+    result_class = ESMFoldingResult
 
     def __init__(self, use_modal: bool = False, config: dict[str, Any] = {}):
         """
@@ -110,7 +114,7 @@ class ESMFolder(FoldingOracle):
             self.modal_app_context = app.run()
             self.modal_app_context.__enter__()  # type: ignore
         config = {**self.default_config, **config}
-        self.model = ESMFold(config)
+        self.model = ESMFoldBoiler(config)
 
     def _pre_process(self, chains: list[Chain]) -> list[str]:
         """
@@ -121,7 +125,7 @@ class ESMFolder(FoldingOracle):
         monomers = [chain.sequence for chain in chains]
         return [':'.join(monomers)]
 
-    def fold(self, chains: List[Chain]) -> tuple[AtomArray, ESMFoldingResults]:
+    def fold(self, chains: List[Chain]) -> ESMFoldingResult:
         """
         Fold a list of chains using ESMFold.
         """
@@ -139,16 +143,16 @@ class ESMFolder(FoldingOracle):
     def _local_fold(self, sequence: List[str]) -> ESMFoldOutput:
         return self.model.fold.local(sequence)
 
-    def _reduce_output(self, output: ESMFoldOutput, chains: List[Chain]) -> tuple[AtomArray, ESMFoldingResults]:
+    def _reduce_output(self, output: ESMFoldOutput, chains: List[Chain]) -> ESMFoldingResult:
         """
-        Reduce ESMFoldOutput (from ModalFold) to a ESMFoldingResults object
+        Reduce ESMFoldOutput (from ModalFold) to a ESMFoldingResult object
         """
         atoms = output.atom_array
-        results = ESMFoldingResults(
+        atoms = reindex_chains(atoms, [chain.chain_ID for chain in chains])
+        results = self.result_class(
+            structure=atoms,
             local_plddt=output.plddt,
             ptm=output.ptm,
             pae=output.predicted_aligned_error,
         )
-        atoms = reindex_chains(atoms, [chain.chain_ID for chain in chains])
-
-        return atoms, results
+        return results

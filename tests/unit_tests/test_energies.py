@@ -73,6 +73,15 @@ def test_energies_get_correct_atom_mask(small_structure: AtomArray) -> None:
     assert all(mask == np.array([True, True, False, False, False]))
 
 
+def test_oracle_outputs(esmfold: bg.oracles.folding.ESMFolding) -> None:
+    ptm_energy = bg.energies.PTMEnergy(
+        oracle=esmfold,
+        weight=1.0,
+    )
+    ptm_energy.compute()
+    assert ptm_energy.value == -0.7
+
+
 def test_PTMEnergy() -> None:
     mock_folding_metrics = Mock(bg.folding.FoldingMetrics)
     mock_folding_metrics.ptm = 0.7
