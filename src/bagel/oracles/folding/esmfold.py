@@ -39,7 +39,7 @@ def validate_array_range(
     return array
 
 
-class ESMFoldingMetrics(FoldingMetrics):
+class ESMFoldingResults(FoldingResults):
     """
     Stores statistics from the ESMFold folding algorithm.
 
@@ -139,16 +139,16 @@ class ESMFolder(FoldingOracle):
     def _local_fold(self, sequence: List[str]) -> ESMFoldOutput:
         return self.model.fold.local(sequence)
 
-    def _reduce_output(self, output: ESMFoldOutput, chains: List[Chain]) -> tuple[AtomArray, ESMFoldingMetrics]:
+    def _reduce_output(self, output: ESMFoldOutput, chains: List[Chain]) -> tuple[AtomArray, ESMFoldingResults]:
         """
-        Reduce ESMFoldOutput (from ModalFold) to a ESMFoldingMetrics object
+        Reduce ESMFoldOutput (from ModalFold) to a ESMFoldingResults object
         """
         atoms = output.atom_array
-        metrics = ESMFoldingMetrics(
+        results = ESMFoldingResults(
             local_plddt=output.plddt,
             ptm=output.ptm,
             pae=output.predicted_aligned_error,
         )
         atoms = reindex_chains(atoms, [chain.chain_ID for chain in chains])
 
-        return atoms, metrics
+        return atoms, results

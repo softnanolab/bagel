@@ -87,8 +87,7 @@ def run_simple_binder():
 
     # Now define the minimizer
     minimizer = bg.minimizer.SimulatedTempering(
-        mutation_protocol=bg.mutation.Canonical(),
-        max_mutations_per_step=1,
+        mutation_protocol=bg.mutation.Canonical(n_mutations=1),
         high_temperature=2,
         low_temperature=0.1,
         n_steps=10,

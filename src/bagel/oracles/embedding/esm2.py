@@ -3,22 +3,17 @@ standard template and objects for structure prediction
 """
 
 import numpy as np
-import numpy.typing as npt
 from ..chain import Chain
-#from .utils import reindex_chains
-from pydantic import field_validator
-from .base import LanguageModel 
+from .base import EmbeddingResults, EmbeddingOracle
 from typing import List, Any
 from modalfold import app  
-from modalfold.esm2 import ESM2, ESM2Output 
-
-from pydantic import BaseModel
+from modalfold.esm2 import ESM2, ESM2Output     
 
 import logging
 
 logger = logging.getLogger(__name__)
 
-class ESM2Output(BaseModel):
+class ESM2Results(EmbeddingResults):
     """
     Stores statistics from the protein language model.
     """
@@ -29,7 +24,7 @@ class ESM2Output(BaseModel):
 class Config:
         arbitrary_types_allowed = True  # This is needed for numpy array support
 
-class ESM2(LanguageModel):
+class ESM2(EmbeddingOracle):
 
     def __init__(self, use_modal:bool = False, config:dict[str,Any] ={} ) -> None:
         """
@@ -40,9 +35,8 @@ class ESM2(LanguageModel):
         """
         self.use_modal = use_modal
         self.default_config = {
-            'output_embeddings': True,
-            'output_all_layers': False,
-            'model_name': 'esm2_t33_650M_UR50S',
+            'output_hidden_states': False,
+            'model_name': 'esm2_t33_650M_UR50D',
         }
         if self.use_modal:
             # Register the cleanup function to be called at exit, so no
@@ -50,17 +44,14 @@ class ESM2(LanguageModel):
             import atexit
             atexit.register(self.__del__)
 
-        #! @JAKUB: This will require implementing ESM2 in modalfold.
         self.model = self._load(config)
     
-    #FROM ESMFold
     def __del__(self) -> None:
         """Cleanup the app context when the object is destroyed or at exit"""
         if self.use_modal and hasattr(self, 'modal_app_context') and self.modal_app_context is not None:  # type: ignore
             self.modal_app_context.__exit__(None, None, None)  # type: ignore
             self.modal_app_context = None
 
-    # Need to code ESM2 in modal
     def _load(self, config: dict[str, Any] = {}) -> None:
         if self.use_modal:
             self.modal_app_context = app.run()
@@ -74,8 +65,6 @@ class ESM2(LanguageModel):
         Here, we assume, that we are using HuggingFace's implementation of ESM2
         Therefore, individual chains are separated by a ":" character.
         """
-        #! @JAKUB: Assuming here this is the ESM2 convention / this is how it works in 
-        #! its ModalFold implementation.
         monomers = [chain.sequence for chain in chains]
         return [':'.join(monomers)]
 
