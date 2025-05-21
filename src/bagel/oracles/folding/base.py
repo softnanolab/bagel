@@ -13,6 +13,7 @@ from ..base import Oracle
 from biotite.structure import AtomArray
 from typing import List
 
+
 class FoldingResults(BaseModel):
     """
     Stores statistics from the folding algorithm.
@@ -23,14 +24,16 @@ class FoldingResults(BaseModel):
     class Config:
         arbitrary_types_allowed = True  # This is needed for numpy array support
 
+
 class FoldingOracle(Oracle):
     """
     A FoldingOracle is a specific type of Oracle that uses a folding algorithm to predict the 3D structure of a State.
     """
+
     _structure: AtomArray
     _folding_results: FoldingResults
 
-    def make_prediction(self, state: "State"):
+    def make_prediction(self, state: 'State'):
         """
         Predict new structure of state.
         Stores structure and folding metrics as private attributes.

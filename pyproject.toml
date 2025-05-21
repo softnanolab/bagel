@@ -19,7 +19,6 @@ dependencies = [
     "numpy>=2.2.0",
     "pandas>=2.2.3",
     "pydantic>=2.10.6",
-    "torch>=2.5.1",
 ]
 
 [project.optional-dependencies]

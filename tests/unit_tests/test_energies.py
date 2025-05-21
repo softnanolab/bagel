@@ -164,8 +164,9 @@ def test_RingSymmetryEnergy(square_structure_residues: list[bg.Residue], square_
     # centroids of each residue backbone make a 2d square of length 1
     assert np.isclose(energy.value, np.std([1, 1, 2**0.5] * 4))  # Neighbour distances for each atom are 1, 1, and √2
 
-def test_ChemicalPotentialEnergy( square_structure_residues: list[bg.Residue], square_structure: AtomArray) -> None:
-    energy = bg.energies.ChemicalPotentialEnergy(chemical_potential = -1.0, target_size = 8.0, power = 0.5 )
+
+def test_ChemicalPotentialEnergy(square_structure_residues: list[bg.Residue], square_structure: AtomArray) -> None:
+    energy = bg.energies.ChemicalPotentialEnergy(chemical_potential=-1.0, target_size=8.0, power=0.5)
     energy.compute(structure=square_structure, folding_metrics=None)
     # Energy should be: chemical_potential * ( abs( number_of_residues - target_size ) )**power
     # -1.0 * ( abs( 4.0 - 8.0 )**0.5 ) = -1.0 * ( 4**0.5 ) = -1.0 * 2.0 = -2.0

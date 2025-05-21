@@ -105,7 +105,6 @@ class State:
     def total_residues(self) -> int:
         return sum([len(chain.residues) for chain in self.chains])
 
-
     def remove_residue_from_all_energy_terms(self, chain_ID: str, residue_index: int) -> None:
         """Remove the residue from the energy terms associated to it in the current state."""
         for term in self.energy_terms:

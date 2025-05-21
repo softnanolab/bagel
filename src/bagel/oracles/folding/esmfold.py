@@ -4,10 +4,10 @@ standard template and objects for structure prediction
 
 import numpy as np
 import numpy.typing as npt
-from ..chain import Chain
+from ...chain import Chain
 from .utils import reindex_chains
 from pydantic import field_validator
-from ..oracles import FoldingOracle, FoldingMetrics
+from .base import FoldingOracle, FoldingResults
 from typing import List, Any
 from modalfold import app  # type: ignore
 from modalfold.esmfold import ESMFold, ESMFoldOutput  # type: ignore
@@ -121,7 +121,7 @@ class ESMFolder(FoldingOracle):
         monomers = [chain.sequence for chain in chains]
         return [':'.join(monomers)]
 
-    def fold(self, chains: List[Chain]) -> tuple[AtomArray, ESMFoldingMetrics]:
+    def fold(self, chains: List[Chain]) -> tuple[AtomArray, ESMFoldingResults]:
         """
         Fold a list of chains using ESMFold.
         """

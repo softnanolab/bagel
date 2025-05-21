@@ -14,11 +14,13 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 @dataclass
-class Oracle():
+class Oracle:
     """
     An Oracle is any algorithm that, given a State as input, can return a prediction.
     """
+
     name: str
 
     def __post_init__(self) -> None:

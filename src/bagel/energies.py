@@ -14,7 +14,7 @@ from .constants import hydrophobic_residues, max_sasa_values, probe_radius_water
 from .chain import Residue
 import warnings
 import pandas as pd
-from oracles import Oracle
+from .oracles.base import Oracle
 
 
 # first row is chain_ids and second row is corresponding residue indices.
@@ -36,7 +36,8 @@ class EnergyTerm(ABC):
     Like the __init__ method, __post__init__ is also **automatically** called upon
     instantiating an object of the class.
     """
-    def __init__(self, name:str, oracle:Oracle, input_key:str, weight:float = 1.0 ) -> None:
+
+    def __init__(self, name: str, oracle: Oracle, input_key: str, weight: float = 1.0) -> None:
         """Initialises EnergyTerm class.
 
         Parameters
@@ -61,7 +62,7 @@ class EnergyTerm(ABC):
     #! JAKUB: Not sure how I can make to specify that state is a State object
     #! but at the same time I cannot make a circular import...
     @abstractmethod
-    def compute(self, state: "State" ) -> float:
+    def compute(self, state: 'State') -> float:
         """
         Calculates the EnergyTerm's energy given information about the folded structure.
         The result is returned and stored as an internal attribute (.value).
@@ -143,24 +144,25 @@ class PTMEnergy(EnergyTerm):
     model was trained on.
     """
 
-    def __init__(self, oracle:Oracle, weight:float = 1.0 ) -> None:
+    def __init__(self, oracle: Oracle, weight: float = 1.0) -> None:
         """Initialises Predicted Template Modelling Score Energy class.
 
         Parameters
         ----------
         """
-        super().__init__( oracle = oracle, name='pTM', input_key="folding_metrics" )
-        #self.name = 'pTM'
+        super().__init__(oracle=oracle, name='pTM', input_key='folding_metrics')
+        # self.name = 'pTM'
         self.oracle = oracle
         self.inheritable = True
         self.residue_groups = []
         self.weight = weight
 
-    def compute(self, state: "State" ) -> float:
+    def compute(self, state: 'State') -> float:
         folding_metrics = state._oracles_output[self.oracle][self.input_key]
         assert hasattr(folding_metrics, 'ptm'), 'PTM metric not returned by folding algorith'
         self.value = -folding_metrics.ptm
         return self.value, self.value * self.weight
+
 
 class ChemicalPotentialEnergy(EnergyTerm):
     """
@@ -168,13 +170,21 @@ class ChemicalPotentialEnergy(EnergyTerm):
     For some choices of parameters, this is equivalent to a chemical potential contribution to the grand-canonical
     free energy Omega = E - mu * N
     """
-    def __init__(self, oracle:Oracle, power : float = 1.0, target_size : int = 0, chemical_potential : float = 1.0, weight:float = 1.0 ) -> None:
+
+    def __init__(
+        self,
+        oracle: Oracle,
+        power: float = 1.0,
+        target_size: int = 0,
+        chemical_potential: float = 1.0,
+        weight: float = 1.0,
+    ) -> None:
         """Initialises Chemical Potential Energy class.
 
         Parameters
         ----------
         """
-        super().__init__(oracle = oracle, name='chem_pot', input_key="structure")
+        super().__init__(oracle=oracle, name='chem_pot', input_key='structure')
         self.inheritable = True
         self.residue_groups = []
         self.power = power
@@ -182,17 +192,17 @@ class ChemicalPotentialEnergy(EnergyTerm):
         self.chemical_potential = chemical_potential
         self.weight = weight
 
-    def compute(self, state: "State") -> float:
-        structure = state._oracles_output[self.oracle][ self.input_key ]
+    def compute(self, state: 'State') -> float:
+        structure = state._oracles_output[self.oracle][self.input_key]
         assert isinstance(structure, AtomArray), 'structure should be an AtomArray object but is not {type(structure)}'
 
-    	# The following works even if some residues have the same number but different chain IDs because res_ids
-	    # actually returns a list of tuples ( chain_id, res_id )
+        # The following works even if some residues have the same number but different chain IDs because res_ids
+        # actually returns a list of tuples ( chain_id, res_id )
         res_ids = structure.get_res_id(structure)
         unique_res_ids = set(res_ids)
         num_residues = len(unique_res_ids)
 
-        self.value = self.chemical_potential * ( abs( num_residues - self.target_size ) )**self.power
+        self.value = self.chemical_potential * (abs(num_residues - self.target_size)) ** self.power
 
         return self.value, self.value * self.weight
 
@@ -205,7 +215,7 @@ class PLDDTEnergy(EnergyTerm):
     relevant atoms.
     """
 
-    def __init__(self, oracle:Oracle, residues: list[Residue], inheritable: bool = True, weight:float = 1.0) -> None:
+    def __init__(self, oracle: Oracle, residues: list[Residue], inheritable: bool = True, weight: float = 1.0) -> None:
         """Initialises Local Predicted Local Distance Difference Test Energy class.
 
         Parameters
@@ -216,12 +226,12 @@ class PLDDTEnergy(EnergyTerm):
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
         """
-        super().__init__(oracle=oracle, name='local_pLDDT', input_key="folding_metrics")
+        super().__init__(oracle=oracle, name='local_pLDDT', input_key='folding_metrics')
         self.inheritable = inheritable
         self.residue_groups = [residue_list_to_group(residues)]
         self.weight = weight
 
-    def compute(self, state:"State") -> float:
+    def compute(self, state: 'State') -> float:
         folding_metrics = state._oracles_output[self.oracle][self.input_key]
         assert hasattr(folding_metrics, 'local_plddt'), 'local_plddt metric not returned by folding algorithm'
         plddt = folding_metrics.local_plddt[0]  # [n_residues] array
@@ -238,18 +248,18 @@ class OverallPLDDTEnergy(EnergyTerm):
     over all atoms.
     """
 
-    def __init__(self, oracle:Oracle, weight:float = 1.0 ) -> None:
+    def __init__(self, oracle: Oracle, weight: float = 1.0) -> None:
         """Initialises Overall Predicted Local Distance Difference Test Energy class.
 
         Parameters
         ----------
         """
-        super().__init__(oracle=oracle, name='global_pLDDT', input_key="folding_metrics")
+        super().__init__(oracle=oracle, name='global_pLDDT', input_key='folding_metrics')
         self.inheritable = True
         self.residue_groups = []
         self.weight = weight
 
-    def compute(self, state:"State" ) -> float:
+    def compute(self, state: 'State') -> float:
         folding_metrics = state._oracles_output[self.oracle][self.input_key]
         assert hasattr(folding_metrics, 'local_plddt'), 'local_plddt metric not returned by folding algorithm'
         plddt = folding_metrics.local_plddt[0]  # [n_residues] array
@@ -296,7 +306,7 @@ class SurfaceAreaEnergy(EnergyTerm):
         self.max_sasa = max_sasa_values['S'] if max_sasa is None else max_sasa
         self.weight = weight
 
-    def compute(self, state:"State" ) -> float:
+    def compute(self, state: 'State') -> float:
         structure = state._oracles_output[self.oracle][self.input_key]
         if len(self.residue_groups) != 0:
             atom_mask: npt.NDArray[np.bool_] = self.get_atom_mask(structure, residue_group_index=0)
@@ -337,7 +347,7 @@ class HydrophobicEnergy(EnergyTerm):
             Whether to only consider the atoms exposed to water at the surface. If False, interior atoms are included
             in the calculation. If true, result is scaled by normalised solute accessible surface area values.
         """
-        super().__init__( oracle=oracle, name='hydrophobic', input_key=input_key)
+        super().__init__(oracle=oracle, name='hydrophobic', input_key=input_key)
         selective = 'selective_' if residues is not None else ''
         surface = 'surface_' if surface_only else ''
         self.name = f'{selective}{surface}hydrophobic'
@@ -346,7 +356,7 @@ class HydrophobicEnergy(EnergyTerm):
         self.surface_only = surface_only
         self.weight = weight
 
-    def compute(self, state:"State" ) -> float:
+    def compute(self, state: 'State') -> float:
         structure = state._oracles_output[self.oracle][self.input_key]
         if len(self.residue_groups) > 0:
             relevance_mask: npt.NDArray[np.bool_] = self.get_atom_mask(structure, residue_group_index=0)
@@ -399,7 +409,7 @@ class PAEEnergy(EnergyTerm):
         self.cross_term_only = cross_term_only
         self.weight = weight
 
-    def compute(self, state:"State" ) -> float:
+    def compute(self, state: 'State') -> float:
         folding_metrics = state._oracles_output[self.oracle][self.input_key]
         assert hasattr(folding_metrics, 'pae'), 'pae metric not returned by folding algorithm'
         pae = folding_metrics.pae[0]  # [n_residues, n_residues] pairwise predicted alignment error matrix
@@ -433,7 +443,7 @@ class PAEEnergyV2(EnergyTerm):
         self,
         oracle: Oracle,
         input_key: str,
-        residues: tuple[ list[Residue], list[Residue]],
+        residues: tuple[list[Residue], list[Residue]],
         cross_term_only: bool = True,
         inheritable: bool = True,
         weight: float = 1.0,
@@ -452,7 +462,7 @@ class PAEEnergyV2(EnergyTerm):
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
         """
-        super().__init__(oracle=oracle, input_key = input_key, name='PAE')
+        super().__init__(oracle=oracle, input_key=input_key, name='PAE')
         warnings.warn(message='This class has known issues and is to be removed', category=DeprecationWarning)
         self.name = f'{"cross_" if cross_term_only else ""}alignment_error'
         self.inheritable = inheritable
@@ -526,7 +536,7 @@ class PAEEnergyV2(EnergyTerm):
             pae_mask = pae_mask > 0
         return pae_mask
 
-    def compute(self, state:"State") -> float:
+    def compute(self, state: 'State') -> float:
         folding_metrics = state._oracles_output[self.oracle][self.input_key]
         assert hasattr(folding_metrics, 'pae'), 'pae metric not returned by folding algorith'
         pae = folding_metrics.pae[0]  # [n_residues, n_residues] pairwise predicted alignment error matrix
@@ -545,7 +555,7 @@ class RingSymmetryEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle:Oracle,
+        oracle: Oracle,
         input_key: str,
         symmetry_groups: list[list[Residue]],
         direct_neighbours_only: bool = False,
@@ -566,7 +576,7 @@ class RingSymmetryEnergy(EnergyTerm):
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
         """
-        super().__init__( oracle=oracle, input_key=input_key, name='ring_symmetry')
+        super().__init__(oracle=oracle, input_key=input_key, name='ring_symmetry')
         self.name = f'{"neighbour_" if direct_neighbours_only else ""}ring_symmetry'
         self.inheritable = inheritable
         assert (len(symmetry_groups) > 1) and (len(symmetry_groups[0]) >= 1), 'Multiple symmetry groups required.'
@@ -574,7 +584,7 @@ class RingSymmetryEnergy(EnergyTerm):
         self.direct_neighbours_only: bool = direct_neighbours_only
         self.weight = weight
 
-    def compute(self, state:"State" ) -> float:
+    def compute(self, state: 'State') -> float:
         structure = state._oracles_output[self.oracle][self.input_key]
         num_groups = len(self.residue_groups)
         centroids = np.zeros(shape=(num_groups, 3))
@@ -606,7 +616,7 @@ class SeparationEnergy(EnergyTerm):
         self,
         oracle: Oracle,
         input_key: str,
-        residues: tuple[list[Residue],list[Residue]],
+        residues: tuple[list[Residue], list[Residue]],
         normalize: bool = True,
         inheritable: bool = True,
         weight: float = 1.0,
@@ -624,14 +634,14 @@ class SeparationEnergy(EnergyTerm):
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
         """
-        super().__init__( oracle=oracle, input_key = input_key, name='separation' )
+        super().__init__(oracle=oracle, input_key=input_key, name='separation')
         self.name = f'{"normalized_" if normalize else ""}separation'
         self.inheritable = inheritable
         self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
         self.normalize = normalize
         self.weight = weight
 
-    def compute(self, state:"State" ) -> float:
+    def compute(self, state: 'State') -> float:
         structure = state._oracles_output[self.oracle][self.input_key]
         backbone_mask = np.isin(structure.atom_name, backbone_atoms)
         group_1_mask = self.get_atom_mask(structure, residue_group_index=0)
@@ -658,14 +668,15 @@ class GlobularEnergy(EnergyTerm):
     be as close as possible to a spherically distributed cloud of points.
     """
 
-    def __init__(self,
-                oracle:Oracle,
-                input_key: str,
-                residues: list[Residue] | None = None,
-                normalize: bool = True,
-                inheritable: bool = True,
-                weight: float = 1.0,
-                ) -> None:
+    def __init__(
+        self,
+        oracle: Oracle,
+        input_key: str,
+        residues: list[Residue] | None = None,
+        normalize: bool = True,
+        inheritable: bool = True,
+        weight: float = 1.0,
+    ) -> None:
         """
         Initialises globular energy class.
 
@@ -679,14 +690,14 @@ class GlobularEnergy(EnergyTerm):
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
         """
-        super().__init__( oracle=oracle, input_key = input_key, name='globular')
+        super().__init__(oracle=oracle, input_key=input_key, name='globular')
         self.name = f'{"normalized_" if normalize else ""}globular'
         self.inheritable = inheritable
         self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
         self.normalize = normalize
         self.weight = weight
 
-    def compute(self, state:"State" ) -> float:
+    def compute(self, state: 'State') -> float:
         structure = state._oracles_output[self.oracle][self.input_key]
         backbone_mask = np.isin(structure.atom_name, backbone_atoms)
         if len(self.residue_groups) > 0:
@@ -712,7 +723,7 @@ class TemplateMatchEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle:Oracle,
+        oracle: Oracle,
         input_key: str,
         template_atoms: AtomArray,
         residues: list[Residue],
@@ -736,7 +747,7 @@ class TemplateMatchEnergy(EnergyTerm):
             the two pairwise distance matrices. By default, the root mean square of the difference in positions is used
             instead.
         """
-        super().__init__( oracle=oracle, input_key = input_key, name='template_match')
+        super().__init__(oracle=oracle, input_key=input_key, name='template_match')
         self.name = f'{"backbone_" if backbone_only else ""}template_match'
         self.residue_groups = [residue_list_to_group(residues)]
         self.template_atoms = template_atoms
@@ -745,7 +756,7 @@ class TemplateMatchEnergy(EnergyTerm):
         self.inheritable = False
         self.weight = weight
 
-    def compute(self, state:"State" ) -> float:
+    def compute(self, state: 'State') -> float:
         structure = state._oracles_output[self.oracle][self.input_key]
         structure_atoms = structure[self.get_atom_mask(structure, residue_group_index=0)]
         template_atoms = self.template_atoms
@@ -779,14 +790,15 @@ class SecondaryStructureEnergy(EnergyTerm):
     beta-sheet, and coil.
     """
 
-    def __init__(self,
-                oracle:Oracle,
-                input_key: str,
-                residues: list[Residue],
-                target_secondary_structure: str,
-                inheritable: bool = True,
-                weight: float = 1.0,
-                ) -> None:
+    def __init__(
+        self,
+        oracle: Oracle,
+        input_key: str,
+        residues: list[Residue],
+        target_secondary_structure: str,
+        inheritable: bool = True,
+        weight: float = 1.0,
+    ) -> None:
         """
         Initialises the secondary structure energy class.
 
@@ -800,7 +812,7 @@ class SecondaryStructureEnergy(EnergyTerm):
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
         """
-        super().__init__( oracle=oracle, input_key = input_key, name='secondary_structure')
+        super().__init__(oracle=oracle, input_key=input_key, name='secondary_structure')
         self.name = f'{target_secondary_structure.lower()}'
         self.inheritable = inheritable
         self.residue_groups = [residue_list_to_group(residues)]
@@ -809,7 +821,7 @@ class SecondaryStructureEnergy(EnergyTerm):
         self.target_secondary_structure = target_secondary_structure
         self.weight = weight
 
-    def compute(self, state:"State" ) -> float:
+    def compute(self, state: 'State') -> float:
         structure = state._oracles_output[self.oracle][self.input_key]
         target_label = self.target_secondary_structure[0]  # How Biotite labels secondary structures
         calculated_labels = annotate_sse(structure)
@@ -832,7 +844,7 @@ class EllipsoidEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle:Oracle,
+        oracle: Oracle,
         input_key: str,
         aspect_ratio: tuple[float, float, float],
         k_attractive: float = 1.0,
@@ -853,7 +865,7 @@ class EllipsoidEnergy(EnergyTerm):
             Constant of proportionality for the recipricol exponential type repulsive energy that evenly distributes
             all backbone atoms within the ellipsoid volume.
         """
-        super().__init__( oracle=oracle, input_key = input_key, name='ellipsoid')
+        super().__init__(oracle=oracle, input_key=input_key, name='ellipsoid')
         self.name = 'ellipsoid'
         self.inheritable = True  # always considers all residues in structure
         self.residue_groups = []
@@ -866,7 +878,7 @@ class EllipsoidEnergy(EnergyTerm):
         self.aspect_ratio /= np.prod(self.aspect_ratio) ** (1 / 3)  # ensures product of aspect ratios equals 1
         warnings.warn('This energy is yet to have any unit tests and is not guaranteed to work')
 
-    def compute( self, state:"State" ) -> float:
+    def compute(self, state: 'State') -> float:
         structure = state._oracles_output[self.oracle][self.input_key]
         atoms = structure[np.isin(structure.atom_name, backbone_atoms)]
 
@@ -917,7 +929,7 @@ class CuboidEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle:Oracle,
+        oracle: Oracle,
         input_key: str,
         aspect_ratio: tuple[float, float, float],
         k_attractive: float = 1.0,
@@ -942,8 +954,8 @@ class CuboidEnergy(EnergyTerm):
             A metric for how sharp the coreners of the cuboid should ideally be. The higher the value, the closer to a
             perfect right angled vertex.
         """
-        super().__init__( oracle=oracle, input_key = input_key, name='cuboid')
-        #self.name = 'cuboid'
+        super().__init__(oracle=oracle, input_key=input_key, name='cuboid')
+        # self.name = 'cuboid'
         self.inheritable = True  # always considers all residues in structure
         self.residue_groups = []
         self.k_attractive = k_attractive
@@ -956,7 +968,7 @@ class CuboidEnergy(EnergyTerm):
         self.aspect_ratio /= np.prod(self.aspect_ratio) ** (1 / 3)  # ensures product of aspect ratios equals 1
         warnings.warn('This energy is yet to have any unit tests and is not guaranteed to work')
 
-    def compute(self, state:"State" ) -> float:
+    def compute(self, state: 'State') -> float:
         structure = state._oracles_output[self.oracle][self.input_key]
         atoms = structure[np.isin(structure.atom_name, backbone_atoms)]
 
@@ -988,19 +1000,22 @@ class CuboidEnergy(EnergyTerm):
         self.value = attractive_energy + repulsive_energy
         return self.value, self.value * self.weight
 
+
 class EmbeddingsSimilarityEnergy(EnergyTerm):
     """
     Energy terms measuring the cosine similarity between current embeddings and embeddings of a template.
     See paper: Rajendran et al 2025 - to be published
     """
 
-    def __init__(self, oracle:Oracle,
-                residues: list[Residue],
-                reference_embeddings: np.ndarray,
-                input_key: str = "embeddings",
-                inheritable: bool = False,
-                weight: float = 1.0,
-                ) -> None:
+    def __init__(
+        self,
+        oracle: Oracle,
+        residues: list[Residue],
+        reference_embeddings: np.ndarray,
+        input_key: str = 'embeddings',
+        inheritable: bool = False,
+        weight: float = 1.0,
+    ) -> None:
         """Initialises EmbeddingsSimilarityEnergy class.
 
         Parameters
@@ -1019,49 +1034,55 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
         """
-        super().__init__( oracle=oracle,
-                        name='embeddings_similarity',
-                        input_key = input_key )
+        super().__init__(oracle=oracle, name='embeddings_similarity', input_key=input_key)
         self.residue_groups = [residue_list_to_group(residues)]
         self.reference_embeddings = reference_embeddings
         self.inheritable = inheritable
         self.weight = weight
-        assert self.reference_embeddings.shape[0] == len(self.conserved_residues_map), f'Conserved residues map {self.conserved_residues_map} does not match reference embeddings {self.reference_embeddings.shape}'
+        assert self.reference_embeddings.shape[0] == len(self.conserved_residues_map), (
+            f'Conserved residues map {self.conserved_residues_map} does not match reference embeddings {self.reference_embeddings.shape}'
+        )
 
-    def compute(self, state:"State") -> float:
+    def compute(self, state: 'State') -> float:
         embeddings = state._oracles_output[self.oracle][self.input_key]
-        assert isinstance( embeddings, np.ndarray ), f'Embeddings is expected to be a numpy array...but is type: {type(embeddings)}'
-        assert len(embeddings.shape) == 2, f'Embeddings is expected to be a 2D tensor...but is shape: {embeddings.shape}. This does not work with batches.'
+        assert isinstance(embeddings, np.ndarray), (
+            f'Embeddings is expected to be a numpy array, not type: {type(embeddings)}'
+        )
+        assert len(embeddings.shape) == 2, (
+            f'Embeddings is expected to be a 2D tensor, not shape: {embeddings.shape}. This does not work with batches.'
+        )
 
-        #The following generate a 2D numpy array of shape ( n_conserved_residues, n_features)
-        #where n_conserved_residues is the number of residues in the reference embeddings
-        #and n_features is the number of features in the embeddings.
-        #Note that n_conserved_residues must be equal to len( self.residue_groups[0] )
-        conserved_embeddings = embeddings[ self.conserved_index_list ]
+        # The following generate a 2D numpy array of shape (n_conserved_residues, n_features)
+        # where n_conserved_residues is the number of residues in the reference embeddings
+        # and n_features is the number of features in the embeddings.
+        # Note that n_conserved_residues must be equal to len(self.residue_groups[0])
+        conserved_embeddings = embeddings[self.conserved_index_list]
 
-        assert conserved_embeddings.shape == self.reference_embeddings.shape, f'Conserved embeddings shape {conserved_embeddings.shape} does not match reference embeddings {self.reference_embeddings.shape}'
-        #The following generates a 1D tensor of shape (n_conserved_residues)
-        cosine = np.sum( conserved_embeddings * self.reference_embeddings, axis=1 )
-        similarity = np.mean( cosine )
+        assert conserved_embeddings.shape == self.reference_embeddings.shape, (
+            f'Conserved embeddings shape {conserved_embeddings.shape} does not match reference embeddings {self.reference_embeddings.shape}'
+        )
+        # The following generates a 1D tensor of shape (n_conserved_residues)
+        cosine = np.sum(conserved_embeddings * self.reference_embeddings, axis=1)
+        similarity = np.mean(cosine)
 
         self.value = 1.0 - similarity
         return self.value, self.value * self.weight
 
     @property
-    def conserved_index_list( self ):
+    def conserved_index_list(self):
         """Returns the indices of the conserved residues (stored in .residue_group[0]) in the pLM embedding array."""
         conserved_chain_id, conserved_res_id = self.residue_groups[0]
         chains = self.state.chains
         global_index_list = []
         # Chains already has chains in the correct order
         offset = 0
-        for i, chain in enumerate( chains ):
+        for i, chain in enumerate(chains):
             chain_id = chain.chain_id
-            for j, residue in enumerate( chain.residues ):
+            for j, residue in enumerate(chain.residues):
                 residue_global_index = offset + j
                 # Check if the residue is in the conserved residues
-                for k in range( len( conserved_chain_id ) ):
+                for k in range(len(conserved_chain_id)):
                     if chain_id == conserved_chain_id[k] and residue.res_id == conserved_res_id[k]:
-                        global_index_list.append( residue_global_index )
-            offset += len( chain.residues )
+                        global_index_list.append(residue_global_index)
+            offset += len(chain.residues)
         return global_index_list

@@ -7,7 +7,8 @@ Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
 """
 
 import numpy as np
-#from .folding import FoldingAlgorithm
+
+# from .folding import FoldingAlgorithm
 from .chain import Chain
 from .system import System
 from .constants import mutation_bias_no_cystein
@@ -24,8 +25,9 @@ class MutationProtocol(ABC):
     @abstractmethod
     def one_step(
         self,
-        #folding_algorithm: FoldingAlgorithm,
-        system: System, old_system: System
+        # folding_algorithm: FoldingAlgorithm,
+        system: System,
+        old_system: System,
     ) -> Tuple[System, float, float]:
         """
         Makes one mutation and returns the new system, the energy difference and the difference in size
@@ -86,8 +88,9 @@ class Canonical(MutationProtocol):
 
     def one_step(
         self,
-        #folding_algorithm: FoldingAlgorithm,
-        system: System, old_system: System
+        # folding_algorithm: FoldingAlgorithm,
+        system: System,
+        old_system: System,
     ) -> Tuple[System, float, float]:
         for i in range(self.n_mutations):
             chain = self.choose_chain(system)
@@ -160,8 +163,9 @@ class GrandCanonical(MutationProtocol):
 
     def one_step(
         self,
-        #folding_algorithm: FoldingAlgorithm,
-        system: System, old_system: System
+        # folding_algorithm: FoldingAlgorithm,
+        system: System,
+        old_system: System,
     ) -> Tuple[System, float, float]:
         for i in range(self.n_mutations):
             chain = self.choose_chain(system)

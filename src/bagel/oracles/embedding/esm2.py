@@ -3,7 +3,8 @@ standard template and objects for structure prediction
 """
 
 import numpy as np
-from ..chain import Chain
+import numpy.typing as npt
+from ...chain import Chain
 from .base import EmbeddingResults, EmbeddingOracle
 from typing import List, Any
 from modalfold import app
@@ -13,20 +14,17 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class ESM2Results(EmbeddingResults):
     """
-    Stores statistics from the protein language model.
+    Stores statistics from ESM-2.
     """
 
-    #TODO: add fields and validators for the output of ESM2
-    pass
+    embedding: npt.NDArray[np.float64]
 
-class Config:
-        arbitrary_types_allowed = True  # This is needed for numpy array support
 
 class ESM2(EmbeddingOracle):
-
-    def __init__(self, use_modal:bool = False, config:dict[str,Any] ={} ) -> None:
+    def __init__(self, use_modal: bool = False, config: dict[str, Any] = {}) -> None:
         """
         NOTE this can only be called once. Attempting to initialise this object multiple times in one process creates
         breaking exceptions.
@@ -42,6 +40,7 @@ class ESM2(EmbeddingOracle):
             # Register the cleanup function to be called at exit, so no
             # ephermal app is left running when the object is destroyed
             import atexit
+
             atexit.register(self.__del__)
 
         self.model = self._load(config)
@@ -61,46 +60,37 @@ class ESM2(EmbeddingOracle):
 
     def _pre_process(self, chains: list[Chain]) -> list[str]:
         """
-        Pre-process the sequence to be passed to the model for calculating the embeddings.
-        Here, we assume, that we are using HuggingFace's implementation of ESM2
-        Therefore, individual chains are separated by a ":" character.
+        Multimers are pre-processed by joining the sequences with a ":" character.
         """
         monomers = [chain.sequence for chain in chains]
         return [':'.join(monomers)]
 
-    def calculate_embeddings(self, state) -> np.ndarray:
+    def embed(self, chains: list[Chain]) -> ESM2Results:
         """
-        Calculate the embeddings of the residues in the state.
+        Calculate the embeddings of the residues in the chains.
         """
-        chains = self._pre_process(state.chains)
+        chains = self._pre_process(chains)
 
-        #! @JAKUB: This requires implementing ESM2 in ModalFold
+        if ':' in chains[0]:
+            raise NotImplementedError('ESM-2 does not support multimers as of modalfold v0.0.13')
+
         if self.use_modal:
-            return self._post_process(self._remote_embeddings(self._pre_process(state.chains)))
+            return self._post_process(self._remote_embed(self._pre_process(chains)))
         else:
-            logger.info('Given that use_modal is False, trying to fold with ESMFold locally...')
-            logger.info('Assuming that all packages are available locally...')
+            logger.info('Given that use_modal is False, trying to embed with ESM-2 locally...')
             # TODO: Hugging Face Cache might need to be set here properly to make it work
-            return self._post_process(self._local_embeddings(self._pre_process(state.chains)))
+            return self._post_process(self._local_embed(self._pre_process(chains)))
 
-    def _remote_embeddings(self, sequence: List[str]) -> ESM2Output:
-        return self.model.embeddings.remote(sequence)
+    def _remote_embed(self, sequence: List[str]) -> ESM2Output:
+        return self.model.embed.remote(sequence)
 
-    def _local_embeddings(self, sequence: List[str]) -> ESM2Output:
-        return self.model.embeddings.local(sequence)
+    def _local_embed(self, sequence: List[str]) -> ESM2Output:
+        return self.model.embed.local(sequence)
 
     def _post_process(self, output: ESM2Output) -> np.ndarray:
-        """
-        Reduce ESM2Output (from ModalFold) to a Tensor of size batch x N_residues x N_features
-        containing the embeddings only.
-        """
-        #! @JAKUB: Not sure this is correct, I think this only works if N_batch = 1, I made an assertion for that
-        assert output["last_hidden_state"].shape[0] == 1, f"Return next only works correctly for batch of size 1, got {len(output['last_hidden_state'].shape)}D tensor"
-
-        #Return the embeddings as a 2D tensor of size N_residues x N_features
-        embedding = output["last_hidden_state"].reshape(-1, output["last_hidden_state"].shape[-1])
-        #Remove first and last since these are not residues but embedding of the start and end of the sequence
-        embedding = embedding[1:-1]
-        #Make it into a numpy array
-        embedding.detach().numpy()
+        embedding = output.embeddings[0, 1:-1, :]  # remove first and last token embeddings (not a residue)
+        assert len(embedding.shape) == 2, (
+            f'Embeddings is expected to be a 2D tensor, not shape: {embedding.shape}. '
+            'The ESM2 Oracle does not support batches.'
+        )
         return embedding

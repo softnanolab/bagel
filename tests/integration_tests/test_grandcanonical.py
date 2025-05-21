@@ -4,8 +4,11 @@ import bagel as bg
 
 very_high_temp = 10.0**20
 
+
 def test_grandcanonical_does_not_change_chain_length_when_mutator_not_allowed_to_remove_or_add(
-    simple_state: bg.State, folder: bg.folding.ESMFolder, test_log_path,
+    simple_state: bg.State,
+    folder: bg.folding.ESMFolder,
+    test_log_path,
     very_high_temp: float,
 ) -> None:
     starting_chain_length = len(simple_state.chains[0].residues)
@@ -29,7 +32,9 @@ def test_grandcanonical_does_not_change_chain_length_when_mutator_not_allowed_to
 
 
 def test_grandcanonical_does_not_increase_chain_length_when_mutator_not_allowed_to_add(
-    simple_state: bg.State, folder: bg.folding.ESMFolder, test_log_path: pl.Path,
+    simple_state: bg.State,
+    folder: bg.folding.ESMFolder,
+    test_log_path: pl.Path,
     very_high_temp: float,
 ) -> None:
     starting_chain_length = len(simple_state.chains[0].residues)
@@ -53,7 +58,9 @@ def test_grandcanonical_does_not_increase_chain_length_when_mutator_not_allowed_
 
 
 def test_grandcanonical_does_not_zero_chain_length_when_mutator_only_allowed_to_remove(
-    simple_state: bg.State, folder: bg.folding.ESMFolder, test_log_path: pl.Path,
+    simple_state: bg.State,
+    folder: bg.folding.ESMFolder,
+    test_log_path: pl.Path,
     very_high_temp: float,
 ) -> None:
     starting_chain_length = len(simple_state.chains[0].residues)
@@ -63,7 +70,7 @@ def test_grandcanonical_does_not_zero_chain_length_when_mutator_only_allowed_to_
         folder=folder,
         mutator=bg.mutation.GrandCanonical(
             move_probabilities={'mutation': 0.0, 'addition': 0.0, 'removal': 1.0}
-        ), # very high T ensures removal always accepted if possible
+        ),  # very high T ensures removal always accepted if possible
         initial_temperature=very_high_temp,
         final_temperature=very_high_temp,
         n_steps=starting_chain_length + 1,

@@ -8,7 +8,8 @@ Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
 
 import pathlib as pl
 from .system import System
-#from .folding import FoldingAlgorithm
+
+# from .folding import FoldingAlgorithm
 from .mutation import MutationProtocol
 from abc import ABC, abstractmethod
 from typing import Callable, Any, NoReturn
@@ -127,6 +128,7 @@ class Minimizer(ABC):
         system.dump_logs(real_step, self.log_path / 'current', save_structure=real_step % self.log_frequency == 0)
         best_system.dump_logs(real_step, self.log_path / 'best', save_structure=new_best)
 
+
 @dataclass
 class FlexibleMinimizer(Minimizer):
     mutator: MutationProtocol
@@ -138,12 +140,14 @@ class FlexibleMinimizer(Minimizer):
     log_path: pl.Path | str | None = None
 
     def minimize_system(self, system: System) -> System:
-        #raise NotImplementedError('Flexible minimizer DOES NOT work in new implementation with Oracles, yet')
+        # raise NotImplementedError('Flexible minimizer DOES NOT work in new implementation with Oracles, yet')
 
         system.get_total_energy()  # update the energy internally
         best_system = system.__copy__()
         assert system.total_energy is not None, 'Cannot start without system having a calculated energy'
-        assert best_system.total_energy is not None, 'Cannot start without lowest energy system having a calculated energy'
+        assert best_system.total_energy is not None, (
+            'Cannot start without lowest energy system having a calculated energy'
+        )
         self.logging_step(-1, system, best_system, False)
         for step in range(self.n_steps):
             new_best = False
@@ -163,90 +167,96 @@ class FlexibleMinimizer(Minimizer):
         assert best_system.total_energy is not None, f'Best energy {best_system.total_energy} cannot be None!'
         return best_system
 
+
 @dataclass
 class MonteCarloSampler(FlexibleMinimizer):
+    def __init__(
+        self,
+        mutator: MutationProtocol,
+        temperature: float,
+        n_steps: int,
+        log_frequency: int = 100,
+        experiment_name: str = field(default_factory=lambda: f'MC_sampler_{time_stamp()}'),
+        log_path: pl.Path | str | None = None,
+    ) -> None:
+        super().__init__(
+            mutator=mutator,
+            temperature_schedule=[temperature] * n_steps,
+            n_steps=n_steps,
+            log_frequency=log_frequency,
+            preserve_best_system_every_n_steps=None,
+            experiment_name=experiment_name,
+            log_path=log_path,
+        )
 
-    def __init__( self,
-                 mutator: MutationProtocol,
-                 temperature: float,
-                 n_steps: int,
-                 log_frequency: int = 100,
-                 experiment_name: str = field(default_factory=lambda: f'MC_sampler_{time_stamp()}'),
-                 log_path: pl.Path | str | None = None
-                 ) -> None:
-
-                 super().__init__(mutator=mutator,
-                         temperature_schedule=[temperature] * n_steps,
-                         n_steps=n_steps,
-                         log_frequency=log_frequency,
-                         preserve_best_system_every_n_steps=None,
-                         experiment_name=experiment_name,
-                         log_path=log_path
-                         )
 
 @dataclass
 class SimulatedAnnealing(FlexibleMinimizer):
-
-    def __init__( self,
-                mutator: MutationProtocol,
-                initial_temperature: float,
-                final_temperature: float,
-                n_steps: int,
-                log_frequency: int = 100,
-                experiment_name: str = field(default_factory=lambda: f'simulated_annealing_{time_stamp()}'),
-                log_path: pl.Path | str | None = None
-                ) -> None:
-
-                super().__init__(mutator=mutator,
-                         temperature_schedule=np.linspace(start=initial_temperature, stop=final_temperature, num=n_steps),
-                         n_steps=n_steps,
-                         log_frequency=log_frequency,
-                         preserve_best_system_every_n_steps=None,
-                         experiment_name=experiment_name,
-                         log_path=log_path)
-                self.acceptance = []
-                super().__post_init__()
+    def __init__(
+        self,
+        mutator: MutationProtocol,
+        initial_temperature: float,
+        final_temperature: float,
+        n_steps: int,
+        log_frequency: int = 100,
+        experiment_name: str = field(default_factory=lambda: f'simulated_annealing_{time_stamp()}'),
+        log_path: pl.Path | str | None = None,
+    ) -> None:
+        super().__init__(
+            mutator=mutator,
+            temperature_schedule=np.linspace(start=initial_temperature, stop=final_temperature, num=n_steps),
+            n_steps=n_steps,
+            log_frequency=log_frequency,
+            preserve_best_system_every_n_steps=None,
+            experiment_name=experiment_name,
+            log_path=log_path,
+        )
+        self.acceptance = []
+        super().__post_init__()
 
     def dump_logs(self, output_folder: pl.Path, step: int, **kwargs: Any) -> None:
         self.acceptance.append(kwargs['accept'])
         kwargs['acceptance_rate'] = sum(self.acceptance) / len(self.acceptance)
         super().dump_logs(output_folder, step, **kwargs)
 
+
 @dataclass
 class SimulatedTempering(FlexibleMinimizer):
-    def __init__( self,
-                mutator: MutationProtocol,
-                high_temperature: float,
-                low_temperature: float,
-                n_steps_high: int,
-                n_steps_low: int,
-                n_cycles: int,
-                preserve_best_system_every_n_steps: bool | None = None,
-                log_frequency: int = 100,
-                experiment_name: str = field(default_factory=lambda: f'simulated_annealing_{time_stamp()}'),
-                log_path: pl.Path | str | None = None
-                ) -> None:
+    def __init__(
+        self,
+        mutator: MutationProtocol,
+        high_temperature: float,
+        low_temperature: float,
+        n_steps_high: int,
+        n_steps_low: int,
+        n_cycles: int,
+        preserve_best_system_every_n_steps: bool | None = None,
+        log_frequency: int = 100,
+        experiment_name: str = field(default_factory=lambda: f'simulated_annealing_{time_stamp()}'),
+        log_path: pl.Path | str | None = None,
+    ) -> None:
+        ## Create the temperature schedule
+        # Cycle through low and high temperatures
+        temperature_schedule = np.concatenate(
+            [
+                np.full(shape=n_steps_low, fill_value=low_temperature),
+                np.full(shape=n_steps_high, fill_value=high_temperature),
+            ]
+        )
+        temperature_schedule = np.tile(temperature_schedule, reps=n_cycles)
+        n_steps = len(temperature_schedule)
 
-                ## Create the temperature schedule
-                # Cycle through low and high temperatures
-                temperature_schedule = np.concatenate(
-                    [
-                        np.full(shape=n_steps_low, fill_value=low_temperature),
-                        np.full(shape=n_steps_high, fill_value=high_temperature),
-                    ]
-                )
-                temperature_schedule = np.tile(temperature_schedule, reps=n_cycles)
-                n_steps = len(temperature_schedule)
-
-                super().__init__(mutator=mutator,
-                         temperature_schedule=temperature_schedule,
-                         n_steps=n_steps,
-                         log_frequency=log_frequency,
-                         preserve_best_system_every_n_steps=preserve_best_system_every_n_steps,
-                         experiment_name=experiment_name,
-                         log_path=log_path)
-                self.acceptance = []
-                super().__post_init__()
+        super().__init__(
+            mutator=mutator,
+            temperature_schedule=temperature_schedule,
+            n_steps=n_steps,
+            log_frequency=log_frequency,
+            preserve_best_system_every_n_steps=preserve_best_system_every_n_steps,
+            experiment_name=experiment_name,
+            log_path=log_path,
+        )
+        self.acceptance = []
+        super().__post_init__()
 
     def dump_logs(self, output_folder: pl.Path, step: int, **kwargs: Any) -> None:
         """
@@ -260,8 +270,8 @@ class SimulatedTempering(FlexibleMinimizer):
 
 
 #! PROPOSE TO REMOVE, AS SOON AS IMPLEMENTATION ABOVE IS DONE
-#@dataclass
-#class SimulatedAnnealing(Minimizer):
+# @dataclass
+# class SimulatedAnnealing(Minimizer):
 #    mutator: MutationProtocol
 #    initial_temperature: float
 #    final_temperature: float
@@ -299,8 +309,8 @@ class SimulatedTempering(FlexibleMinimizer):
 #        return best_system
 
 
-#@dataclass
-#class SimulatedTempering(Minimizer):
+# @dataclass
+# class SimulatedTempering(Minimizer):
 #    mutator: MutationProtocol
 #    high_temperature: float
 #    low_temperature: float

@@ -12,7 +12,8 @@ from .state import State
 from .chain import Chain, Residue
 from typing import Any
 from dataclasses import dataclass
-#from .folding import FoldingAlgorithm
+
+# from .folding import FoldingAlgorithm
 from .constants import aa_dict
 from copy import deepcopy
 import pathlib as pl
