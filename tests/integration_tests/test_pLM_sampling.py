@@ -8,9 +8,9 @@ def test_pLM_sampling_does_not_raise_exceptions_with_nominal_inputs(
 
     minimizer = bg.minimizer.MonteCarloSampler(
         mutator=bg.mutation.Canonical(),
-        temperature=1.0, 
-        n_steps = 3, 
-        log_frequency = 1, 
+        temperature=1.0,
+        n_steps = 3,
+        log_frequency = 1,
         log_path=test_log_path,)
 
     final_system = minimizer.minimize_system( system=test_system )

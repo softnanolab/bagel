@@ -6,8 +6,8 @@ import numpy as np
 from ..chain import Chain
 from .base import EmbeddingResults, EmbeddingOracle
 from typing import List, Any
-from modalfold import app  
-from modalfold.esm2 import ESM2, ESM2Output     
+from modalfold import app
+from modalfold.esm2 import ESM2, ESM2Output
 
 import logging
 
@@ -45,7 +45,7 @@ class ESM2(EmbeddingOracle):
             atexit.register(self.__del__)
 
         self.model = self._load(config)
-    
+
     def __del__(self) -> None:
         """Cleanup the app context when the object is destroyed or at exit"""
         if self.use_modal and hasattr(self, 'modal_app_context') and self.modal_app_context is not None:  # type: ignore
@@ -73,7 +73,7 @@ class ESM2(EmbeddingOracle):
         Calculate the embeddings of the residues in the state.
         """
         chains = self._pre_process(state.chains)
-        
+
         #! @JAKUB: This requires implementing ESM2 in ModalFold
         if self.use_modal:
             return self._post_process(self._remote_embeddings(self._pre_process(state.chains)))
@@ -94,13 +94,13 @@ class ESM2(EmbeddingOracle):
         Reduce ESM2Output (from ModalFold) to a Tensor of size batch x N_residues x N_features
         containing the embeddings only.
         """
-        #! @JAKUB: Not sure this is correct, I think this only works if N_batch = 1, I made an assertion for that 
+        #! @JAKUB: Not sure this is correct, I think this only works if N_batch = 1, I made an assertion for that
         assert output["last_hidden_state"].shape[0] == 1, f"Return next only works correctly for batch of size 1, got {len(output['last_hidden_state'].shape)}D tensor"
 
         #Return the embeddings as a 2D tensor of size N_residues x N_features
         embedding = output["last_hidden_state"].reshape(-1, output["last_hidden_state"].shape[-1])
         #Remove first and last since these are not residues but embedding of the start and end of the sequence
         embedding = embedding[1:-1]
-        #Make it into a numpy array 
+        #Make it into a numpy array
         embedding.detach().numpy()
         return embedding

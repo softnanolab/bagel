@@ -44,7 +44,7 @@ class State:
     ----------
     _energy : Optional[float]
         Cached total (weighted) energy value for the State.
-    _oracles_output : Optional[dict] 
+    _oracles_output : Optional[dict]
         Output of different oracles, e.g., structure, folding_metrics, residues embedding...
     _energy_terms_value : dict[(str, float)]
         Cached (unweighted)values of individual :class:`.EnergyTerm` objects.

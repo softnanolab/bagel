@@ -48,7 +48,7 @@ def folder(request) -> bg.folding.ESMFolder:
 @pytest.fixture
 def very_high_temp() -> float:
     """High temperature to make acceptance of any move 100%"""
-    return 1e10 
+    return 1e10
 
 
 @pytest.fixture

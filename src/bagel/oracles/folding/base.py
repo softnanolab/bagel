@@ -32,7 +32,7 @@ class FoldingOracle(Oracle):
 
     def make_prediction(self, state: "State"):
         """
-        Predict new structure of state. 
+        Predict new structure of state.
         Stores structure and folding metrics as private attributes.
         """
         assert self._structure is None, 'State already has a structure'
@@ -43,4 +43,3 @@ class FoldingOracle(Oracle):
     @abstractmethod
     def fold(self, chains: List[Chain]) -> tuple[AtomArray, FoldingResults]:
         raise NotImplementedError('This method should be implemented by the folding algorithm')
-    

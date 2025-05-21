@@ -46,7 +46,7 @@ class EnergyTerm(ABC):
         self.oracle = oracle
         self.input_key = input_key
         self.weight = weight
-        
+
     def __post_init__(self) -> None:
         """Checks required attributes have been set after class is initialised"""
         assert hasattr(self, 'name'), 'name attribute must be set in class initialiser'
@@ -164,12 +164,12 @@ class PTMEnergy(EnergyTerm):
 
 class ChemicalPotentialEnergy(EnergyTerm):
     """
-    An energy term that purely depends on the number of residues present in a system. 
+    An energy term that purely depends on the number of residues present in a system.
     For some choices of parameters, this is equivalent to a chemical potential contribution to the grand-canonical
     free energy Omega = E - mu * N
     """
     def __init__(self, oracle:Oracle, power : float = 1.0, target_size : int = 0, chemical_potential : float = 1.0, weight:float = 1.0 ) -> None:
-        """Initialises Chemical Potential Energy class. 
+        """Initialises Chemical Potential Energy class.
 
         Parameters
         ----------
@@ -177,17 +177,17 @@ class ChemicalPotentialEnergy(EnergyTerm):
         super().__init__(oracle = oracle, name='chem_pot', input_key="structure")
         self.inheritable = True
         self.residue_groups = []
-        self.power = power 
+        self.power = power
         self.target_size = target_size
         self.chemical_potential = chemical_potential
-        self.weight = weight 
+        self.weight = weight
 
     def compute(self, state: "State") -> float:
         structure = state._oracles_output[self.oracle][ self.input_key ]
         assert isinstance(structure, AtomArray), 'structure should be an AtomArray object but is not {type(structure)}'
 
-    	# The following works even if some residues have the same number but different chain IDs because res_ids 
-	    # actually returns a list of tuples ( chain_id, res_id ) 
+    	# The following works even if some residues have the same number but different chain IDs because res_ids
+	    # actually returns a list of tuples ( chain_id, res_id )
         res_ids = structure.get_res_id(structure)
         unique_res_ids = set(res_ids)
         num_residues = len(unique_res_ids)
@@ -383,7 +383,7 @@ class PAEEnergy(EnergyTerm):
 
         Parameters
         ----------
-        residues: tuple[list[Residue], list[Residue]] 
+        residues: tuple[list[Residue], list[Residue]]
             Which residues to include in the first and second group.
         cross_term_only: bool, default=True
             Whether to only consider the uncertainty in distance between group 1 and group 2 atoms. If set to False,
@@ -443,7 +443,7 @@ class PAEEnergyV2(EnergyTerm):
 
         Parameters
         ----------
-        residues: tuple[list[Residue], list[Residue]] 
+        residues: tuple[list[Residue], list[Residue]]
             Which residues to include in the first and second group.
         cross_term_only: bool, default=True
             Whether to only consider the uncertainty in distance between group 1 and group 2 atoms. If set to False,
@@ -658,13 +658,13 @@ class GlobularEnergy(EnergyTerm):
     be as close as possible to a spherically distributed cloud of points.
     """
 
-    def __init__(self, 
+    def __init__(self,
                 oracle:Oracle,
                 input_key: str,
-                residues: list[Residue] | None = None, 
-                normalize: bool = True, 
+                residues: list[Residue] | None = None,
+                normalize: bool = True,
                 inheritable: bool = True,
-                weight: float = 1.0, 
+                weight: float = 1.0,
                 ) -> None:
         """
         Initialises globular energy class.
@@ -779,11 +779,11 @@ class SecondaryStructureEnergy(EnergyTerm):
     beta-sheet, and coil.
     """
 
-    def __init__(self, 
+    def __init__(self,
                 oracle:Oracle,
                 input_key: str,
-                residues: list[Residue], 
-                target_secondary_structure: str, 
+                residues: list[Residue],
+                target_secondary_structure: str,
                 inheritable: bool = True,
                 weight: float = 1.0,
                 ) -> None:
@@ -872,7 +872,7 @@ class EllipsoidEnergy(EnergyTerm):
 
         # transforming to principle component axes
         centered_coords = atoms.coord - np.mean(atoms.coord, axis=0, keepdims=True)
-        variances, basis_vectors = np.linalg.eigh(np.cov(centered_coords, rowvar=False))        
+        variances, basis_vectors = np.linalg.eigh(np.cov(centered_coords, rowvar=False))
         atoms = structure[np.isin(structure.atom_name, backbone_atoms)]
 
         # transforming to principle component axes
@@ -994,10 +994,10 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
     See paper: Rajendran et al 2025 - to be published
     """
 
-    def __init__(self, oracle:Oracle, 
+    def __init__(self, oracle:Oracle,
                 residues: list[Residue],
                 reference_embeddings: np.ndarray,
-                input_key: str = "embeddings",  
+                input_key: str = "embeddings",
                 inheritable: bool = False,
                 weight: float = 1.0,
                 ) -> None:
@@ -1005,22 +1005,22 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
 
         Parameters
         ----------
-        oracle: Oracle 
+        oracle: Oracle
             The oracle (protein language model here) that will be used to calculate the embeddings.
         residues: list[Residue]
             Which residues to include in the calculation.
         reference_embeddings: np.ndarray
             The reference embeddings to compare to.
         conserved_residues_map: list[int]
-            A list with the residue indices whose embeddings should be extracted from the pLM returned by the protein 
+            A list with the residue indices whose embeddings should be extracted from the pLM returned by the protein
             language model to be compared to the reference embeddings.
         input_key: str, default="embeddings"
         inheritable: bool, default=False
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
         """
-        super().__init__( oracle=oracle, 
-                        name='embeddings_similarity', 
+        super().__init__( oracle=oracle,
+                        name='embeddings_similarity',
                         input_key = input_key )
         self.residue_groups = [residue_list_to_group(residues)]
         self.reference_embeddings = reference_embeddings
@@ -1032,7 +1032,7 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
         embeddings = state._oracles_output[self.oracle][self.input_key]
         assert isinstance( embeddings, np.ndarray ), f'Embeddings is expected to be a numpy array...but is type: {type(embeddings)}'
         assert len(embeddings.shape) == 2, f'Embeddings is expected to be a 2D tensor...but is shape: {embeddings.shape}. This does not work with batches.'
-        
+
         #The following generate a 2D numpy array of shape ( n_conserved_residues, n_features)
         #where n_conserved_residues is the number of residues in the reference embeddings
         #and n_features is the number of features in the embeddings.
@@ -1046,7 +1046,7 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
 
         self.value = 1.0 - similarity
         return self.value, self.value * self.weight
-    
+
     @property
     def conserved_index_list( self ):
         """Returns the indices of the conserved residues (stored in .residue_group[0]) in the pLM embedding array."""
@@ -1065,5 +1065,3 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
                         global_index_list.append( residue_global_index )
             offset += len( chain.residues )
         return global_index_list
-
-                                    

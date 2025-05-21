@@ -23,8 +23,8 @@ class MutationProtocol(ABC):
 
     @abstractmethod
     def one_step(
-        self, 
-        #folding_algorithm: FoldingAlgorithm, 
+        self,
+        #folding_algorithm: FoldingAlgorithm,
         system: System, old_system: System
     ) -> Tuple[System, float, float]:
         """
@@ -85,8 +85,8 @@ class Canonical(MutationProtocol):
         self.mutation_bias = mutation_bias
 
     def one_step(
-        self, 
-        #folding_algorithm: FoldingAlgorithm, 
+        self,
+        #folding_algorithm: FoldingAlgorithm,
         system: System, old_system: System
     ) -> Tuple[System, float, float]:
         for i in range(self.n_mutations):
@@ -159,8 +159,8 @@ class GrandCanonical(MutationProtocol):
             state.add_residue_to_all_energy_terms(chain_ID=chain_ID, residue_index=index)
 
     def one_step(
-        self, 
-        #folding_algorithm: FoldingAlgorithm, 
+        self,
+        #folding_algorithm: FoldingAlgorithm,
         system: System, old_system: System
     ) -> Tuple[System, float, float]:
         for i in range(self.n_mutations):

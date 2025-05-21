@@ -2,9 +2,9 @@ import pathlib as pl
 import bagel as bg
 
 # ? Could this not just be a mutation unit test?
-def test_tempering_does_not_mutate_immutable_residues(folder: bg.folding.ESMFolder, 
+def test_tempering_does_not_mutate_immutable_residues(folder: bg.folding.ESMFolder,
                                                       test_log_path: pl.Path,
-                                                      very_high_temp: float, 
+                                                      very_high_temp: float,
                                                       ) -> None:
     mutability = [False, True, False]
     residues = [bg.Residue(name='G', chain_ID='C-A', index=i, mutable=mut) for i, mut in enumerate(mutability)]

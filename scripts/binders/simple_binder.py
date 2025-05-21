@@ -19,16 +19,16 @@ def run_simple_binder():
 
     target_sequence = 'SAKELRCQCIKTYSKPFHPKFIKELRVIESGPHCANTEIIVKLSDGRELCLDPKENWVQRVVEKFLKRAENS'
     target_sequence = target_sequence[:20]
-    
+
     # Now define the mutability of the residues, all immutable in this case since this is the target sequence
     mutability = [False for _ in range(len(target_sequence))]
-    
+
     # Now define the chain
     residues_target = [
         bg.Residue(name=aa, chain_ID='Maxi', index=i, mutable=mut)
         for i, (aa, mut) in enumerate(zip(target_sequence, mutability))
     ]
-    
+
     # Now define residues in the hotspot where you want to bind. Here we choose those between residues 40-60
     residues_hotspot = [residues_target[i] for i in range(10, 20)]
     target_chain = bg.Chain(residues=residues_target)
@@ -36,10 +36,10 @@ def run_simple_binder():
     # For the binder, start with a random sequence of amino acids selecting randomly from the 30 amino acids
     binder_length = 10
     binder_sequence = ''.join([random.choice(list(bg.constants.aa_dict.keys())) for _ in range(binder_length)])
-    
+
     # Now define the mutability of the residues, all mutable in this case since this is the design sequence
     mutability = [True for _ in range(len(target_sequence))]
-    
+
     # Now define the chain
     residues_binder = [
         bg.Residue(name=aa, chain_ID='Stef', index=i, mutable=mut)

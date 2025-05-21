@@ -120,4 +120,4 @@ def test_system_get_total_loss_gives_correct_output(mixed_system: bg.System) -> 
     # state 0: energy=-0.5, state 1: energy=0.1
     assert np.isclose(
         total_loss, (-0.5 + 0.1 )
-    )  # system loss is sum of state energies  
+    )  # system loss is sum of state energies

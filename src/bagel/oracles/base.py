@@ -28,6 +28,6 @@ class Oracle():
     def __copy__(self) -> Any:
         return deepcopy(self)
 
-    @abstractmethod    
+    @abstractmethod
     def make_prediction(self, state) -> None:
         pass

@@ -1,4 +1,4 @@
-from .base import FoldingAlgorithm, FoldingMetrics
-from .esmfold import ESMFolder, ESMFoldingMetrics
+from .base import FoldingAlgorithm, FoldingResults
+from .esmfold import ESMFolder, ESMFoldingResults
 
-__all__ = ['FoldingAlgorithm', 'FoldingMetrics', 'ESMFolder', 'ESMFoldingMetrics']
+__all__ = ['FoldingAlgorithm', 'FoldingResults', 'ESMFolder', 'ESMFoldingResults']

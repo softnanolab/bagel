@@ -139,7 +139,7 @@ class FlexibleMinimizer(Minimizer):
 
     def minimize_system(self, system: System) -> System:
         #raise NotImplementedError('Flexible minimizer DOES NOT work in new implementation with Oracles, yet')
-    
+
         system.get_total_energy()  # update the energy internally
         best_system = system.__copy__()
         assert system.total_energy is not None, 'Cannot start without system having a calculated energy'
@@ -166,21 +166,21 @@ class FlexibleMinimizer(Minimizer):
 @dataclass
 class MonteCarloSampler(FlexibleMinimizer):
 
-    def __init__( self, 
-                 mutator: MutationProtocol, 
-                 temperature: float, 
-                 n_steps: int, 
-                 log_frequency: int = 100, 
-                 experiment_name: str = field(default_factory=lambda: f'MC_sampler_{time_stamp()}'), 
+    def __init__( self,
+                 mutator: MutationProtocol,
+                 temperature: float,
+                 n_steps: int,
+                 log_frequency: int = 100,
+                 experiment_name: str = field(default_factory=lambda: f'MC_sampler_{time_stamp()}'),
                  log_path: pl.Path | str | None = None
                  ) -> None:
-        
-                 super().__init__(mutator=mutator, 
-                         temperature_schedule=[temperature] * n_steps, 
-                         n_steps=n_steps, 
-                         log_frequency=log_frequency, 
-                         preserve_best_system_every_n_steps=None, 
-                         experiment_name=experiment_name, 
+
+                 super().__init__(mutator=mutator,
+                         temperature_schedule=[temperature] * n_steps,
+                         n_steps=n_steps,
+                         log_frequency=log_frequency,
+                         preserve_best_system_every_n_steps=None,
+                         experiment_name=experiment_name,
                          log_path=log_path
                          )
 
