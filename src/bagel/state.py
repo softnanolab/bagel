@@ -7,13 +7,12 @@ Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
 """
 
 from .chain import Chain
-from .oracles import Oracle, OracleResult
+from .oracles import Oracle, FoldingOracle, OraclesResultDict
 from .energies import EnergyTerm
 from typing import Optional
 from pathlib import Path
 from biotite.structure.io.pdbx import CIFFile, set_structure
 from dataclasses import dataclass, field
-from biotite.structure import AtomArray
 from typing import List, Any
 from copy import deepcopy
 import numpy as np
@@ -55,7 +54,7 @@ class State:
     oracles: list[Oracle]
     energy_terms: List[EnergyTerm]
     _energy: Optional[float] = field(default=None, init=False)
-    _oracles_result: dict[Oracle, OracleResult] = field(default_factory=lambda: {}, init=False)
+    _oracles_result: OraclesResultDict = field(default_factory=lambda: OraclesResultDict(), init=False)
     _energy_terms_value: dict[(str, float)] = field(default_factory=lambda: {}, init=False)
 
     def __post_init__(self) -> None:
@@ -91,11 +90,24 @@ class State:
 
         return self._energy
 
-    def to_cif(self, filepath: Path) -> bool:
+    def to_cif(self, oracle: FoldingOracle, filepath: Path) -> bool:
+        """
+        Write the state to a CIF file of a specific FoldingOracle.
+
+        Parameters
+        ----------
+        filepath : Path
+            Path to the file to write the CIF structure to.
+
+        Returns
+        -------
+        bool
+            True if the file was written successfully, False otherwise.
+        """
         filepath.parent.mkdir(parents=True, exist_ok=True)
         structure_file = CIFFile()
-        set_structure(structure_file, self._structure)
-        logger.debug(f'Writing CIF structure of {self.name} to {filepath}')
+        set_structure(structure_file, self._oracles_result.get_structure(oracle))
+        logger.debug(f'Writing CIF structure of {self.name} from {type(oracle).__name__} to {filepath}')
         structure_file.write(filepath)
         if not filepath.exists():
             raise FileNotFoundError(f'Structure file {filepath} was not created')
@@ -160,7 +172,7 @@ class State:
             term.shift_residues_indices_before_addition(chain_ID, residue_index)
             # Add the residue to the energy term if the parent residue is part of it and the term is inheritable
             # The function automatically checks if the parent is also in it, or not.
-            if term.inheritable:  # type: ignore
+            if term.inheritable:
                 # Just a double check here before proceeding
                 parent_index = parent_residue.index
                 assert parent_residue.chain_ID == chain_ID, (

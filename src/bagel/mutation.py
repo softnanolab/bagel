@@ -15,6 +15,7 @@ from .constants import mutation_bias_no_cystein
 from dataclasses import dataclass, field
 from typing import Dict, Tuple
 from abc import ABC, abstractmethod
+from .oracles.base import OraclesResultDict
 
 
 @dataclass
@@ -28,7 +29,7 @@ class MutationProtocol(ABC):
         # folding_algorithm: FoldingAlgorithm,
         system: System,
         old_system: System,
-    ) -> Tuple[System, float, float]:
+    ) -> tuple[System, float]:
         """
         Makes one mutation and returns the new system, the energy difference and the difference in size
         compared to the old system.
@@ -68,11 +69,12 @@ class MutationProtocol(ABC):
         chain.mutate_residue(index=index, amino_acid=amino_acid)
 
     def reset_system(self, system: System) -> System:
-        print('Resetting system RESET ALL ORACLES OUTPUTS')
+        print('Resetting system RESET ALL ORACLES RESULTS')
+        # TODO: add a unit test for this!!!!
         system.total_energy = None
         for state in system.states:
             state._energy_terms_value = {}
-            state._oracles_output = {}
+            state._oracles_result = OraclesResultDict()
         return system
 
 
@@ -91,7 +93,7 @@ class Canonical(MutationProtocol):
         # folding_algorithm: FoldingAlgorithm,
         system: System,
         old_system: System,
-    ) -> Tuple[System, float, float]:
+    ) -> tuple[System, float]:
         for i in range(self.n_mutations):
             chain = self.choose_chain(system)
             self.mutate_random_residue(chain=chain)
@@ -165,7 +167,7 @@ class GrandCanonical(MutationProtocol):
         self,
         system: System,
         old_system: System,
-    ) -> Tuple[System, float, float]:
+    ) -> tuple[System, float]:
         for i in range(self.n_mutations):
             chain = self.choose_chain(system)
             # Now pick a move to make among removal, addition, or mutation

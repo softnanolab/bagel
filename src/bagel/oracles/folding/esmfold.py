@@ -8,7 +8,7 @@ from ...chain import Chain
 from .utils import reindex_chains
 from pydantic import field_validator
 from .base import FoldingOracle, FoldingResult
-from typing import List, Any
+from typing import List, Any, Type
 from modalfold import app  # type: ignore
 from modalfold.esmfold import ESMFoldOutput  # type: ignore
 from modalfold.esmfold import ESMFold as ESMFoldBoiler
@@ -80,7 +80,7 @@ class ESMFold(FoldingOracle):
     WIP: For now we will be using ModalFold to do this reliably without much env issues.
     """
 
-    result_class = ESMFoldingResult
+    result_class: Type[ESMFoldingResult] = ESMFoldingResult
 
     def __init__(self, use_modal: bool = False, config: dict[str, Any] = {}):
         """

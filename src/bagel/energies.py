@@ -14,7 +14,9 @@ from .constants import hydrophobic_residues, max_sasa_values, probe_radius_water
 from .chain import Residue, Chain
 import warnings
 import pandas as pd
-from .oracles import Oracle, FoldingOracle, EmbeddingOracle, OracleResult
+from .oracles import Oracle, OracleResult, OraclesResultDict
+from .oracles.folding import FoldingResult, FoldingOracle
+from .oracles.embedding import EmbeddingResult, EmbeddingOracle
 
 
 # first row is chain_ids and second row is corresponding residue indices.
@@ -66,15 +68,16 @@ class EnergyTerm(ABC):
         self.oracle = oracle
         self.weight = weight
         self.inheritable = inheritable
-        self.residue_groups = []
+        self.residue_groups: list[ResidueGroup] = []
 
     def __post_init__(self) -> None:
         """Checks required attributes have been set after class is initialised"""
         assert hasattr(self, 'name'), 'name attribute must be set in class initialiser'
-        self.name: str = self.name
         assert hasattr(self, 'residue_groups'), 'residue_groups attribute must be set in class initialiser'
-        self.residue_groups: list[ResidueGroup] = self.residue_groups
         self.value: float = 0.0
+        # @STEFANO: We should remove this self.value behaviour, as it doesn't make much sense and is dangerous
+        # The value gets stored, but the value is a function of the oracle result, not the energy term
+        # i.e. when can retrieve the value later, but cannot directly reference what was the input, i.e. the oracle result
         assert hasattr(self, 'inheritable'), 'inheritable attribute must be set in class initialiser'
         if self.name == 'template_match' or self.name == 'backbone_template_match':
             assert self.inheritable is False, 'template_match energy term should NEVER be inheritable'
@@ -83,14 +86,14 @@ class EnergyTerm(ABC):
         assert isinstance(self.oracle, Oracle), 'oracle attribute must be an instance of Oracle'
 
     @abstractmethod
-    def compute(self, oracles_result: dict[Oracle, OracleResult]) -> tuple[float, float]:
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
         """
         Calculates the EnergyTerm's energy given information about the folded structure.
         The result is returned and stored as an internal attribute (.value).
 
         Parameters
         ----------
-        oracles_result: dict[Oracle, OracleResult]
+        oracles_result: OraclesResultDict
             Dictionary mapping oracles to their results. This is used to get the relevant
             information for the energy term.
 
@@ -194,7 +197,7 @@ class PTMEnergy(EnergyTerm):
         assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
         assert 'ptm' in self.oracle.result_class.model_fields, 'PTMEnergy requires oracle to return ptm in result_class'
 
-    def compute(self, oracles_result: dict[Oracle, OracleResult]) -> tuple[float, float]:
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
         folding_result = oracles_result[self.oracle]
         assert hasattr(folding_result, 'ptm'), 'PTM metric not returned by folding algorithm'
         self.value = -folding_result.ptm
@@ -241,9 +244,8 @@ class ChemicalPotentialEnergy(EnergyTerm):
             'ChemicalPotentialEnergy requires oracle to return structure in result_class'
         )
 
-    def compute(self, oracles_result: dict[Oracle, OracleResult]) -> tuple[float, float]:
-        structure = oracles_result[self.oracle].structure
-        assert isinstance(structure, AtomArray), 'structure should be an AtomArray object but is not {type(structure)}'
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        structure = oracles_result.get_structure(self.oracle)
 
         # The following works even if some residues have the same number but different chain IDs because res_ids
         # actually returns a list of tuples ( chain_id, res_id )
@@ -301,7 +303,7 @@ class PLDDTEnergy(EnergyTerm):
             'PLDDTEnergy requires oracle to return local_plddt in result_class'
         )
 
-    def compute(self, oracles_result: dict[Oracle, OracleResult]) -> tuple[float, float]:
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
         folding_result = oracles_result[self.oracle]
         assert hasattr(folding_result, 'local_plddt'), 'local_plddt metric not returned by folding algorithm'
         assert folding_result.local_plddt.shape[0] == 1, 'batch size equal to 1 is required'
@@ -346,7 +348,7 @@ class SurfaceAreaEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: Oracle,
+        oracle: FoldingOracle,
         inheritable: bool = True,
         residues: list[Residue] | None = None,
         probe_radius: float | None = None,
@@ -358,7 +360,7 @@ class SurfaceAreaEnergy(EnergyTerm):
 
         Parameters
         ----------
-        oracle: Oracle
+        oracle: FoldingOracle
             The oracle to use for the energy term.
         inheritable: bool, default=True
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
@@ -380,8 +382,8 @@ class SurfaceAreaEnergy(EnergyTerm):
             'SurfaceAreaEnergy requires oracle to return structure in result_class'
         )
 
-    def compute(self, oracles_result: dict[Oracle, OracleResult]) -> tuple[float, float]:
-        structure = oracles_result[self.oracle].structure
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        structure = oracles_result.get_structure(self.oracle)
         if len(self.residue_groups) != 0:
             atom_mask: npt.NDArray[np.bool_] = self.get_atom_mask(structure, residue_group_index=0)
         else:
@@ -400,7 +402,7 @@ class HydrophobicEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: Oracle,
+        oracle: FoldingOracle,
         inheritable: bool = True,
         residues: list[Residue] | None = None,
         surface_only: bool = False,
@@ -430,8 +432,8 @@ class HydrophobicEnergy(EnergyTerm):
             'HydrophobicEnergy requires oracle to return structure in result_class'
         )
 
-    def compute(self, oracles_result: dict[Oracle, OracleResult]) -> tuple[float, float]:
-        structure = oracles_result[self.oracle].structure
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        structure = oracles_result.get_structure(self.oracle)
         if len(self.residue_groups) > 0:
             relevance_mask: npt.NDArray[np.bool_] = self.get_atom_mask(structure, residue_group_index=0)
         else:
@@ -455,7 +457,7 @@ class PAEEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: Oracle,
+        oracle: FoldingOracle,
         residues: tuple[list[Residue], list[Residue]],
         inheritable: bool = True,
         cross_term_only: bool = True,
@@ -486,15 +488,16 @@ class PAEEnergy(EnergyTerm):
         assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
         assert 'pae' in self.oracle.result_class.model_fields, 'PAEEnergy requires oracle to return pae in result_class'
 
-    def compute(self, oracles_result: dict[Oracle, OracleResult]) -> tuple[float, float]:
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
         folding_result = oracles_result[self.oracle]
+        structure = oracles_result.get_structure(self.oracle)
         assert hasattr(folding_result, 'pae'), 'pae metric not returned by folding algorithm'
         assert folding_result.pae.shape[0] == 1, 'batch size equal to 1 is required'
         pae = folding_result.pae[0]  # [n_residues, n_residues] pairwise predicted alignment error matrix
         max_pae = 30  # approximate max. Sometimes pae can be higher
 
-        group_1_mask = self.get_residue_mask(folding_result.structure, residue_group_index=0)
-        group_2_mask = self.get_residue_mask(folding_result.structure, residue_group_index=1)
+        group_1_mask = self.get_residue_mask(structure, residue_group_index=0)
+        group_2_mask = self.get_residue_mask(structure, residue_group_index=1)
         pae_mask = np.full(shape=pae.shape, fill_value=False)
 
         if self.cross_term_only:  # only PAEs between an atom in group 1 and an atom in group 2
@@ -519,7 +522,7 @@ class RingSymmetryEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: Oracle,
+        oracle: FoldingOracle,
         symmetry_groups: list[list[Residue]],
         inheritable: bool = True,
         direct_neighbours_only: bool = False,
@@ -553,8 +556,8 @@ class RingSymmetryEnergy(EnergyTerm):
             'RingSymmetryEnergy requires oracle to return structure in result_class'
         )
 
-    def compute(self, oracles_result: dict[Oracle, OracleResult]) -> tuple[float, float]:
-        structure = oracles_result[self.oracle].structure
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        structure = oracles_result.get_structure(self.oracle)
         num_groups = len(self.residue_groups)
         centroids = np.zeros(shape=(num_groups, 3))
         backbone_mask = np.isin(structure.atom_name, backbone_atoms)
@@ -583,7 +586,7 @@ class SeparationEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: Oracle,
+        oracle: FoldingOracle,
         residues: tuple[list[Residue], list[Residue]],
         normalize: bool = True,
         inheritable: bool = True,
@@ -613,8 +616,8 @@ class SeparationEnergy(EnergyTerm):
             'SeparationEnergy requires oracle to return structure in result_class'
         )
 
-    def compute(self, oracles_result: dict[Oracle, OracleResult]) -> tuple[float, float]:
-        structure = oracles_result[self.oracle].structure
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        structure = oracles_result.get_structure(self.oracle)
         backbone_mask = np.isin(structure.atom_name, backbone_atoms)
         group_1_mask = self.get_atom_mask(structure, residue_group_index=0)
         group_2_mask = self.get_atom_mask(structure, residue_group_index=1)
@@ -628,7 +631,7 @@ class SeparationEnergy(EnergyTerm):
         if self.normalize:
             distance /= len(group_1_atoms) + len(group_2_atoms)
 
-        self.value = distance
+        self.value = float(distance)
         return self.value, self.value * self.weight
 
 
@@ -674,8 +677,8 @@ class GlobularEnergy(EnergyTerm):
             'GlobularEnergy requires oracle to return structure in result_class'
         )
 
-    def compute(self, oracles_result: dict[Oracle, OracleResult]) -> tuple[float, float]:
-        structure = oracles_result[self.oracle].structure
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        structure = oracles_result.get_structure(self.oracle)
         backbone_mask = np.isin(structure.atom_name, backbone_atoms)
         if len(self.residue_groups) > 0:
             selected_mask = self.get_atom_mask(structure, residue_group_index=0)
@@ -734,8 +737,8 @@ class TemplateMatchEnergy(EnergyTerm):
             'TemplateMatchEnergy requires oracle to return structure in result_class'
         )
 
-    def compute(self, oracles_result: dict[Oracle, OracleResult]) -> tuple[float, float]:
-        structure = oracles_result[self.oracle].structure
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        structure = oracles_result.get_structure(self.oracle)
         structure_atoms = structure[self.get_atom_mask(structure, residue_group_index=0)]
         template_atoms = self.template_atoms
         if self.backbone_only:
@@ -804,8 +807,8 @@ class SecondaryStructureEnergy(EnergyTerm):
             'SecondaryStructureEnergy requires oracle to return structure in result_class'
         )
 
-    def compute(self, oracles_result: dict[Oracle, OracleResult]) -> tuple[float, float]:
-        structure = oracles_result[self.oracle].structure
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        structure = oracles_result.get_structure(self.oracle)
         target_label = self.target_secondary_structure[0]  # How Biotite labels secondary structures
         calculated_labels = annotate_sse(structure)
         selection_mask = self.get_residue_mask(structure, residue_group_index=0)
@@ -863,8 +866,8 @@ class EllipsoidEnergy(EnergyTerm):
             'EllipsoidEnergy requires oracle to return structure in result_class'
         )
 
-    def compute(self, oracles_result: dict[Oracle, OracleResult]) -> tuple[float, float]:
-        structure = oracles_result[self.oracle].structure
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        structure = oracles_result.get_structure(self.oracle)
         atoms = structure[np.isin(structure.atom_name, backbone_atoms)]
 
         # transforming to principle component axes
@@ -959,8 +962,8 @@ class CuboidEnergy(EnergyTerm):
             'CuboidEnergy requires oracle to return structure in result_class'
         )
 
-    def compute(self, oracles_result: dict[Oracle, OracleResult]) -> tuple[float, float]:
-        structure = oracles_result[self.oracle].structure
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        structure = oracles_result.get_structure(self.oracle)
         atoms = structure[np.isin(structure.atom_name, backbone_atoms)]
 
         # transforming to principle component axes
@@ -1002,7 +1005,7 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
         self,
         oracle: EmbeddingOracle,
         residues: list[Residue],
-        reference_embeddings: np.ndarray,
+        reference_embeddings: npt.NDArray[np.float64],
         weight: float = 1.0,
     ) -> None:
         """
@@ -1036,8 +1039,8 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
             'EmbeddingsSimilarityEnergy requires oracle to return embeddings in result_class'
         )
 
-    def compute(self, oracles_result: dict[Oracle, OracleResult]) -> float:
-        embeddings = oracles_result[self.oracle].embeddings
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        embeddings = oracles_result.get_embeddings(self.oracle)
         chains = oracles_result[self.oracle].input_chains
         assert isinstance(embeddings, np.ndarray), (
             f'Embeddings is expected to be a numpy array, not type: {type(embeddings)}'
@@ -1080,7 +1083,4 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
                     if chain_id == conserved_chain_id[k] and residue.index == conserved_res_id[k]:
                         global_index_list.append(residue_global_index)
             offset += len(chain.residues)
-        import pdb
-
-        pdb.set_trace()
         return global_index_list

@@ -204,14 +204,14 @@ class SimulatedAnnealing(FlexibleMinimizer):
     ) -> None:
         super().__init__(
             mutator=mutator,
-            temperature_schedule=np.linspace(start=initial_temperature, stop=final_temperature, num=n_steps),
+            temperature_schedule=list(np.linspace(start=initial_temperature, stop=final_temperature, num=n_steps)),
             n_steps=n_steps,
             log_frequency=log_frequency,
             preserve_best_system_every_n_steps=None,
             experiment_name=experiment_name,
             log_path=log_path,
         )
-        self.acceptance = []
+        self.acceptance: list[bool] = []
         super().__post_init__()
 
     def dump_logs(self, output_folder: pl.Path, step: int, **kwargs: Any) -> None:
@@ -255,7 +255,7 @@ class SimulatedTempering(FlexibleMinimizer):
             experiment_name=experiment_name,
             log_path=log_path,
         )
-        self.acceptance = []
+        self.acceptance: list[bool] = []
         super().__post_init__()
 
     def dump_logs(self, output_folder: pl.Path, step: int, **kwargs: Any) -> None:

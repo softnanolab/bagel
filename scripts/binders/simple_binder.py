@@ -2,8 +2,8 @@ import random
 import bagel as bg
 import os
 import modal
-
-def run_simple_binder():
+from typing import Any
+def run_simple_binder() -> Any:
     # Get the value of an environment variable
     use_modal = True if os.getenv('USE_MODAL', 'True').lower() in ('true', '1', 'yes') else False
 

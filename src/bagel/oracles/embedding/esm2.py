@@ -7,8 +7,8 @@ import numpy.typing as npt
 from ...chain import Chain
 from .base import EmbeddingResult, EmbeddingOracle
 from typing import List, Any
-from modalfold import app
-from modalfold.esm2 import ESM2Output
+from modalfold import app  # type: ignore
+from modalfold.esm2 import ESM2Output  # type: ignore
 from modalfold.esm2 import ESM2 as ESM2Boiler
 
 import logging
@@ -51,7 +51,7 @@ class ESM2(EmbeddingOracle):
 
             atexit.register(self.__del__)
 
-        self.model = self._load(config)
+        self._load(config)
 
     def __del__(self) -> None:
         """Cleanup the app context when the object is destroyed or at exit"""
@@ -64,7 +64,7 @@ class ESM2(EmbeddingOracle):
             self.modal_app_context = app.run()
             self.modal_app_context.__enter__()  # type: ignore
         config = {**self.default_config, **config}
-        return ESM2Boiler(config)
+        self.model = ESM2Boiler(config)
 
     def _pre_process(self, chains: list[Chain]) -> list[str]:
         """
@@ -78,17 +78,17 @@ class ESM2(EmbeddingOracle):
         Calculate the embeddings of the residues in the chains.
         """
         self.input_chains = chains
-        chains = self._pre_process(chains)
+        processed_chains = self._pre_process(chains)
 
-        if ':' in chains[0]:
+        if ':' in processed_chains[0]:
             raise NotImplementedError('ESM-2 does not support multimers as of modalfold v0.0.13')
 
         if self.use_modal:
-            return self._post_process(self._remote_embed(chains))
+            return self._post_process(self._remote_embed(processed_chains))
         else:
             logger.info('Given that use_modal is False, trying to embed with ESM-2 locally...')
             # TODO: Hugging Face Cache might need to be set here properly to make it work
-            return self._post_process(self._local_embed(chains))
+            return self._post_process(self._local_embed(processed_chains))
 
     def _remote_embed(self, sequence: List[str]) -> ESM2Output:
         return self.model.embed.remote(sequence)
@@ -96,7 +96,7 @@ class ESM2(EmbeddingOracle):
     def _local_embed(self, sequence: List[str]) -> ESM2Output:
         return self.model.embed.local(sequence)
 
-    def _post_process(self, output: ESM2Output) -> np.ndarray:
+    def _post_process(self, output: ESM2Output) -> ESM2Result:
         embeddings = output.embeddings[0, 1:-1, :]  # remove first and last token embeddings (not a residue)
         assert len(embeddings.shape) == 2, (
             f'Embeddings is expected to be a 2D tensor, not shape: {embeddings.shape}. '

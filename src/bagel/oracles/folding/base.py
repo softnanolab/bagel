@@ -7,11 +7,10 @@ Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
 """
 
 from abc import abstractmethod
-from pydantic import BaseModel
 from ...chain import Chain
 from ..base import Oracle, OracleResult
 from biotite.structure import AtomArray
-from typing import List
+from typing import Type
 
 
 class FoldingResult(OracleResult):
@@ -31,7 +30,7 @@ class FoldingOracle(Oracle):
     A FoldingOracle is a specific type of Oracle that uses a folding algorithm to predict the 3D structure of a State.
     """
 
-    result_class = FoldingResult
+    result_class: Type[FoldingResult] = FoldingResult  # holds class, not instance
 
     def predict(self, chains: list[Chain]) -> FoldingResult:
         """

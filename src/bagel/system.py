@@ -13,7 +13,7 @@ from .chain import Chain, Residue
 from typing import Any
 from dataclasses import dataclass
 
-# from .folding import FoldingAlgorithm
+from .oracles.folding import FoldingOracle
 from .constants import aa_dict
 from copy import deepcopy
 import pathlib as pl
@@ -91,9 +91,17 @@ class System:
                 file.write(f'{":".join(state.total_sequence)}\n')
 
             if save_structure:
-                file = CIFFile()
-                set_structure(file, state._structure)  # HACK
-                file.write(structure_path / f'{state.name}_{step}.cif')  # type: ignore
+                for oracle in state.oracles:
+                    if isinstance(oracle, FoldingOracle):
+                        oracle_name = type(oracle).__name__
+                        state.to_cif(oracle, structure_path / f'{state.name}_{oracle_name}_{step}.cif')
+                    else:
+                        logger.debug(
+                            f'Skipping {oracle.__class__.__name__} for CIF export, as it is not a FoldingOracle'
+                        )
+                # file = CIFFile()
+                # set_structure(file, state._structure)  # HACK
+                # file.write(structure_path / f'{state.name}_{step}.cif')  # type: ignore
 
         energies['system_energy'] = self.total_energy
 
