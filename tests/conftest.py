@@ -47,6 +47,35 @@ def esmfold(request) -> bg.oracles.folding.ESMFold:
 
 
 @pytest.fixture
+def fake_esmfold(request, monkeypatch) -> bg.oracles.folding.ESMFold:
+    """
+    Fixture that returns an ESMFold object that doesn't load any model.
+    Use this primarily for testing functions that require an Oracle input,
+    but also mock the output of the Oracle.
+    """
+
+    # Create a dummy _load method
+    def mock_load(self, config={}):
+        pass
+
+    # Patch the _load method
+    monkeypatch.setattr(bg.oracles.folding.ESMFold, '_load', mock_load)
+
+    # Now create the actual instance - _load will be patched
+    return bg.oracles.folding.ESMFold(use_modal=False)
+
+
+@pytest.fixture
+def fake_state(fake_esmfold: bg.oracles.folding.ESMFold) -> bg.State:
+    return bg.State(
+        name='fake_state',
+        chains=[bg.Chain(residues=[bg.Residue(name='C', chain_ID='A', index=i) for i in range(5)])],
+        oracles=[fake_esmfold],
+        energy_terms=[],
+    )
+
+
+@pytest.fixture
 def very_high_temp() -> float:
     """High temperature to make acceptance of any move 100%"""
     return 1e10
@@ -101,22 +130,26 @@ def small_structure_chains(small_structure_residues: list[bg.Residue]) -> list[b
 
 @pytest.fixture
 def small_structure_state(
-    small_structure_chains: list[bg.Chain], small_structure_residues: list[bg.Residue], small_structure: AtomArray
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    small_structure_chains: list[bg.Chain],
+    small_structure_residues: list[bg.Residue],
+    small_structure: AtomArray,
 ) -> bg.State:
     energy_terms = [
-        bg.energies.PTMEnergy(weight=1.0),
-        bg.energies.SurfaceAreaEnergy(residues=small_structure_residues[1:], weight=1.0),
+        bg.energies.PTMEnergy(oracle=fake_esmfold, weight=1.0),
+        bg.energies.SurfaceAreaEnergy(oracle=fake_esmfold, residues=small_structure_residues[1:], weight=1.0),
     ]
     state = bg.State(
+        oracles=[fake_esmfold],
         chains=small_structure_chains,
         energy_terms=energy_terms,
         name='small',
     )
     state._energy = -0.5
     state._structure = small_structure
-    folding_metrics = Mock(bg.folding.FoldingMetrics)
-    folding_metrics.ptm = 0.7
-    state._folding_metrics = folding_metrics
+    folding_result = Mock(bg.oracles.folding.FoldingResult)
+    folding_result.ptm = 0.7
+    state._folding_metrics = folding_result
     state.energy_terms[0].value, state.energy_terms[1].value = [-0.7, 0.2]
     state._energy_terms_value = [-0.7, 0.2]
     state.chemical_potential = 1.0
@@ -189,6 +222,7 @@ def square_structure_chains(square_structure_residues: list[bg.Residue]) -> list
 
 @pytest.fixture
 def mixed_structure_state(
+    fake_esmfold: bg.oracles.folding.ESMFold,
     square_structure_chains: list[bg.Chain],
     line_structure_chains: list[bg.Chain],
     square_structure: AtomArray,
@@ -196,26 +230,30 @@ def mixed_structure_state(
     line_structure_residues: list[bg.Residue],
     square_structure_residues: list[bg.Residue],
 ) -> bg.State:
-    # energy_terms = [bg.energies.PTMEnergy(), bg.energies.GlobularEnergy()]
     energy_terms = [
-        bg.energies.PLDDTEnergy(residues=line_structure_residues + square_structure_residues, weight=1.0),
+        bg.energies.PLDDTEnergy(
+            oracle=fake_esmfold,
+            residues=line_structure_residues + square_structure_residues,
+            weight=1.0,
+        ),
         bg.energies.PAEEnergy(
-            group_1_residues=line_structure_residues,
-            group_2_residues=square_structure_residues,
+            oracle=fake_esmfold,
+            residues=[line_structure_residues, square_structure_residues],
             inheritable=False,
             weight=1.0,
         ),
     ]
     state = bg.State(
+        oracles=[fake_esmfold],
         chains=line_structure_chains + square_structure_chains,
         energy_terms=energy_terms,
         name='mixed',
     )
     state._energy = 0.1
     state._structure = concatenate((line_structure, square_structure))
-    folding_metrics = Mock(bg.folding.FoldingMetrics)
-    folding_metrics.ptm = 0.4
-    state._folding_metrics = folding_metrics
+    folding_result = Mock(bg.oracles.folding.FoldingResult)
+    folding_result.ptm = 0.4
+    state._folding_metrics = folding_result
     state.energy_terms[0].value, state.energy_terms[1].value = [-0.4, 0.5]
     state._energy_terms_value = [-0.4, 0.5]
     state.chemical_potential = 2.0
@@ -259,21 +297,20 @@ def protein_language_model() -> bg.oracles.embedding.ESM2:
 def plm_only_state() -> bg.State:
     sequence = np.random.choice(list(bg.constants.aa_dict.keys()), size=5)
     residues = [bg.Residue(name=aa, chain_ID='A', index=i, mutable=True) for i, aa in enumerate(sequence)]
-    oracle = bg.EmbeddingOracle(language_model=bg.embedding.ESM2(use_modal=True))
+    esm2 = bg.oracles.embedding.ESM2(use_modal=True)
     # This really should be taken from the ESM2 class
     n_features = 1280
     reference_embeddings = np.zeros((2, n_features))
     reference_embeddings[0, 0] = 1.0
     reference_embeddings[1, 0] = 1.0
-    energy = bg.energies.PTMEnergy(
-        weight=0.5,
+    energy = bg.energies.EmbeddingsSimilarityEnergy(
+        oracle=esm2,
         residues=residues[:2],
-        oracle=oracle,
-        input_key='embedding',
         reference_embeddings=reference_embeddings,
+        weight=0.5,
     )
     state = bg.State(
-        oracles=[oracle],
+        oracles=[esm2],
         chains=[bg.Chain(residues)],
         energy_terms=[energy],
         name='state_A',
@@ -282,12 +319,16 @@ def plm_only_state() -> bg.State:
 
 
 @pytest.fixture
-def simple_state() -> bg.State:
+def simple_state(fake_esmfold: bg.oracles.folding.ESMFold) -> bg.State:
     sequence = np.random.choice(list(bg.constants.aa_dict.keys()), size=5)
     residues = [bg.Residue(name=aa, chain_ID='C-A', index=i, mutable=True) for i, aa in enumerate(sequence)]
     state = bg.State(
+        oracles=[fake_esmfold],
         chains=[bg.Chain(residues)],
-        energy_terms=[bg.energies.PTMEnergy(weight=1.0), bg.energies.OverallPLDDTEnergy(weight=1.0)],
+        energy_terms=[
+            bg.energies.PTMEnergy(oracle=fake_esmfold, weight=1.0),
+            bg.energies.OverallPLDDTEnergy(oracle=fake_esmfold, weight=1.0),
+        ],
         name='state_A',
     )
     state._structure = AtomArray(length=len(residues))
@@ -301,26 +342,28 @@ def simple_state() -> bg.State:
 
 
 @pytest.fixture
-def shared_chain_system() -> bg.State:
+def shared_chain_system(fake_esmfold: bg.oracles.folding.ESMFold) -> bg.State:
     """System where each state references the same chain"""
     sequence = np.random.choice(list(bg.constants.aa_dict.keys()), size=5)
     residues = [bg.Residue(name=aa, chain_ID='A', index=i, mutable=True) for i, aa in enumerate(sequence)]
     shared_chain = bg.Chain(residues)
 
     A_state = bg.State(
+        oracles=[fake_esmfold],
         chains=[shared_chain],
         energy_terms=[
-            bg.energies.PLDDTEnergy(residues, weight=1.0),
-            bg.energies.SurfaceAreaEnergy(residues, weight=1.0),
+            bg.energies.PLDDTEnergy(oracle=fake_esmfold, residues=residues, weight=1.0),
+            bg.energies.SurfaceAreaEnergy(oracle=fake_esmfold, residues=residues, weight=1.0),
         ],
         name='A',
     )
 
     B_state = bg.State(
+        oracles=[fake_esmfold],
         chains=[shared_chain],
         energy_terms=[
-            bg.energies.PLDDTEnergy(residues, weight=1.0),
-            bg.energies.SurfaceAreaEnergy(residues, weight=1.0),
+            bg.energies.PLDDTEnergy(oracle=fake_esmfold, residues=residues, weight=1.0),
+            bg.energies.SurfaceAreaEnergy(oracle=fake_esmfold, residues=residues, weight=1.0),
         ],
         name='B',
     )
@@ -340,26 +383,28 @@ def huge_system() -> bg.State:
 
 
 @pytest.fixture
-def energies_system() -> bg.State:
+def energies_system(fake_esmfold: bg.oracles.folding.ESMFold) -> bg.State:
     """System where each state has an energy term that tracks all residues in state"""
     sequence = np.random.choice(list(bg.constants.aa_dict.keys()), size=5)
 
     A_residues = [bg.Residue(name=aa, chain_ID='A', index=i, mutable=True) for i, aa in enumerate(sequence)]
     A_state = bg.State(
+        oracles=[fake_esmfold],
         chains=[bg.Chain(A_residues)],
         energy_terms=[
-            bg.energies.PLDDTEnergy(A_residues, weight=1.0),
-            bg.energies.SurfaceAreaEnergy(A_residues, weight=1.0),
+            bg.energies.PLDDTEnergy(oracle=fake_esmfold, residues=A_residues, weight=1.0),
+            bg.energies.SurfaceAreaEnergy(oracle=fake_esmfold, residues=A_residues, weight=1.0),
         ],
         name='A',
     )
 
     B_residues = [bg.Residue(name=aa, chain_ID='B', index=i, mutable=True) for i, aa in enumerate(sequence)]
     B_state = bg.State(
+        oracles=[fake_esmfold],
         chains=[bg.Chain(B_residues)],
         energy_terms=[
-            bg.energies.PLDDTEnergy(B_residues, weight=1.0),
-            bg.energies.SurfaceAreaEnergy(B_residues, weight=1.0),
+            bg.energies.PLDDTEnergy(oracle=fake_esmfold, residues=B_residues, weight=1.0),
+            bg.energies.SurfaceAreaEnergy(oracle=fake_esmfold, residues=B_residues, weight=1.0),
         ],
         name='B',
     )

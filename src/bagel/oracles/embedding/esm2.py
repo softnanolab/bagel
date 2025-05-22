@@ -21,10 +21,17 @@ class ESM2Result(EmbeddingResult):
     Stores statistics from ESM-2.
     """
 
+    input_chains: list[Chain]
     embeddings: npt.NDArray[np.float64]
 
 
 class ESM2(EmbeddingOracle):
+    """
+    Object that uses ESM-2 to predict the embeddings of the residues in the chains.
+    """
+
+    result_class = ESM2Result
+
     def __init__(self, use_modal: bool = False, config: dict[str, Any] = {}) -> None:
         """
         NOTE this can only be called once. Attempting to initialise this object multiple times in one process creates
@@ -70,17 +77,18 @@ class ESM2(EmbeddingOracle):
         """
         Calculate the embeddings of the residues in the chains.
         """
+        self.input_chains = chains
         chains = self._pre_process(chains)
 
         if ':' in chains[0]:
             raise NotImplementedError('ESM-2 does not support multimers as of modalfold v0.0.13')
 
         if self.use_modal:
-            return self._post_process(self._remote_embed(self._pre_process(chains)))
+            return self._post_process(self._remote_embed(chains))
         else:
             logger.info('Given that use_modal is False, trying to embed with ESM-2 locally...')
             # TODO: Hugging Face Cache might need to be set here properly to make it work
-            return self._post_process(self._local_embed(self._pre_process(chains)))
+            return self._post_process(self._local_embed(chains))
 
     def _remote_embed(self, sequence: List[str]) -> ESM2Output:
         return self.model.embed.remote(sequence)
@@ -94,4 +102,4 @@ class ESM2(EmbeddingOracle):
             f'Embeddings is expected to be a 2D tensor, not shape: {embeddings.shape}. '
             'The ESM2 Oracle does not support batches.'
         )
-        return ESM2Result(embeddings=embeddings)
+        return self.result_class(input_chains=self.input_chains, embeddings=embeddings)

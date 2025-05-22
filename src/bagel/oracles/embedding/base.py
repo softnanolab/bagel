@@ -18,6 +18,7 @@ class EmbeddingResult(OracleResult):
     Stores statistics from the embedding algorithm.
     """
 
+    input_chains: list[Chain]
     embeddings: npt.NDArray[np.float64]
 
     class Config:

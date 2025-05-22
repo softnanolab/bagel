@@ -163,7 +163,6 @@ class GrandCanonical(MutationProtocol):
 
     def one_step(
         self,
-        # folding_algorithm: FoldingAlgorithm,
         system: System,
         old_system: System,
     ) -> Tuple[System, float, float]:

@@ -50,6 +50,7 @@ class ESMFoldingResult(FoldingResult):
     To be discussed.
     """
 
+    input_chains: list[Chain]
     structure: AtomArray  # structure of the predicted model
     local_plddt: npt.NDArray[np.float64]  # global template modelling score (0 to 1)
     ptm: npt.NDArray[np.float64]  # global predicted local distance difference test score (0 to 1)
@@ -147,9 +148,12 @@ class ESMFold(FoldingOracle):
         """
         Reduce ESMFoldOutput (from ModalFold) to a ESMFoldingResult object
         """
+        # TODO: think whether we should output batches, or just a single structure information
+        # otherwise the EnergyTerms that need to always extract the first index in the batch dimension
         atoms = output.atom_array
         atoms = reindex_chains(atoms, [chain.chain_ID for chain in chains])
         results = self.result_class(
+            input_chains=chains,
             structure=atoms,
             local_plddt=output.plddt,
             ptm=output.ptm,

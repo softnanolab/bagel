@@ -118,7 +118,7 @@ class System:
             file.write('state,energy,weight\n')
             for state in self.states:
                 for i, term in enumerate(state.energy_terms):
-                    file.write(f'{state.name},{term.name},{state.energy_terms_weights[i]}\n')
+                    file.write(f'{state.name},{term.name},{term.weight}\n')
 
     def add_chain(self, sequence: str, mutability: list[int], chain_ID: str, state_index: list[int]) -> None:
         """

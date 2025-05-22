@@ -19,7 +19,8 @@ class FoldingResult(OracleResult):
     Stores statistics from the folding algorithm.
     """
 
-    pass
+    input_chains: list[Chain]
+    structure: AtomArray
 
     class Config:
         arbitrary_types_allowed = True  # This is needed for numpy array support

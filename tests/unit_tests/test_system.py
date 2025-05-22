@@ -113,9 +113,9 @@ def test_system_states_still_reference_shared_chain_object_after_copy_method(sha
     assert copied_system.states[0].chains[0] == copied_system.states[1].chains[0]
 
 
-def test_system_get_total_loss_gives_correct_output(mixed_system: bg.System) -> None:
+def test_system_get_total_energy_gives_correct_output(mixed_system: bg.System) -> None:
     for state in mixed_system.states:
         state.get_energy = Mock()  # disable method for easier testing
-    total_loss = mixed_system.get_total_loss(folding_algorithm=None)
+    total_energy = mixed_system.get_total_energy()
     # state 0: energy=-0.5, state 1: energy=0.1
-    assert np.isclose(total_loss, (-0.5 + 0.1))  # system loss is sum of state energies
+    assert np.isclose(total_energy, (-0.5 + 0.1))  # system energy is sum of state energies

@@ -21,7 +21,7 @@ class OracleResult(BaseModel):
     Results from an Oracle.
     """
 
-    pass
+    input_chains: list[Chain]
 
 
 class Oracle(ABC):

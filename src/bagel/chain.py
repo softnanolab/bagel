@@ -103,6 +103,11 @@ class Chain:
         """Number of amino acids in Chain."""
         return len(self.residues)
 
+    @property
+    def __len__(self) -> int:
+        """Number of amino acids in Chain."""
+        return self.length
+
     @classmethod
     def from_pdb(cls, file_path: str, chain_id: str) -> Self:
         """Create Chain object from a PDB file string. Residue indices are 0-indexed."""

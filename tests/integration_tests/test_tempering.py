@@ -4,7 +4,7 @@ import bagel as bg
 
 # ? Could this not just be a mutation unit test?
 def test_tempering_does_not_mutate_immutable_residues(
-    folder: bg.folding.ESMFolder,
+    folder: bg.oracles.FoldingOracle,
     test_log_path: pl.Path,
     very_high_temp: float,
 ) -> None:
@@ -38,7 +38,7 @@ def test_tempering_does_not_mutate_immutable_residues(
 
 
 def test_tempering_does_not_raise_exceptions_with_nominal_inputs(
-    simple_state: bg.State, folder: bg.folding.ESMFolder, test_log_path: pl.Path
+    simple_state: bg.State, folder: bg.oracles.FoldingOracle, test_log_path: pl.Path
 ) -> None:
     test_system = bg.System(states=[simple_state], name='test_tempering')
 
