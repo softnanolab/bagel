@@ -23,7 +23,7 @@ repos:
 
     - id: pytest
       name: pytest
-      entry: bash -c 'uv run pytest --folding skip'
+      entry: bash -c 'uv run pytest --oracles skip'
       language: system
       require_serial: true
 

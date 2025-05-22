@@ -81,8 +81,8 @@ class System:
 
         energies: dict[str, int | float] = {'step': step}  #  order of insertion consistent in every dump_logs call
         for state in self.states:
-            for energy in state.energy_terms:
-                energies[f'{state.name}:{energy.name}'] = energy.value
+            for energy_name, energy_value in state._energy_terms_value.items():
+                energies[f'{state.name}:{energy_name}'] = energy_value
             assert state._energy is not None, 'State energy not calculated. Call get_energy() first.'
             energies[f'{state.name}:state_energy'] = state._energy  # HACK
 
@@ -91,7 +91,7 @@ class System:
                 file.write(f'{":".join(state.total_sequence)}\n')
 
             if save_structure:
-                for oracle in state.oracles:
+                for oracle in state.oracles_list:
                     if isinstance(oracle, FoldingOracle):
                         oracle_name = type(oracle).__name__
                         state.to_cif(oracle, structure_path / f'{state.name}_{oracle_name}_{step}.cif')

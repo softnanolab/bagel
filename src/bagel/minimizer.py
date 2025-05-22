@@ -140,8 +140,6 @@ class FlexibleMinimizer(Minimizer):
     log_path: pl.Path | str | None = None
 
     def minimize_system(self, system: System) -> System:
-        # raise NotImplementedError('Flexible minimizer DOES NOT work in new implementation with Oracles, yet')
-
         system.get_total_energy()  # update the energy internally
         best_system = system.__copy__()
         assert system.total_energy is not None, 'Cannot start without system having a calculated energy'
@@ -168,7 +166,6 @@ class FlexibleMinimizer(Minimizer):
         return best_system
 
 
-@dataclass
 class MonteCarloSampler(FlexibleMinimizer):
     def __init__(
         self,
@@ -176,9 +173,11 @@ class MonteCarloSampler(FlexibleMinimizer):
         temperature: float,
         n_steps: int,
         log_frequency: int = 100,
-        experiment_name: str = field(default_factory=lambda: f'MC_sampler_{time_stamp()}'),
+        experiment_name: str | None = None,
         log_path: pl.Path | str | None = None,
     ) -> None:
+        if experiment_name is None:
+            experiment_name = f'MC_sampler_{time_stamp()}'
         super().__init__(
             mutator=mutator,
             temperature_schedule=[temperature] * n_steps,
@@ -190,7 +189,6 @@ class MonteCarloSampler(FlexibleMinimizer):
         )
 
 
-@dataclass
 class SimulatedAnnealing(FlexibleMinimizer):
     def __init__(
         self,
@@ -199,9 +197,11 @@ class SimulatedAnnealing(FlexibleMinimizer):
         final_temperature: float,
         n_steps: int,
         log_frequency: int = 100,
-        experiment_name: str = field(default_factory=lambda: f'simulated_annealing_{time_stamp()}'),
+        experiment_name: str | None = None,
         log_path: pl.Path | str | None = None,
     ) -> None:
+        if experiment_name is None:
+            experiment_name = f'simulated_annealing_{time_stamp()}'
         super().__init__(
             mutator=mutator,
             temperature_schedule=list(np.linspace(start=initial_temperature, stop=final_temperature, num=n_steps)),
@@ -220,7 +220,6 @@ class SimulatedAnnealing(FlexibleMinimizer):
         super().dump_logs(output_folder, step, **kwargs)
 
 
-@dataclass
 class SimulatedTempering(FlexibleMinimizer):
     def __init__(
         self,
@@ -232,7 +231,7 @@ class SimulatedTempering(FlexibleMinimizer):
         n_cycles: int,
         preserve_best_system_every_n_steps: bool | None = None,
         log_frequency: int = 100,
-        experiment_name: str = field(default_factory=lambda: f'simulated_annealing_{time_stamp()}'),
+        experiment_name: str | None = None,
         log_path: pl.Path | str | None = None,
     ) -> None:
         ## Create the temperature schedule
@@ -245,6 +244,9 @@ class SimulatedTempering(FlexibleMinimizer):
         )
         temperature_schedule = np.tile(temperature_schedule, reps=n_cycles)
         n_steps = len(temperature_schedule)
+
+        if experiment_name is None:
+            experiment_name = f'simulated_tempering_{time_stamp()}'
 
         super().__init__(
             mutator=mutator,

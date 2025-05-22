@@ -1,4 +1,4 @@
 from .base import FoldingResult, FoldingOracle
-from .esmfold import ESMFold, ESMFoldingResult
+from .esmfold import ESMFold, ESMFoldResult
 
-__all__ = ['FoldingOracle', 'FoldingResult', 'ESMFold', 'ESMFoldingResult']
+__all__ = ['FoldingOracle', 'FoldingResult', 'ESMFold', 'ESMFoldResult']

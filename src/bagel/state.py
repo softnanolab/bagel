@@ -33,9 +33,6 @@ class State:
         Unique identifier for this State.
     chains : List[:class:`.Chain`]
         List of single monomeric Chains in this State.
-    oracles : List[:class:`.Oracle`]
-        List of oracles that can be used to predict properties of this State.
-        An oracle for example is a protein structure prediction model, or a protein language model.
     energy_terms : List[:class:`.EnergyTerm`]
         Collection of EnergyTerms that define the State.
 
@@ -51,7 +48,6 @@ class State:
 
     name: str
     chains: List[Chain]
-    oracles: list[Oracle]
     energy_terms: List[EnergyTerm]
     _energy: Optional[float] = field(default=None, init=False)
     _oracles_result: OraclesResultDict = field(default_factory=lambda: OraclesResultDict(), init=False)
@@ -66,6 +62,10 @@ class State:
         return deepcopy(self)
 
     @property
+    def oracles_list(self) -> list[Oracle]:
+        return list(set([term.oracle for term in self.energy_terms]))
+
+    @property
     def total_sequence(self) -> List[str]:
         return [chain.sequence for chain in self.chains]
 
@@ -73,7 +73,7 @@ class State:
         """Calculate energy of state using energy terms ."""
         if self._energy_terms_value == {}:  # If energies not yet calculated
             # Check if the output of the oracle is already calculated, otherwise calculate it
-            for oracle in self.oracles:
+            for oracle in self.oracles_list:
                 if oracle not in self._oracles_result:
                     self._oracles_result[oracle] = oracle.predict(chains=self.chains)
 

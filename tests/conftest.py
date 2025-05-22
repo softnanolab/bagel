@@ -1,21 +1,21 @@
 """Module used to configure pytest behaviour."""
 
-import shutil
 import pytest
+import shutil
+import numpy as np
 import pathlib as pl
 from unittest.mock import Mock
-import numpy as np
 from biotite.structure import AtomArray, Atom, array, concatenate
 import bagel as bg
 
 
 def pytest_addoption(parser):
-    """Globally adds flag to pytest command line call. Used to specify how to handle tests that require folding."""
+    """Globally adds flag to pytest command line call. Used to specify how to handle tests that require oracles."""
     parser.addoption(
-        '--folding',
+        '--oracles',
         required=True,
         action='store',
-        help='What do do with tests that require folding. options: skip or local or modal',
+        help='What do do with tests that require oracles. options: skip or local or modal',
         choices=('skip', 'local', 'modal'),
     )
 
@@ -31,17 +31,29 @@ This was leading to test breaking exceptions.
 """
 
 
-@pytest.fixture(scope='session')  # ensures only 1 modal container is requested per process
+@pytest.fixture(scope='session')  # ensures only 1 Modal App is requested per process
 def esmfold(request) -> bg.oracles.folding.ESMFold:
     """
-    Fixture that must be called in tests that require folding. Behaviour based on  the --folding flag of the
-    origional pytest call.
+    Fixture that must be called in tests that require oracles.
+    Behaviour based on  the --oracles flag of the origional pytest call.
     """
-    flag = request.config.getoption('--folding')
+    flag = request.config.getoption('--oracles')
     if flag == 'skip':
-        pytest.skip(reason='--folding flag of the origional pytest call set to skip')
+        pytest.skip(reason='--oracles flag of the origional pytest call set to skip')
     else:
         model = bg.oracles.folding.ESMFold(use_modal=flag == 'modal')
+        yield model
+        del model
+
+
+@pytest.fixture
+def esm2(request) -> bg.oracles.embedding.ESM2:
+    """Fixture that returns an ESM2 object."""
+    flag = request.config.getoption('--oracles')
+    if flag == 'skip':
+        pytest.skip(reason='--oracles flag of the origional pytest call set to skip')
+    else:
+        model = bg.oracles.embedding.ESM2(use_modal=flag == 'modal')
         yield model
         del model
 
@@ -70,7 +82,6 @@ def fake_state(fake_esmfold: bg.oracles.folding.ESMFold) -> bg.State:
     return bg.State(
         name='fake_state',
         chains=[bg.Chain(residues=[bg.Residue(name='C', chain_ID='A', index=i) for i in range(5)])],
-        oracles=[fake_esmfold],
         energy_terms=[],
     )
 
@@ -140,19 +151,24 @@ def small_structure_state(
         bg.energies.SurfaceAreaEnergy(oracle=fake_esmfold, residues=small_structure_residues[1:], weight=1.0),
     ]
     state = bg.State(
-        oracles=[fake_esmfold],
         chains=small_structure_chains,
         energy_terms=energy_terms,
         name='small',
     )
     state._energy = -0.5
-    state._structure = small_structure
-    folding_result = Mock(bg.oracles.folding.FoldingResult)
-    folding_result.ptm = 0.7
-    state._folding_metrics = folding_result
-    state.energy_terms[0].value, state.energy_terms[1].value = [-0.7, 0.2]
-    state._energy_terms_value = [-0.7, 0.2]
-    state.chemical_potential = 1.0
+    folding_result = bg.oracles.folding.ESMFoldResult(
+        input_chains=small_structure_chains,
+        structure=small_structure,
+        ptm=np.array([0.7]),
+        pae=np.zeros((len(small_structure), len(small_structure))),
+        local_plddt=np.zeros(len(small_structure)),
+    )
+    state._energy_terms_value = {
+        energy_terms[0].name: -0.7,
+        energy_terms[1].name: 0.2,
+    }
+    state._oracles_result = bg.oracles.OraclesResultDict()
+    state._oracles_result[state.oracles_list[0]] = folding_result
     return state
 
 
@@ -244,19 +260,24 @@ def mixed_structure_state(
         ),
     ]
     state = bg.State(
-        oracles=[fake_esmfold],
         chains=line_structure_chains + square_structure_chains,
         energy_terms=energy_terms,
         name='mixed',
     )
+    folding_result = bg.oracles.folding.ESMFoldResult(
+        input_chains=line_structure_chains + square_structure_chains,
+        structure=concatenate((line_structure, square_structure)),
+        ptm=np.array([0.4]),
+        pae=np.zeros((len(line_structure), len(line_structure))),
+        local_plddt=np.zeros(len(line_structure)),
+    )
     state._energy = 0.1
-    state._structure = concatenate((line_structure, square_structure))
-    folding_result = Mock(bg.oracles.folding.FoldingResult)
-    folding_result.ptm = 0.4
-    state._folding_metrics = folding_result
-    state.energy_terms[0].value, state.energy_terms[1].value = [-0.4, 0.5]
-    state._energy_terms_value = [-0.4, 0.5]
-    state.chemical_potential = 2.0
+    state._energy_terms_value = {
+        energy_terms[0].name: -0.4,
+        energy_terms[1].name: 0.5,
+    }
+    state._oracles_result = bg.oracles.OraclesResultDict()
+    state._oracles_result[state.oracles_list[0]] = folding_result
     return state
 
 
@@ -294,10 +315,10 @@ def protein_language_model() -> bg.oracles.embedding.ESM2:
 
 
 @pytest.fixture
-def plm_only_state() -> bg.State:
+def plm_only_state(esm2: bg.oracles.embedding.ESM2) -> bg.State:
     sequence = np.random.choice(list(bg.constants.aa_dict.keys()), size=5)
     residues = [bg.Residue(name=aa, chain_ID='A', index=i, mutable=True) for i, aa in enumerate(sequence)]
-    esm2 = bg.oracles.embedding.ESM2(use_modal=True)
+
     # This really should be taken from the ESM2 class
     n_features = 1280
     reference_embeddings = np.zeros((2, n_features))
@@ -310,7 +331,6 @@ def plm_only_state() -> bg.State:
         weight=0.5,
     )
     state = bg.State(
-        oracles=[esm2],
         chains=[bg.Chain(residues)],
         energy_terms=[energy],
         name='state_A',
@@ -323,7 +343,6 @@ def simple_state(fake_esmfold: bg.oracles.folding.ESMFold) -> bg.State:
     sequence = np.random.choice(list(bg.constants.aa_dict.keys()), size=5)
     residues = [bg.Residue(name=aa, chain_ID='C-A', index=i, mutable=True) for i, aa in enumerate(sequence)]
     state = bg.State(
-        oracles=[fake_esmfold],
         chains=[bg.Chain(residues)],
         energy_terms=[
             bg.energies.PTMEnergy(oracle=fake_esmfold, weight=1.0),
@@ -349,7 +368,6 @@ def shared_chain_system(fake_esmfold: bg.oracles.folding.ESMFold) -> bg.State:
     shared_chain = bg.Chain(residues)
 
     A_state = bg.State(
-        oracles=[fake_esmfold],
         chains=[shared_chain],
         energy_terms=[
             bg.energies.PLDDTEnergy(oracle=fake_esmfold, residues=residues, weight=1.0),
@@ -359,7 +377,6 @@ def shared_chain_system(fake_esmfold: bg.oracles.folding.ESMFold) -> bg.State:
     )
 
     B_state = bg.State(
-        oracles=[fake_esmfold],
         chains=[shared_chain],
         energy_terms=[
             bg.energies.PLDDTEnergy(oracle=fake_esmfold, residues=residues, weight=1.0),
@@ -389,7 +406,6 @@ def energies_system(fake_esmfold: bg.oracles.folding.ESMFold) -> bg.State:
 
     A_residues = [bg.Residue(name=aa, chain_ID='A', index=i, mutable=True) for i, aa in enumerate(sequence)]
     A_state = bg.State(
-        oracles=[fake_esmfold],
         chains=[bg.Chain(A_residues)],
         energy_terms=[
             bg.energies.PLDDTEnergy(oracle=fake_esmfold, residues=A_residues, weight=1.0),
@@ -400,7 +416,6 @@ def energies_system(fake_esmfold: bg.oracles.folding.ESMFold) -> bg.State:
 
     B_residues = [bg.Residue(name=aa, chain_ID='B', index=i, mutable=True) for i, aa in enumerate(sequence)]
     B_state = bg.State(
-        oracles=[fake_esmfold],
         chains=[bg.Chain(B_residues)],
         energy_terms=[
             bg.energies.PLDDTEnergy(oracle=fake_esmfold, residues=B_residues, weight=1.0),

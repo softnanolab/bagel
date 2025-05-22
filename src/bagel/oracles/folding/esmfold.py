@@ -40,7 +40,7 @@ def validate_array_range(
     return array
 
 
-class ESMFoldingResult(FoldingResult):
+class ESMFoldResult(FoldingResult):
     """
     Stores statistics from the ESMFold folding algorithm.
 
@@ -80,7 +80,7 @@ class ESMFold(FoldingOracle):
     WIP: For now we will be using ModalFold to do this reliably without much env issues.
     """
 
-    result_class: Type[ESMFoldingResult] = ESMFoldingResult
+    result_class: Type[ESMFoldResult] = ESMFoldResult
 
     def __init__(self, use_modal: bool = False, config: dict[str, Any] = {}):
         """
@@ -126,7 +126,7 @@ class ESMFold(FoldingOracle):
         monomers = [chain.sequence for chain in chains]
         return [':'.join(monomers)]
 
-    def fold(self, chains: List[Chain]) -> ESMFoldingResult:
+    def fold(self, chains: List[Chain]) -> ESMFoldResult:
         """
         Fold a list of chains using ESMFold.
         """
@@ -144,9 +144,9 @@ class ESMFold(FoldingOracle):
     def _local_fold(self, sequence: List[str]) -> ESMFoldOutput:
         return self.model.fold.local(sequence)
 
-    def _reduce_output(self, output: ESMFoldOutput, chains: List[Chain]) -> ESMFoldingResult:
+    def _reduce_output(self, output: ESMFoldOutput, chains: List[Chain]) -> ESMFoldResult:
         """
-        Reduce ESMFoldOutput (from ModalFold) to a ESMFoldingResult object
+        Reduce ESMFoldOutput (from ModalFold) to a ESMFoldResult object
         """
         # TODO: think whether we should output batches, or just a single structure information
         # otherwise the EnergyTerms that need to always extract the first index in the batch dimension

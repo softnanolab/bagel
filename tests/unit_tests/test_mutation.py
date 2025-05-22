@@ -51,7 +51,6 @@ def test_GrandCanonical_MutationProtocol_does_not_remove_all_residues_in_chain(
     chain = bg.Chain(residues[:1])
     state = bg.State(
         name='A',
-        oracles=[fake_esmfold],
         chains=[chain],
         energy_terms=[bg.energies.PTMEnergy(oracle=fake_esmfold, weight=1.0)],
     )

@@ -66,11 +66,23 @@ def test_system_dump_logs_folder_is_correct(mixed_system: bg.System) -> None:
     }
     assert sequences == {'0': 'G:VV:GVVV'}, 'incorrect sequence information saved'
 
+    oracle = mixed_system.states[0].oracles_list[0]
+    oracle_name = type(oracle).__name__
+    assert oracle_name == 'ESMFold', 'incorrect oracle information saved'
+    assert oracle == mixed_system.states[1].oracles_list[0], 'inconsistent oracles between states'
+
     structures = {
-        'small': get_structure(CIFFile().read(file=experiment_folder / 'structures' / f'small_{mock_step}.cif'))[0],
-        'mixed': get_structure(CIFFile().read(file=experiment_folder / 'structures' / f'mixed_{mock_step}.cif'))[0],
+        'small': get_structure(
+            CIFFile().read(file=experiment_folder / 'structures' / f'small_{oracle_name}_{mock_step}.cif')
+        )[0],
+        'mixed': get_structure(
+            CIFFile().read(file=experiment_folder / 'structures' / f'mixed_{oracle_name}_{mock_step}.cif')
+        )[0],
     }
-    correct_structures = {'small': mixed_system.states[0]._structure, 'mixed': mixed_system.states[1]._structure}
+    correct_structures = {
+        'small': mixed_system.states[0]._oracles_result[oracle].structure,
+        'mixed': mixed_system.states[1]._oracles_result[oracle].structure,
+    }
 
     energies = pd.read_csv(experiment_folder / 'energies.csv')
     correct_energies = pd.DataFrame(
@@ -78,8 +90,6 @@ def test_system_dump_logs_folder_is_correct(mixed_system: bg.System) -> None:
             'step': [mock_step],
             'small:pTM': [-0.7],
             'small:selective_surface_area': [0.2],
-            #'mixed:pTM': [-0.4],
-            #'mixed:normalized_globular': [0.5],
             'mixed:local_pLDDT': [-0.4],
             'mixed:cross_PAE': [0.5],
             'small:state_energy': [-0.5],

@@ -7,9 +7,7 @@ def test_monomer_folding(esmfold, monomer):
     results = esmfold.fold(monomer)
 
     assert results is not None, 'Output should not be None'
-    assert isinstance(results, bg.oracles.folding.ESMFoldingResults), (
-        'Output should be an bg.oracles.folding.ESMFoldingResults'
-    )
+    assert isinstance(results, bg.oracles.folding.ESMFoldResult), 'Output should be an bg.oracles.folding.ESMFoldResult'
     assert results.structure is not None, 'Output should not be None'
     assert isinstance(results.structure, AtomArray), 'Output should be an AtomArray'
     assert results.local_plddt is not None, 'Output should not be None'
@@ -22,9 +20,7 @@ def test_dimer_folding(esmfold, dimer):
     results = esmfold.fold(dimer)
 
     assert results is not None, 'Output should not be None'
-    assert isinstance(results, bg.oracles.folding.ESMFoldingResults), (
-        'Output should be an bg.oracles.folding.ESMFoldingResults'
-    )
+    assert isinstance(results, bg.oracles.folding.ESMFoldResult), 'Output should be an bg.oracles.folding.ESMFoldResult'
     assert results.structure is not None, 'Output should not be None'
     assert isinstance(results.structure, AtomArray), 'Output should be an AtomArray'
     assert results.local_plddt is not None, 'Output should not be None'
@@ -37,9 +33,7 @@ def test_trimer_folding(esmfold, trimer):
     results = esmfold.fold(trimer)
 
     assert results is not None, 'Output should not be None'
-    assert isinstance(results, bg.oracles.folding.ESMFoldingResults), (
-        'Output should be an bg.oracles.folding.ESMFoldingResults'
-    )
+    assert isinstance(results, bg.oracles.folding.ESMFoldResult), 'Output should be an bg.oracles.folding.ESMFoldResult'
     assert results.structure is not None, 'Output should not be None'
     assert isinstance(results.structure, AtomArray), 'Output should be an AtomArray'
     assert results.local_plddt is not None, 'Output should not be None'
