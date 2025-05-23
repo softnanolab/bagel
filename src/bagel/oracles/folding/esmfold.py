@@ -142,6 +142,11 @@ class ESMFold(FoldingOracle):
         return self.model.fold.remote(sequence)
 
     def _local_fold(self, sequence: List[str]) -> ESMFoldOutput:
+        # assert that transformers is installed
+        try:
+            import transformers
+        except ImportError:
+            raise ImportError('transformers is not installed. Please install it to use ESMFold locally. See README.md for installation instructions.')
         return self.model.fold.local(sequence)
 
     def _reduce_output(self, output: ESMFoldOutput, chains: List[Chain]) -> ESMFoldResult:

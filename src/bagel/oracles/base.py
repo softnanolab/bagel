@@ -37,7 +37,18 @@ class Oracle(ABC):
         return
 
     def __copy__(self) -> Any:
-        return deepcopy(self)
+        """Return a reference of the oracle."""
+        return self
+
+    def __deepcopy__(self, memo: dict) -> Any:
+        """
+        Return a reference of the oracle.
+        
+        This is to avoid copying the same oracle multiple times, when it is not necessary to do so.
+        Deepcopy would break, as the same oracle is referenced multiple times for both a single State and a System.
+        Long-term, this design pattern should be changed to something more robust, as this can easily break.
+        """
+        return self
 
     @abstractmethod
     def predict(self, chains: list[Chain]) -> OracleResult:

@@ -36,11 +36,7 @@ class System:
 
     def __copy__(self) -> 'System':
         """Copy the system object, setting the energy to None"""
-        return System(
-            states=deepcopy(self.states),
-            total_energy=self.total_energy,
-            name=self.name,
-        )
+        return deepcopy(self)
 
     def get_total_energy(self) -> float:
         if self.total_energy is None:

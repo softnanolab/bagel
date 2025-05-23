@@ -304,16 +304,6 @@ def test_log_path(request) -> pl.Path:
 def base_sequence() -> str:
     return 'MKVWPQGHSTNRYLAEFCID'
 
-
-#! @Jakub please check here
-@pytest.fixture
-def protein_language_model() -> bg.oracles.embedding.ESM2:
-    """Returns a protein language model object."""
-    # This is a mock of the ESM2 class, which is not implemented in the provided code.
-    # In a real scenario, this would be replaced with the actual ESM2 class from the bagel module.
-    return bg.oracles.embedding.ESM2(use_modal=True)
-
-
 @pytest.fixture
 def plm_only_state(esm2: bg.oracles.embedding.ESM2) -> bg.State:
     sequence = np.random.choice(list(bg.constants.aa_dict.keys()), size=5)
@@ -351,13 +341,18 @@ def simple_state(fake_esmfold: bg.oracles.folding.ESMFold) -> bg.State:
         name='state_A',
     )
     state._structure = AtomArray(length=len(residues))
-    state.energy_terms[0].value = -1.0
-    state.energy_terms[1].value = -0.5
     state._energy_terms_value = {
-        state.energy_terms[0].name: state.energy_terms[0].value,
-        state.energy_terms[1].name: state.energy_terms[1].value,
+        state.energy_terms[0].name: -1.0,
+        state.energy_terms[1].name: -0.5,
     }
     return state
+
+@pytest.fixture
+def real_simple_state(simple_state: bg.State, esmfold: bg.oracles.folding.ESMFold) -> bg.State:
+    simple_state._energy_terms_value = {}
+    for term in simple_state.energy_terms:
+        term.oracle = esmfold
+    return simple_state
 
 
 @pytest.fixture

@@ -94,6 +94,11 @@ class ESM2(EmbeddingOracle):
         return self.model.embed.remote(sequence)
 
     def _local_embed(self, sequence: List[str]) -> ESM2Output:
+        # assert that transformers is installed
+        try:
+            import transformers
+        except ImportError:
+            raise ImportError('transformers is not installed. Please install it to use ESM-2 locally. See README.md for installation instructions.')
         return self.model.embed.local(sequence)
 
     def _post_process(self, output: ESM2Output) -> ESM2Result:

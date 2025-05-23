@@ -131,17 +131,18 @@ def test_PLDDTEnergy(
 
 def test_OverallPLDDTEnergy(
     fake_esmfold: bg.oracles.folding.ESMFold,
-    small_structure_residues: list[bg.Residue],
     small_structure: AtomArray,
+    small_structure_chains: list[bg.Chain],
 ) -> None:
-    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
-    mock_folding_result.local_plddt = np.array([0.2, 0.4, 0.6, 0.4, 0.1]).reshape(1, 5)
-    mock_folding_result.structure = small_structure
+    folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    folding_result.input_chains = small_structure_chains
+    folding_result.structure = small_structure
+    folding_result.local_plddt = np.array([0.2, 0.4, 0.6]).reshape(1, 3)
     energy = bg.energies.OverallPLDDTEnergy(oracle=fake_esmfold, weight=2.0)
-    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    oracles_result = OraclesResultDict({fake_esmfold: folding_result})
     unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
-    assert np.isclose(unweighted_energy, -0.34), 'unweighted energy is incorrect'
-    assert np.isclose(weighted_energy, -0.68), 'weighted energy is incorrect'
+    assert np.isclose(unweighted_energy, -0.4), 'unweighted energy is incorrect'
+    assert np.isclose(weighted_energy, -0.8), 'weighted energy is incorrect'
 
 
 def test_solvent_accessible_surface_area_function_gives_expected_return_array(small_structure: AtomArray) -> None:

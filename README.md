@@ -57,7 +57,7 @@ Otherwise protein folding can be run locally. The temporary solution is requires
 
         uv pip install git+https://github.com/jakublala/my_transformers.git
 
-And then make sure to set `ESMFold(use_modal=False)`.
+And then make sure to set `ESMFold(use_modal=False)`. You also need to set `HF_MODEL_DIR` to an accessible folder.
 
 ### Testing
 

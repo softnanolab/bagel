@@ -311,7 +311,8 @@ class PLDDTEnergy(EnergyTerm):
         if len(self.residue_groups) != 0:
             mask = self.get_residue_mask(folding_result.structure, residue_group_index=0)
         else:  # if no residues are selected, consider all atoms
-            mask = np.full(shape=len(folding_result.structure), fill_value=True)
+            n_residues = sum([c.length for c in folding_result.input_chains])
+            mask = np.full(shape=n_residues, fill_value=True)
         value = -np.mean(plddt[mask])
         return value, value * self.weight
 
