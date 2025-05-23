@@ -7,9 +7,9 @@ import numpy.typing as npt
 from ...chain import Chain
 from .base import EmbeddingResult, EmbeddingOracle
 from typing import List, Any
-from modalfold import app  # type: ignore
-from modalfold.esm2 import ESM2Output  # type: ignore
-from modalfold.esm2 import ESM2 as ESM2Boiler
+from boileroom import app  # type: ignore
+from boileroom.esm2 import ESM2Output  # type: ignore
+from boileroom.esm2 import ESM2 as ESM2Boiler
 
 import logging
 

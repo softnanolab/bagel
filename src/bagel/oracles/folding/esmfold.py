@@ -9,9 +9,9 @@ from .utils import reindex_chains
 from pydantic import field_validator
 from .base import FoldingOracle, FoldingResult
 from typing import List, Any, Type
-from modalfold import app  # type: ignore
-from modalfold.esmfold import ESMFoldOutput  # type: ignore
-from modalfold.esmfold import ESMFold as ESMFoldBoiler
+from boileroom import app  # type: ignore
+from boileroom.esmfold import ESMFoldOutput  # type: ignore
+from boileroom.esmfold import ESMFold as ESMFoldBoiler
 
 
 # TODO: add proper types to next modalfold version
