@@ -2,9 +2,6 @@ import pathlib as pl
 import bagel as bg
 # ? Could these not just be mutation unit tests?
 
-very_high_temp = 10.0**20
-
-
 def test_grandcanonical_does_not_change_chain_length_when_mutator_not_allowed_to_remove_or_add(
     real_simple_state: bg.State,
     test_log_path: pl.Path,

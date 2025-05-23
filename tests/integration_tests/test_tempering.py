@@ -1,7 +1,6 @@
 import pathlib as pl
 import bagel as bg
 
-
 # ? Could this not just be a mutation unit test?
 def test_tempering_does_not_mutate_immutable_residues(
     esmfold: bg.oracles.folding.ESMFold,

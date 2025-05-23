@@ -290,6 +290,13 @@ def test_ChemicalPotentialEnergy(
     assert np.isclose(unweighted_energy, value), 'unweighted energy is incorrect'
     assert np.isclose(weighted_energy, value * 2), 'weighted energy is incorrect'
 
+def test_ChemicalPotentialEnergy( square_structure_residues: list[bg.Residue], square_structure: AtomArray) -> None:
+    energy = bg.energies.ChemicalPotentialEnergy(chemical_potential = -1.0, target_size = 8.0, power = 0.5 )
+    energy.compute(structure=square_structure, folding_metrics=None)
+    # Energy should be: chemical_potential * ( abs( number_of_residues - target_size ) )**power 
+    # -1.0 * ( abs( 4.0 - 8.0 )**0.5 ) = -1.0 * ( 4**0.5 ) = -1.0 * 2.0 = -2.0
+    assert np.isclose(energy.value, np.std([1, 1, 2**0.5] * 4))  # Neighbour distances for each atom are 1, 1, and √2
+
 
 def test_RingSymmetryEnergy_with_direct_neighbours_only(
     fake_esmfold: bg.oracles.folding.ESMFold,

@@ -155,12 +155,16 @@ class ESMFold(FoldingOracle):
         """
         # TODO: think whether we should output batches, or just a single structure information
         # otherwise the EnergyTerms that need to always extract the first index in the batch dimension
+        from bagel.constants import atom_order
+        # HACK: This is a hack to get the CA atoms
+        # TODO: Move upstream to ModalFold in version 0.0.11
+
         atoms = output.atom_array
         atoms = reindex_chains(atoms, [chain.chain_ID for chain in chains])
         results = self.result_class(
             input_chains=chains,
             structure=atoms,
-            local_plddt=output.plddt,
+            local_plddt=output.plddt[..., atom_order['CA']],
             ptm=output.ptm,
             pae=output.predicted_aligned_error,
         )

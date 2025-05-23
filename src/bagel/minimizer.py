@@ -11,14 +11,13 @@ from .system import System
 
 # from .folding import FoldingAlgorithm
 from .mutation import MutationProtocol
-from abc import ABC, abstractmethod
-from typing import Callable, Any, NoReturn
 from dataclasses import dataclass, field
+from abc import ABC, abstractmethod
+from typing import Callable, Any
 import numpy as np
 
 import inspect
 import csv
-import shutil
 import logging
 
 logger = logging.getLogger(__name__)
@@ -38,6 +37,7 @@ class Minimizer(ABC):
 
     def __post_init__(self) -> None:
         self.log_path: pl.Path = self.initialise_log_path(self.log_path)
+        assert isinstance(self.log_path, pl.Path), f'log_path must be a Path, not {type(self.log_path)}'
         logger.debug(f'Logging path: {self.log_path}')
         logger.debug(f'Experiment name: {self.experiment_name}')
 
@@ -115,15 +115,17 @@ class Minimizer(ABC):
             row = [step] + list(kwargs.values())
             writer.writerow(row)
 
-    def logging_step(self, step: int, system: System, best_system: System, new_best: bool, **kwargs: Any) -> None:
+    def log_initial_system(self, system: System, best_system: System) -> None:
+        assert isinstance(self.log_path, pl.Path), f'log_path must be a Path, not {type(self.log_path)}'
+        system.dump_config(self.log_path)
+        self.log_step(-1, system, best_system, False)
+
+    def log_step(self, step: int, system: System, best_system: System, new_best: bool, **kwargs: Any) -> None:
         """Dumps logs for the minimizer, current and best systems as well as printing summary results to the terminal"""
         real_step = step + 1
         logger.info(f'Step={real_step} - ' + ' - '.join(f'{k}={v}' for k, v in kwargs.items()))
         assert isinstance(self.log_path, pl.Path), f'log_path must be a Path, not {type(self.log_path)}'
-        # special logging for the zeroth step
-        if step == -1:
-            system.dump_config(self.log_path)
-        else:
+        if real_step > 0:
             self.dump_logs(self.log_path, real_step, **kwargs)
         system.dump_logs(real_step, self.log_path / 'current', save_structure=real_step % self.log_frequency == 0)
         best_system.dump_logs(real_step, self.log_path / 'best', save_structure=new_best)
@@ -155,7 +157,7 @@ class FlexibleMinimizer(Minimizer):
             if system.total_energy < best_system.total_energy:
                 new_best = True
                 best_system = system.__copy__()  # This automatically records the energy in best_system.total_energy
-            self.logging_step(step, system, best_system, new_best, temperature=temperature, accept=accept)
+            self.log_step(step, system, best_system, new_best, temperature=temperature, accept=accept)
 
             if self.preserve_best_system_every_n_steps is not None:
                 if (step + 1) % self.preserve_best_system_every_n_steps == 0:

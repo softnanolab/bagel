@@ -71,6 +71,7 @@ class EnergyTerm(ABC):
         self.residue_groups: list[ResidueGroup] = []
 
     def __post_init__(self) -> None:
+        # TODO: add general assertion checks for any energy term (0-body, 1-body, etc.)
         """Checks required attributes have been set after class is initialised"""
         assert hasattr(self, 'name'), 'name attribute must be set in class initialiser'
         assert hasattr(self, 'residue_groups'), 'residue_groups attribute must be set in class initialiser'
@@ -175,7 +176,33 @@ class EnergyTerm(ABC):
         return atom_mask
 
 
-class PTMEnergy(EnergyTerm):
+class OneBodyEnergyTerm(EnergyTerm):
+    """
+    Assertions to add: no residue group.
+    """
+
+    def __post_init__(self) -> None:
+        # TODO: add a specific check for the 1-body term
+        raise NotImplementedError
+
+
+class TwoBodyEnergyTerm(EnergyTerm):
+    """
+    Assertions to add: no residue group.
+    """
+
+    def __post_init__(self) -> None:
+        # TODO: add a specific check for the 2-body term
+        raise NotImplementedError
+
+
+# n-body terms
+# 1) zero body terms will be explicit from an empty list in one-body terms (all one-body terms can effectively be global)
+# 2) one body term
+# 3) two body term, requires to have two lists of residue groups
+
+
+class PTMEnergy(EnergyTerm):  # 1-body term
     """
     Predicted Template Modelling score energy. This is a measure of how confident the folding model is in its overall
     structure prediction.
@@ -256,8 +283,41 @@ class ChemicalPotentialEnergy(EnergyTerm):
 
         return value, value * self.weight
 
+class ChemicalPotentialEnergy(EnergyTerm):
+    """
+    An energy term that purely depends on the number of residues present in a system. 
+    For some choices of parameters, this is equivalent to a chemical potential contribution to the grand-canonical
+    free energy Omega = E - mu * N
+    """
 
-class PLDDTEnergy(EnergyTerm):
+    def __init__(self, power : float = 1.0, target_size : int = 0, chemical_potential : float = 1.0 ) -> None:
+        """Initialises Chemical Potential Energy class. 
+
+        Parameters
+        ----------
+        """
+        self.name = 'chem_pot'
+        self.inheritable = True
+        self.residue_groups = []
+        self.power = power 
+        self.target_size = target_size
+        self.chemical_potential = chemical_potential 
+
+    def compute(self, structure: AtomArray, folding_metrics: FoldingMetrics) -> float:
+        assert isinstance(structure, AtomArray), 'structure should be an AtomArray object but is not {type(structure)}'
+
+        # The following works even if some residues have the same number but different chain IDs because res_ids 
+        # actually returns a list of tuples ( chain_id, res_id ) 
+        res_ids = structure.get_res_id(structure)
+        unique_res_ids = set(res_ids)
+        num_residues = len(unique_res_ids)
+
+        self.value = self.chemical_potential * ( abs( num_residues - self.target_size ) )**self.power
+
+        return self.value
+
+
+class PLDDTEnergy(EnergyTerm):  # 1-body term
     """
     Predicted Local Distance Difference Test energy. This is the spread of the predicted separation between an atom and
     each of its nearest neighbours. This translates to how confident the model is that the sequence has a single lowest
@@ -340,7 +400,7 @@ class OverallPLDDTEnergy(PLDDTEnergy):
         self.residue_groups = []
 
 
-class SurfaceAreaEnergy(EnergyTerm):
+class SurfaceAreaEnergy(EnergyTerm):  # this could be both 1-body or 0-body term
     """
     Energy term proportional to the amount of exposed surface area. This is measured by dividing the mean SASA
     (Solvent Accessible Surface Area) of the relevant atoms by the maximum possible SASA.
@@ -449,7 +509,7 @@ class HydrophobicEnergy(EnergyTerm):
         return value, value * self.weight
 
 
-class PAEEnergy(EnergyTerm):
+class PAEEnergy(EnergyTerm):  # 2-body term
     """
     Energy that drives down the uncertainty in the predicted distances between two groups of residues. This uncertainty
     is measured by calculating the average normalised predicted alignment error of all the relevant residue pairs.
