@@ -201,7 +201,6 @@ class TwoBodyEnergyTerm(EnergyTerm):
 # 2) one body term
 # 3) two body term, requires to have two lists of residue groups
 
-
 class PTMEnergy(EnergyTerm):  # 1-body term
     """
     Predicted Template Modelling score energy. This is a measure of how confident the folding model is in its overall
@@ -282,40 +281,6 @@ class ChemicalPotentialEnergy(EnergyTerm):
         value = self.chemical_potential * (abs(num_residues - self.target_size)) ** self.power
 
         return value, value * self.weight
-
-class ChemicalPotentialEnergy(EnergyTerm):
-    """
-    An energy term that purely depends on the number of residues present in a system. 
-    For some choices of parameters, this is equivalent to a chemical potential contribution to the grand-canonical
-    free energy Omega = E - mu * N
-    """
-
-    def __init__(self, power : float = 1.0, target_size : int = 0, chemical_potential : float = 1.0 ) -> None:
-        """Initialises Chemical Potential Energy class. 
-
-        Parameters
-        ----------
-        """
-        self.name = 'chem_pot'
-        self.inheritable = True
-        self.residue_groups = []
-        self.power = power 
-        self.target_size = target_size
-        self.chemical_potential = chemical_potential 
-
-    def compute(self, structure: AtomArray, folding_metrics: FoldingMetrics) -> float:
-        assert isinstance(structure, AtomArray), 'structure should be an AtomArray object but is not {type(structure)}'
-
-        # The following works even if some residues have the same number but different chain IDs because res_ids 
-        # actually returns a list of tuples ( chain_id, res_id ) 
-        res_ids = structure.get_res_id(structure)
-        unique_res_ids = set(res_ids)
-        num_residues = len(unique_res_ids)
-
-        self.value = self.chemical_potential * ( abs( num_residues - self.target_size ) )**self.power
-
-        return self.value
-
 
 class PLDDTEnergy(EnergyTerm):  # 1-body term
     """

@@ -148,7 +148,7 @@ class FlexibleMinimizer(Minimizer):
         assert best_system.total_energy is not None, (
             'Cannot start without lowest energy system having a calculated energy'
         )
-        self.logging_step(-1, system, best_system, False)
+        self.log_step(-1, system, best_system, False)
         for step in range(self.n_steps):
             new_best = False
             temperature = self.temperature_schedule[step]
@@ -299,7 +299,7 @@ class SimulatedTempering(FlexibleMinimizer):
 #        system.get_total_energy() # update the energy internally
 #        best_system = system.__copy__()
 #        assert best_system.total_energy is not None, 'Cannot start without best system has a calculated energy'
-#        self.logging_step(-1, system, best_system, False)
+#        self.log_step(-1, system, best_system, False)
 #        for step in range(self.n_steps):
 #            new_best = False
 #            system, accept = self.minimize_one_step(self.temperatures[step], system)
@@ -307,7 +307,7 @@ class SimulatedTempering(FlexibleMinimizer):
 #            if system.total_energy < best_system.total_energy:
 #                best_system = system.__copy__()  # This automatically records the energy in best_system.total_energy
 #                new_best = True
-#            self.logging_step(step, system, best_system, new_best, temperature=self.temperatures[step], accept=accept)
+#            self.log_step(step, system, best_system, new_best, temperature=self.temperatures[step], accept=accept)
 #
 #        assert best_system.total_energy is not None, f'{best_system=} energy cannot be None!'
 #        return best_system
@@ -356,7 +356,7 @@ class SimulatedTempering(FlexibleMinimizer):
 #        system.get_total_energy() # update the energy internally
 #        best_system = system.__copy__()
 #        assert best_system.total_energy is not None, 'Cannot start without best system has a calculated energy'
-#        self.logging_step(-1, system, best_system, False)
+#        self.log_step(-1, system, best_system, False)
 #        for step, temperature in enumerate(self.temperatures):
 #            new_best = False
 #            system, accept = self.minimize_one_step(temperature, system)
@@ -366,7 +366,7 @@ class SimulatedTempering(FlexibleMinimizer):
 #                best_system = system.__copy__()  # This automatically records the energy in best_system.total_energy
 #                new_best = True
 #
-#            self.logging_step(step, system, best_system, new_best, temperature=temperature, accept=accept)
+#            self.log_step(step, system, best_system, new_best, temperature=temperature, accept=accept)
 #
 #            if self.preserve_best_system and (step + 1) % self.n_steps_cycle == 0:
 #                logger.debug(f'Starting new cycle with best system from previous cycle')
