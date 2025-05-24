@@ -7,7 +7,8 @@ def test_pLM_sampling_does_not_raise_exceptions_with_nominal_inputs(
 ) -> None:
     test_system = bg.System(states=[plm_only_state], name='test_pLM')
 
-    minimizer = bg.minimizer.MonteCarloSampler(
+    # TODO: this is actually a sampler, not a minimizer, need to think about naming
+    minimizer = bg.minimizer.MetropolisMinimizer(
         mutator=bg.mutation.Canonical(),
         temperature=1.0,
         n_steps=3,
