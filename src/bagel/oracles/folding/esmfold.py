@@ -146,7 +146,9 @@ class ESMFold(FoldingOracle):
         try:
             import transformers
         except ImportError:
-            raise ImportError('transformers is not installed. Please install it to use ESMFold locally. See README.md for installation instructions.')
+            raise ImportError(
+                'transformers is not installed. Please install it to use ESMFold locally. See README.md for installation instructions.'
+            )
         return self.model.fold.local(sequence)
 
     def _reduce_output(self, output: ESMFoldOutput, chains: List[Chain]) -> ESMFoldResult:

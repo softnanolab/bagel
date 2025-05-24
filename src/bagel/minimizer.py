@@ -24,42 +24,20 @@ time_stamp: Callable[[], str] = lambda: dt.datetime.now().strftime('%y%m%d_%H%M%
 
 class Minimizer(ABC):
     """Base class for energy minimization logic."""
-    
+
     def __init__(
-        self,
-        mutator: MutationProtocol,
-        experiment_name: str,
-        log_frequency: int,
-        log_path: pl.Path | str | None
+        self, mutator: MutationProtocol, experiment_name: str, log_frequency: int, log_path: pl.Path | str | None
     ) -> None:
         self.mutator = mutator
         self.experiment_name = experiment_name
         self.log_frequency = log_frequency
-        self.log_path = log_path
-        self.__post_init__()
-
-    def __post_init__(self) -> None:
         self.log_path: pl.Path = self.initialise_log_path(self.log_path)
-        assert isinstance(self.log_path, pl.Path), f'log_path must be a Path, not {type(self.log_path)}'
+
         logger.debug(f'Logging path: {self.log_path}')
         logger.debug(f'Experiment name: {self.experiment_name}')
 
-    @abstractmethod
-    def minimize_system(self, system: System) -> System:
-        """
-        Implement a protocol to fully minimize the loss function defined for the system.
-
-        Parameters
-        ----------
-        system : System
-            initial state of the System
-
-        Returns
-        -------
-        system : System
-            System at the end of minimization
-        """
-        raise NotImplementedError('This method should be implemented by the subclass')
+    def __post_init__(self) -> None:
+        pass
 
     def initialise_log_path(self, log_path: None | str | pl.Path) -> pl.Path:
         """
@@ -68,18 +46,16 @@ class Minimizer(ABC):
         """
         if isinstance(log_path, pl.Path):
             log_path = log_path / self.experiment_name
-            log_path.mkdir(parents=True, exist_ok=True)
-            return log_path
         elif isinstance(log_path, str):
             log_path = pl.Path(log_path) / self.experiment_name
-            log_path.mkdir(parents=True, exist_ok=True)
-            return log_path
         elif log_path is None:
             executed_py_file_path = inspect.stack()[-1][1]
             log_path = pl.Path(executed_py_file_path).resolve().parent / self.experiment_name
-            return log_path
         else:
             raise ValueError(f'log_path must be a Path or str, not {type(log_path)}')
+        assert isinstance(log_path, pl.Path), f'log_path must be a Path, not {type(log_path)}'
+        log_path.mkdir(parents=True, exist_ok=True)
+        return log_path
 
     def dump_logs(self, output_folder: pl.Path, step: int, **kwargs: Any) -> None:
         """Dumps logs to CSV file."""
@@ -110,10 +86,27 @@ class Minimizer(ABC):
         system.dump_logs(real_step, self.log_path / 'current', save_structure=real_step % self.log_frequency == 0)
         best_system.dump_logs(real_step, self.log_path / 'best', save_structure=new_best)
 
+    @abstractmethod
+    def minimize_system(self, system: System) -> System:
+        """
+        Implement a protocol to fully minimize the loss function defined for the system.
+
+        Parameters
+        ----------
+        system : System
+            initial state of the System
+
+        Returns
+        -------
+        system : System
+            System at the end of minimization
+        """
+        raise NotImplementedError('This method should be implemented by the subclass')
+
 
 class MonteCarloMinimizer(Minimizer):
     """Base class for Monte Carlo based minimization methods."""
-    
+
     def __init__(
         self,
         mutator: MutationProtocol,
@@ -122,21 +115,18 @@ class MonteCarloMinimizer(Minimizer):
         experiment_name: str | None = None,
         log_frequency: int = 100,
         preserve_best_system_every_n_steps: int | None = None,
-        log_path: pl.Path | str | None = None
+        log_path: pl.Path | str | None = None,
     ) -> None:
         if experiment_name is None:
             experiment_name = f'mc_minimizer_{time_stamp()}'
-        
+
         self.temperature = temperature
         self.n_steps = n_steps
         self.preserve_best_system_every_n_steps = preserve_best_system_every_n_steps
         super().__init__(
-            mutator=mutator,
-            experiment_name=experiment_name,
-            log_frequency=log_frequency,
-            log_path=log_path
+            mutator=mutator, experiment_name=experiment_name, log_frequency=log_frequency, log_path=log_path
         )
-        
+
     @abstractmethod
     def get_acceptance_probability(self, delta_energy: float, temperature: float) -> float:
         """Calculate acceptance probability for a move."""
@@ -162,7 +152,7 @@ class MonteCarloMinimizer(Minimizer):
         )
         acceptance_probability = self.get_acceptance_probability(delta_energy, temperature)
         logger.debug(f'{delta_energy=}, {acceptance_probability=}')
-        
+
         if acceptance_probability > np.random.uniform(low=0.0, high=1.0):
             return mutated_system, True
         return system, False
@@ -172,22 +162,24 @@ class MonteCarloMinimizer(Minimizer):
         system.get_total_energy()  # update the energy internally
         best_system = system.__copy__()
         assert system.total_energy is not None, 'Cannot start without system having a calculated energy'
-        assert best_system.total_energy is not None, 'Cannot start without lowest energy system having a calculated energy'
-        
+        assert best_system.total_energy is not None, (
+            'Cannot start without lowest energy system having a calculated energy'
+        )
+
         self.log_initial_system(system, best_system)
-        
+
         for step in range(self.n_steps):
             new_best = False
             system = self._before_step(system, step)
             system, accept = self.minimize_one_step(self.temperature, system)
             system = self._after_step(system, step)
-            
+
             assert system.total_energy is not None, 'Cannot evolve system if current energy not available'
-            
+
             if system.total_energy < best_system.total_energy:
                 new_best = True
                 best_system = system.__copy__()
-                
+
             self.log_step(step, system, best_system, new_best, temperature=self.temperature, accept=accept)
 
         assert best_system.total_energy is not None, f'Best energy {best_system.total_energy} cannot be None!'
@@ -196,7 +188,7 @@ class MonteCarloMinimizer(Minimizer):
 
 class MetropolisMinimizer(MonteCarloMinimizer):
     """Metropolis Monte Carlo minimizer with Boltzmann acceptance criterion."""
-    
+
     def __init__(
         self,
         mutator: MutationProtocol,
@@ -205,7 +197,7 @@ class MetropolisMinimizer(MonteCarloMinimizer):
         experiment_name: str | None = None,
         log_frequency: int = 100,
         preserve_best_system_every_n_steps: int | None = None,
-        log_path: pl.Path | str | None = None
+        log_path: pl.Path | str | None = None,
     ) -> None:
         super().__init__(
             mutator=mutator,
@@ -214,17 +206,17 @@ class MetropolisMinimizer(MonteCarloMinimizer):
             experiment_name=experiment_name,
             log_frequency=log_frequency,
             preserve_best_system_every_n_steps=preserve_best_system_every_n_steps,
-            log_path=log_path
+            log_path=log_path,
         )
 
     def get_acceptance_probability(self, delta_energy: float, temperature: float) -> float:
         """Calculate Metropolis acceptance probability."""
-        return np.exp(-delta_energy / temperature)
+        return float(np.exp(-delta_energy / temperature))
 
 
 class SimulatedAnnealing(MetropolisMinimizer):
     """Simulated annealing with linear temperature schedule."""
-    
+
     def __init__(
         self,
         mutator: MutationProtocol,
@@ -234,11 +226,11 @@ class SimulatedAnnealing(MetropolisMinimizer):
         experiment_name: str | None = None,
         log_frequency: int = 100,
         preserve_best_system_every_n_steps: int | None = None,
-        log_path: pl.Path | str | None = None
+        log_path: pl.Path | str | None = None,
     ) -> None:
         if experiment_name is None:
             experiment_name = f'simulated_annealing_{time_stamp()}'
-        
+
         self.initial_temperature = initial_temperature
         self.final_temperature = final_temperature
         super().__init__(
@@ -248,15 +240,13 @@ class SimulatedAnnealing(MetropolisMinimizer):
             experiment_name=experiment_name,
             log_frequency=log_frequency,
             preserve_best_system_every_n_steps=preserve_best_system_every_n_steps,
-            log_path=log_path
+            log_path=log_path,
         )
-        
+
     def __post_init__(self) -> None:
         super().__post_init__()
         self.temperature_schedule = np.linspace(
-            start=self.initial_temperature,
-            stop=self.final_temperature,
-            num=self.n_steps
+            start=self.initial_temperature, stop=self.final_temperature, num=self.n_steps
         )
 
     def minimize_system(self, system: System) -> System:
@@ -264,23 +254,25 @@ class SimulatedAnnealing(MetropolisMinimizer):
         system.get_total_energy()
         best_system = system.__copy__()
         assert system.total_energy is not None, 'Cannot start without system having a calculated energy'
-        assert best_system.total_energy is not None, 'Cannot start without lowest energy system having a calculated energy'
-        
+        assert best_system.total_energy is not None, (
+            'Cannot start without lowest energy system having a calculated energy'
+        )
+
         self.log_initial_system(system, best_system)
-        
+
         for step in range(self.n_steps):
             new_best = False
             system = self._before_step(system, step)
             temperature = self.temperature_schedule[step]
             system, accept = self.minimize_one_step(temperature, system)
             system = self._after_step(system, step)
-            
+
             assert system.total_energy is not None, 'Cannot evolve system if current energy not available'
-            
+
             if system.total_energy < best_system.total_energy:
                 new_best = True
                 best_system = system.__copy__()
-                
+
             self.log_step(step, system, best_system, new_best, temperature=temperature, accept=accept)
 
         assert best_system.total_energy is not None, f'Best energy {best_system.total_energy} cannot be None!'
@@ -289,7 +281,7 @@ class SimulatedAnnealing(MetropolisMinimizer):
 
 class SimulatedTempering(MetropolisMinimizer):
     """Simulated tempering with cycling temperature schedule."""
-    
+
     def __init__(
         self,
         mutator: MutationProtocol,
@@ -301,7 +293,7 @@ class SimulatedTempering(MetropolisMinimizer):
         experiment_name: str | None = None,
         log_frequency: int = 100,
         preserve_best_system_every_n_steps: int | None = None,
-        log_path: pl.Path | str | None = None
+        log_path: pl.Path | str | None = None,
     ) -> None:
         if experiment_name is None:
             experiment_name = f'simulated_tempering_{time_stamp()}'
@@ -321,16 +313,17 @@ class SimulatedTempering(MetropolisMinimizer):
             experiment_name=experiment_name,
             log_frequency=log_frequency,
             preserve_best_system_every_n_steps=preserve_best_system_every_n_steps,
-            log_path=log_path
+            log_path=log_path,
         )
-        
 
     def __post_init__(self) -> None:
         super().__post_init__()
-        cycle_temperatures = np.concatenate([
-            np.full(shape=self.n_steps_low, fill_value=self.low_temperature),
-            np.full(shape=self.n_steps_high, fill_value=self.high_temperature),
-        ])
+        cycle_temperatures = np.concatenate(
+            [
+                np.full(shape=self.n_steps_low, fill_value=self.low_temperature),
+                np.full(shape=self.n_steps_high, fill_value=self.high_temperature),
+            ]
+        )
         self.temperature_schedule = np.tile(cycle_temperatures, reps=self.n_cycles)
 
     def minimize_system(self, system: System) -> System:
@@ -338,23 +331,25 @@ class SimulatedTempering(MetropolisMinimizer):
         system.get_total_energy()
         best_system = system.__copy__()
         assert system.total_energy is not None, 'Cannot start without system having a calculated energy'
-        assert best_system.total_energy is not None, 'Cannot start without lowest energy system having a calculated energy'
-        
+        assert best_system.total_energy is not None, (
+            'Cannot start without lowest energy system having a calculated energy'
+        )
+
         self.log_initial_system(system, best_system)
-        
+
         for step in range(self.n_steps):
             new_best = False
             system = self._before_step(system, step)
             temperature = self.temperature_schedule[step]
             system, accept = self.minimize_one_step(temperature, system)
             system = self._after_step(system, step)
-            
+
             assert system.total_energy is not None, 'Cannot evolve system if current energy not available'
-            
+
             if system.total_energy < best_system.total_energy:
                 new_best = True
                 best_system = system.__copy__()
-                
+
             self.log_step(step, system, best_system, new_best, temperature=temperature, accept=accept)
 
         assert best_system.total_energy is not None, f'Best energy {best_system.total_energy} cannot be None!'

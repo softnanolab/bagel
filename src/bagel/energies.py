@@ -175,6 +175,7 @@ class EnergyTerm(ABC):
             atom_mask[chain_mask] = np.isin(structure[chain_mask].res_id, res_indices[chain_ids == chain])
         return atom_mask
 
+
 class PTMEnergy(EnergyTerm):
     """
     Predicted Template Modelling score energy. This is a measure of how confident the folding model is in its overall
@@ -255,6 +256,7 @@ class ChemicalPotentialEnergy(EnergyTerm):
         value = self.chemical_potential * (abs(num_residues - self.target_size)) ** self.power
 
         return value, value * self.weight
+
 
 class PLDDTEnergy(EnergyTerm):
     """

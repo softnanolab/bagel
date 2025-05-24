@@ -304,6 +304,7 @@ def test_log_path(request) -> pl.Path:
 def base_sequence() -> str:
     return 'MKVWPQGHSTNRYLAEFCID'
 
+
 @pytest.fixture
 def plm_only_state(esm2: bg.oracles.embedding.ESM2) -> bg.State:
     sequence = np.random.choice(list(bg.constants.aa_dict.keys()), size=5)
@@ -346,6 +347,7 @@ def simple_state(fake_esmfold: bg.oracles.folding.ESMFold) -> bg.State:
         state.energy_terms[1].name: -0.5,
     }
     return state
+
 
 @pytest.fixture
 def real_simple_state(simple_state: bg.State, esmfold: bg.oracles.folding.ESMFold) -> bg.State:

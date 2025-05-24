@@ -290,6 +290,7 @@ def test_ChemicalPotentialEnergy(
     assert np.isclose(unweighted_energy, value), 'unweighted energy is incorrect'
     assert np.isclose(weighted_energy, value * 2), 'weighted energy is incorrect'
 
+
 def test_RingSymmetryEnergy_with_direct_neighbours_only(
     fake_esmfold: bg.oracles.folding.ESMFold,
     square_structure_residues: list[bg.Residue],
