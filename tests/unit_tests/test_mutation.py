@@ -9,9 +9,7 @@ def test_GrandCanonical_MutationProtocol_one_step_method_gives_correct_output_fo
     energies_system: bg.System,
 ) -> None:
     mutator = bg.mutation.GrandCanonical(move_probabilities={'mutation': 0.0, 'addition': 1.0, 'removal': 0.0})
-    mutated_system, _ = mutator.one_step(
-        folding_algorithm=None, system=energies_system, old_system=energies_system.__copy__()
-    )
+    mutated_system, _ = mutator.one_step(system=energies_system, old_system=energies_system.__copy__())
     assert mocked_calculate_method.called, 'mutator did not recalculate structure and energies.'
     #! The following check is ACTUALLY correct, because the residue MUST BE ADDED AT LEAST IN ONE STATE (as checked by "any")
     assert any([len(state.chains[0].residues) == 6 for state in mutated_system.states]), AssertionError(
@@ -33,9 +31,7 @@ def test_GrandCanonical_MutationProtocol_one_step_method_gives_correct_output_fo
     energies_system: bg.System,
 ) -> None:
     mutator = bg.mutation.GrandCanonical(move_probabilities={'mutation': 0.0, 'addition': 0.0, 'removal': 1.0})
-    mutated_system, _ = mutator.one_step(
-        folding_algorithm=None, system=energies_system, old_system=energies_system.__copy__()
-    )
+    mutated_system, _ = mutator.one_step(system=energies_system, old_system=energies_system.__copy__())
     assert mocked_calculate_method.called, 'mutator did not recalculate structure and energies.'
     assert any([len(state.chains[0].residues) == 4 for state in mutated_system.states]), AssertionError(
         f'residue not removed {mutated_system.states[0].chains[0].residues}'
@@ -49,15 +45,16 @@ def test_GrandCanonical_MutationProtocol_one_step_method_gives_correct_output_fo
 
 
 @patch.object(bg.System, 'get_total_energy')  # prevents unnecessary folding
-# @patch.object(bg.System, 'calculate_system_energies')  # prevents unnecessary folding
 def test_GrandCanonical_MutationProtocol_does_not_remove_all_residues_in_chain(
-    mocked_calculate_method: Mock, residues: list[bg.Residue]
+    mocked_calculate_method: Mock, fake_esmfold: bg.oracles.folding.ESMFold, residues: list[bg.Residue]
 ) -> None:
     chain = bg.Chain(residues[:1])
-    state = bg.State(name='A', chains=[chain], energy_terms=[bg.energies.PTMEnergy()], energy_terms_weights=[1.0])
-    single_residue_system = bg.System([state])
-    mutator = bg.mutation.GrandCanonical(move_probabilities={'mutation': 0.0, 'addition': 0.0, 'removal': 1.0})
-    mutated_system, _ = mutator.one_step(
-        folding_algorithm=None, system=single_residue_system, old_system=single_residue_system.__copy__()
+    state = bg.State(
+        name='A',
+        chains=[chain],
+        energy_terms=[bg.energies.PTMEnergy(oracle=fake_esmfold, weight=1.0)],
     )
+    single_residue_system = bg.System(states=[state])
+    mutator = bg.mutation.GrandCanonical(move_probabilities={'mutation': 0.0, 'addition': 0.0, 'removal': 1.0})
+    mutated_system, _ = mutator.one_step(system=single_residue_system, old_system=single_residue_system.__copy__())
     assert len(mutated_system.states[0].chains[0].residues) > 0

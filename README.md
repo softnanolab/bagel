@@ -53,19 +53,23 @@ To use this, one needs a Modal account with credits. After creating an account, 
 
         modal token new
 
-Otherwise protein folding can be run locally. The temporary solution is requires:
+Otherwise protein oracles can be run locally. The temporary solution requires:
 
-        uv pip install git+https://github.com/jakublala/my_transformers.git
+        uv sync --extra local
 
-And then make sure to set `ESMFold(use_modal=False)`.
+If you are also developing, you can run
+
+        uv sync --all-extras
+
+And then make sure to set `ESMFold(use_modal=False)`. You also need to set `HF_MODEL_DIR` to an accessible folder.
 
 ### Testing
 
 To run the tests, you must specify how to handle any tests that require folding.
 
-        uv run pytest --folding skip
+        uv run pytest --oracles skip
 
-Alternative options for --folding is "modal" and "local".
+Alternative options for --oracles is "modal" and "local".
 
 By default, --numprocesses is set to auto. When running locally, this may have to be overided to avoid running out of CUDA memory.
 

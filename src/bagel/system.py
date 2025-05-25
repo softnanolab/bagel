@@ -12,7 +12,8 @@ from .state import State
 from .chain import Chain, Residue
 from typing import Any
 from dataclasses import dataclass
-from .folding import FoldingAlgorithm
+
+from .oracles.folding import FoldingOracle
 from .constants import aa_dict
 from copy import deepcopy
 import pathlib as pl
@@ -35,15 +36,11 @@ class System:
 
     def __copy__(self) -> 'System':
         """Copy the system object, setting the energy to None"""
-        return System(
-            states=deepcopy(self.states),
-            total_energy=self.total_energy,
-            name=self.name,
-        )
+        return deepcopy(self)
 
-    def get_total_energy(self, folding_algorithm: FoldingAlgorithm) -> float:
+    def get_total_energy(self) -> float:
         if self.total_energy is None:
-            self.total_energy = np.sum([state.get_energy(folding_algorithm) for state in self.states])
+            self.total_energy = np.sum([state.get_energy() for state in self.states])
         return self.total_energy
 
     def dump_logs(self, step: int, path: pl.Path, save_structure: bool = True) -> None:
@@ -80,8 +77,8 @@ class System:
 
         energies: dict[str, int | float] = {'step': step}  #  order of insertion consistent in every dump_logs call
         for state in self.states:
-            for energy in state.energy_terms:
-                energies[f'{state.name}:{energy.name}'] = energy.value
+            for energy_name, energy_value in state._energy_terms_value.items():
+                energies[f'{state.name}:{energy_name}'] = energy_value
             assert state._energy is not None, 'State energy not calculated. Call get_energy() first.'
             energies[f'{state.name}:state_energy'] = state._energy  # HACK
 
@@ -90,9 +87,17 @@ class System:
                 file.write(f'{":".join(state.total_sequence)}\n')
 
             if save_structure:
-                file = CIFFile()
-                set_structure(file, state._structure)  # HACK
-                file.write(structure_path / f'{state.name}_{step}.cif')  # type: ignore
+                for oracle in state.oracles_list:
+                    if isinstance(oracle, FoldingOracle):
+                        oracle_name = type(oracle).__name__
+                        state.to_cif(oracle, structure_path / f'{state.name}_{oracle_name}_{step}.cif')
+                    else:
+                        logger.debug(
+                            f'Skipping {oracle.__class__.__name__} for CIF export, as it is not a FoldingOracle'
+                        )
+                # file = CIFFile()
+                # set_structure(file, state._structure)  # HACK
+                # file.write(structure_path / f'{state.name}_{step}.cif')  # type: ignore
 
         energies['system_energy'] = self.total_energy
 
@@ -117,7 +122,7 @@ class System:
             file.write('state,energy,weight\n')
             for state in self.states:
                 for i, term in enumerate(state.energy_terms):
-                    file.write(f'{state.name},{term.name},{state.energy_terms_weights[i]}\n')
+                    file.write(f'{state.name},{term.name},{term.weight}\n')
 
     def add_chain(self, sequence: str, mutability: list[int], chain_ID: str, state_index: list[int]) -> None:
         """

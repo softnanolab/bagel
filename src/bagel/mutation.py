@@ -7,13 +7,15 @@ Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
 """
 
 import numpy as np
-from .folding import FoldingAlgorithm
+
+# from .folding import FoldingAlgorithm
 from .chain import Chain
 from .system import System
 from .constants import mutation_bias_no_cystein
 from dataclasses import dataclass, field
 from typing import Dict, Tuple
 from abc import ABC, abstractmethod
+from .oracles.base import OraclesResultDict
 import logging
 
 logger = logging.getLogger(__name__)
@@ -26,15 +28,15 @@ class MutationProtocol(ABC):
 
     @abstractmethod
     def one_step(
-        self, folding_algorithm: FoldingAlgorithm, system: System, old_system: System
-    ) -> Tuple[System, float, float]:
+        self,
+        system: System,
+        old_system: System,
+    ) -> tuple[System, float]:
         """
         Abstract method for performing a single mutation step.
 
         Parameters
         ----------
-        folding_algorithm : FoldingAlgorithm
-            The algorithm used to fold the protein and calculate its energy
         system : System
             The system to be mutated
         old_system : System
@@ -84,11 +86,11 @@ class MutationProtocol(ABC):
         chain.mutate_residue(index=index, amino_acid=amino_acid)
 
     def reset_system(self, system: System) -> System:
+        # TODO: add a unit test for this!!!!
         system.total_energy = None
         for state in system.states:
             state._energy_terms_value = {}
-            state._structure = None
-            state._folding_metrics = None
+            state._oracles_result = OraclesResultDict()
         return system
 
 
@@ -103,13 +105,15 @@ class Canonical(MutationProtocol):
         self.mutation_bias = mutation_bias
 
     def one_step(
-        self, folding_algorithm: FoldingAlgorithm, system: System, old_system: System
-    ) -> Tuple[System, float, float]:
+        self,
+        system: System,
+        old_system: System,
+    ) -> tuple[System, float]:
         for i in range(self.n_mutations):
             chain = self.choose_chain(system)
             self.mutate_random_residue(chain=chain)
         self.reset_system(system=system)  # Reset the system so it knows it must recalculate fold and energy
-        delta_energy = system.get_total_energy(folding_algorithm) - old_system.get_total_energy(folding_algorithm)
+        delta_energy = system.get_total_energy() - old_system.get_total_energy()
         return system, delta_energy
 
 
@@ -169,8 +173,10 @@ class GrandCanonical(MutationProtocol):
             state.add_residue_to_all_energy_terms(chain_ID=chain_ID, residue_index=index)
 
     def one_step(
-        self, folding_algorithm: FoldingAlgorithm, system: System, old_system: System
-    ) -> Tuple[System, float, float]:
+        self,
+        system: System,
+        old_system: System,
+    ) -> tuple[System, float]:
         for i in range(self.n_mutations):
             chain = self.choose_chain(system)
             # Now pick a move to make among removal, addition, or mutation
@@ -189,7 +195,7 @@ class GrandCanonical(MutationProtocol):
                 self.remove_random_residue(chain=chain, system=system)
 
         self.reset_system(system=system)  # Reset the system so it knows it must recalculate fold and energy
-        delta_energy = system.get_total_energy(folding_algorithm) - old_system.get_total_energy(folding_algorithm)
+        delta_energy = system.get_total_energy() - old_system.get_total_energy()
 
         return system, delta_energy
 

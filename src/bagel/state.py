@@ -7,13 +7,12 @@ Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
 """
 
 from .chain import Chain
-from .folding import FoldingAlgorithm, FoldingMetrics
+from .oracles import Oracle, FoldingOracle, OraclesResultDict
 from .energies import EnergyTerm
 from typing import Optional
 from pathlib import Path
 from biotite.structure.io.pdbx import CIFFile, set_structure
 from dataclasses import dataclass, field
-from biotite.structure import AtomArray
 from typing import List, Any
 from copy import deepcopy
 import numpy as np
@@ -36,73 +35,79 @@ class State:
         List of single monomeric Chains in this State.
     energy_terms : List[:class:`.EnergyTerm`]
         Collection of EnergyTerms that define the State.
-    energy_terms_weights : List[float] # TODO: this will be moved into EnergyTerms
-        Weights for each EnergyTerm.
 
     Attributes
     ----------
     _energy : Optional[float]
         Cached total (weighted) energy value for the State.
-    _structure : AtomArray
-        Atomic structure representation.
-    _folding_metrics : Optional[FoldingMetrics]
-        Metrics from the :class:`.FoldingAlgorithm` such as pLDDT, or PAE.
+    _oracles_result : dict[Oracle, OracleResult]
+        Results of different oracles, e.g., folding, embedding, etc.
     _energy_terms_value : dict[(str, float)]
         Cached (unweighted)values of individual :class:`.EnergyTerm` objects.
     """
 
     name: str
-    chains: List[Chain]  # This is a list of single monomeric chains
+    chains: List[Chain]
     energy_terms: List[EnergyTerm]
-    energy_terms_weights: List[float]
     _energy: Optional[float] = field(default=None, init=False)
-    _structure: AtomArray = field(default=None, init=False)
-    _folding_metrics: Optional[FoldingMetrics] = field(default=None, init=False)
+    _oracles_result: OraclesResultDict = field(default_factory=lambda: OraclesResultDict(), init=False)
     _energy_terms_value: dict[(str, float)] = field(default_factory=lambda: {}, init=False)
 
     def __post_init__(self) -> None:
         """Sanity check."""
-        assert len(self.energy_terms_weights) == len(self.energy_terms), 'wrong number of energy term weights supplied'
+        return
 
     def __copy__(self) -> Any:
         """Copy the state object, setting the structure and energy to None."""
         return deepcopy(self)
 
     @property
+    def oracles_list(self) -> list[Oracle]:
+        return list(set([term.oracle for term in self.energy_terms]))
+
+    @property
     def total_sequence(self) -> List[str]:
         return [chain.sequence for chain in self.chains]
 
-    def fold(self, folding_algorithm: FoldingAlgorithm) -> tuple[AtomArray, FoldingMetrics]:
-        """Predict new structure of state. Stores structure and folding metrics as private attributes."""
-        assert self._structure is None, 'State already has a structure'
-        self._structure, self._folding_metrics = folding_algorithm.fold(chains=self.chains)
-        return self._structure, self._folding_metrics
-
-    def get_energy(self, folding_algorithm: FoldingAlgorithm) -> float:
+    def get_energy(self) -> float:
         """Calculate energy of state using energy terms ."""
         if self._energy_terms_value == {}:  # If energies not yet calculated
-            if self._structure is None or self._folding_metrics is None:
-                self._structure, self._folding_metrics = self.fold(folding_algorithm=folding_algorithm)
+            # Check if the output of the oracle is already calculated, otherwise calculate it
+            for oracle in self.oracles_list:
+                if oracle not in self._oracles_result:
+                    self._oracles_result[oracle] = oracle.predict(chains=self.chains)
 
-            for term in self.energy_terms:
-                energy = term.compute(self._structure, self._folding_metrics)
-                self._energy_terms_value[term.name] = energy
-                logger.debug(f'Energy term {term.name} has value {energy}')
+        total_energy = 0.0
+        for term in self.energy_terms:
+            unweighted_energy, weighted_energy = term.compute(oracles_result=self._oracles_result)
+            total_energy += weighted_energy
+            self._energy_terms_value[term.name] = unweighted_energy
+            logger.debug(f'Energy term {term.name} has value {unweighted_energy}')
 
-        total_energy = sum(
-            [energy * weight for energy, weight in zip(self._energy_terms_value.values(), self.energy_terms_weights)]
-        )
         self._energy = total_energy
 
         logger.debug(f'**Weighted** energy for state {self.name} is {self._energy}')
 
         return self._energy
 
-    def to_cif(self, filepath: Path) -> bool:
+    def to_cif(self, oracle: FoldingOracle, filepath: Path) -> bool:
+        """
+        Write the state to a CIF file of a specific FoldingOracle.
+
+        Parameters
+        ----------
+        filepath : Path
+            Path to the file to write the CIF structure to.
+
+        Returns
+        -------
+        bool
+            True if the file was written successfully, False otherwise.
+        """
         filepath.parent.mkdir(parents=True, exist_ok=True)
         structure_file = CIFFile()
-        set_structure(structure_file, self._structure)
-        logger.debug(f'Writing CIF structure of {self.name} to {filepath}')
+        set_structure(structure_file, self._oracles_result.get_structure(oracle))
+        logger.debug(f'Writing CIF structure of {self.name} from {type(oracle).__name__} to {filepath}')
         structure_file.write(filepath)
         if not filepath.exists():
             raise FileNotFoundError(f'Structure file {filepath} was not created')
@@ -111,7 +116,6 @@ class State:
 
     def total_residues(self) -> int:
         return sum([len(chain.residues) for chain in self.chains])
-
 
     def remove_residue_from_all_energy_terms(self, chain_ID: str, residue_index: int) -> None:
         """Remove the residue from the energy terms associated to it in the current state."""
@@ -168,7 +172,7 @@ class State:
             term.shift_residues_indices_before_addition(chain_ID, residue_index)
             # Add the residue to the energy term if the parent residue is part of it and the term is inheritable
             # The function automatically checks if the parent is also in it, or not.
-            if term.inheritable:  # type: ignore
+            if term.inheritable:
                 # Just a double check here before proceeding
                 parent_index = parent_residue.index
                 assert parent_residue.chain_ID == chain_ID, (

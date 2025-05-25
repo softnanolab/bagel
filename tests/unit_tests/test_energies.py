@@ -1,4 +1,5 @@
 import bagel as bg
+from bagel.oracles import OraclesResultDict
 from biotite.structure import AtomArray, sasa, annotate_sse, get_residue_count, concatenate
 import numpy as np
 from unittest.mock import Mock, patch
@@ -13,9 +14,10 @@ def test_residue_list_to_group_function(residues: list[bg.Residue]) -> None:
 
 
 def test_energies_properly_update_residue_group_after_residue_index_shifted_after_removal(
+    fake_esmfold: bg.oracles.folding.ESMFold,
     residues: list[bg.Residue],
 ) -> None:
-    energy = bg.energies.PLDDTEnergy(residues)
+    energy = bg.energies.PLDDTEnergy(oracle=fake_esmfold, residues=residues)
     energy.remove_residue(chain_id='A', res_index=2)
     energy.shift_residues_indices_after_removal(chain_id='A', res_index=2)
     assert all(energy.residue_groups[0][0] == np.array(['A', 'A', 'A', 'A', 'B'])), 'incorrect chain_IDs'
@@ -23,35 +25,48 @@ def test_energies_properly_update_residue_group_after_residue_index_shifted_afte
 
 
 def test_energies_properly_update_residue_group_before_residue_index_shifted_for_addition(
+    fake_esmfold: bg.oracles.folding.ESMFold,
     residues: list[bg.Residue],
 ) -> None:
-    energy = bg.energies.PLDDTEnergy(residues)
+    energy = bg.energies.PLDDTEnergy(oracle=fake_esmfold, residues=residues)
     energy.shift_residues_indices_before_addition(chain_id='A', res_index=1)
     assert all(energy.residue_groups[0][0] == np.array(['A', 'A', 'A', 'A', 'A', 'B'])), 'incorrect chain_IDs'
     assert all(energy.residue_groups[0][1] == np.array([0, 2, 3, 4, 5, 0])), 'incorrect res_indices'
 
 
-def test_energies_properly_update_residue_group_after_remove_residue(residues: list[bg.Residue]) -> None:
-    energy = bg.energies.PLDDTEnergy(residues)
+def test_energies_properly_update_residue_group_after_remove_residue(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    residues: list[bg.Residue],
+) -> None:
+    energy = bg.energies.PLDDTEnergy(oracle=fake_esmfold, residues=residues)
     energy.remove_residue(chain_id='A', res_index=2)
     assert all(energy.residue_groups[0][0] == np.array(['A', 'A', 'A', 'A', 'B'])), 'incorrect chain_IDs'
     assert all(energy.residue_groups[0][1] == np.array([0, 1, 3, 4, 0])), 'incorrect res_indices'
 
 
-def test_energies_properly_update_residue_group_before_add_residue(residues: list[bg.Residue]) -> None:
-    energy = bg.energies.PLDDTEnergy(residues)
+def test_energies_properly_update_residue_group_before_add_residue(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    residues: list[bg.Residue],
+) -> None:
+    energy = bg.energies.PLDDTEnergy(oracle=fake_esmfold, residues=residues)
     energy.add_residue(chain_id='A', res_index=2, parent_res_index=1)
     assert all(energy.residue_groups[0][0] == np.array(['A', 'A', 'A', 'A', 'A', 'B', 'A'])), 'incorrect chain_IDs'
     assert all(energy.residue_groups[0][1] == np.array([0, 1, 2, 3, 4, 0, 2])), 'incorrect  res_indices'
 
 
-def test_energies_get_correct_residue_mask(small_structure: AtomArray) -> None:
-    energy = bg.energies.PLDDTEnergy(residues=[bg.Residue(name='V', chain_ID='A', index=1)])
+def test_energies_get_correct_residue_mask(
+    fake_esmfold: bg.oracles.folding.ESMFold, small_structure: AtomArray
+) -> None:
+    energy = bg.energies.PLDDTEnergy(oracle=fake_esmfold, residues=[bg.Residue(name='V', chain_ID='A', index=1)])
     mask = energy.get_residue_mask(structure=small_structure, residue_group_index=0)
     assert all(mask == np.array([False, True, False]))
 
 
-def test_energies_get_correct_residue_mask_for_multimer(square_structure: AtomArray, line_structure: AtomArray) -> None:
+def test_energies_get_correct_residue_mask_for_multimer(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    square_structure: AtomArray,
+    line_structure: AtomArray,
+) -> None:
     residues = [
         bg.Residue(name='V', chain_ID='E', index=2),
         bg.Residue(name='V', chain_ID='D', index=0),
@@ -59,7 +74,7 @@ def test_energies_get_correct_residue_mask_for_multimer(square_structure: AtomAr
         bg.Residue(name='V', chain_ID='D', index=1),
         bg.Residue(name='V', chain_ID='E', index=1),
     ]
-    energy = bg.energies.PLDDTEnergy(residues)
+    energy = bg.energies.PLDDTEnergy(oracle=fake_esmfold, residues=residues)
     structure = concatenate([square_structure, line_structure])
     mask = energy.get_residue_mask(structure, residue_group_index=0)
     assert all(mask == [False, True, True, True, False, True, True]), AssertionError(
@@ -67,33 +82,67 @@ def test_energies_get_correct_residue_mask_for_multimer(square_structure: AtomAr
     )
 
 
-def test_energies_get_correct_atom_mask(small_structure: AtomArray) -> None:
-    energy = bg.energies.PLDDTEnergy(residues=[bg.Residue(name='V', chain_ID='A', index=0)])
+def test_energies_get_correct_atom_mask(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    small_structure: AtomArray,
+) -> None:
+    energy = bg.energies.PLDDTEnergy(oracle=fake_esmfold, residues=[bg.Residue(name='V', chain_ID='A', index=0)])
     mask = energy.get_atom_mask(structure=small_structure, residue_group_index=0)
     assert all(mask == np.array([True, True, False, False, False]))
 
 
-def test_PTMEnergy() -> None:
-    mock_folding_metrics = Mock(bg.folding.FoldingMetrics)
-    mock_folding_metrics.ptm = 0.7
-    energy = bg.energies.PTMEnergy().compute(structure=None, folding_metrics=mock_folding_metrics)
-    assert np.isclose(energy, -0.7)
+# def test_oracle_outputs(esmfold: bg.oracles.folding.ESMFolding) -> None:
+#     ptm_energy = bg.energies.PTMEnergy(
+#         oracle=esmfold,
+#         weight=1.0,
+#     )
+#     ptm_energy.compute()
+#     assert ptm_energy.value == -0.7
 
 
-def test_PLDDTEnergy(small_structure_residues: list[bg.Residue], small_structure: AtomArray) -> None:
-    mock_folding_metrics = Mock(bg.folding.FoldingMetrics)
-    mock_folding_metrics.local_plddt = np.array([0.2, 0.4, 0.6]).reshape(1, 3)
-    energy = bg.energies.PLDDTEnergy(residues=small_structure_residues[:2])
-    energy.compute(structure=small_structure, folding_metrics=mock_folding_metrics)
-    assert np.isclose(energy.value, -0.3)  # avoids float rounding errors
+# Note that here we do ESMFold specific tests, but these should similar extend to other FoldingOracles
+# Once we employ more FoldingOracles, we can make these tests more general, by tackling the FoldingOracle class directly
+def test_PTMEnergy(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+) -> None:
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.ptm = 0.7
+    energy = bg.energies.PTMEnergy(oracle=fake_esmfold, weight=2.0)
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
+    assert np.isclose(unweighted_energy, -0.7)
+    assert np.isclose(weighted_energy, -0.7 * 2.0)
 
 
-def test_OverallPLDDTEnergy() -> None:
-    mock_folding_metrics = Mock(bg.folding.FoldingMetrics)
-    mock_folding_metrics.local_plddt = np.array([0.2, 0.4, 0.6]).reshape(1, 3)
-    energy = bg.energies.OverallPLDDTEnergy()
-    energy.compute(structure=None, folding_metrics=mock_folding_metrics)
-    assert np.isclose(energy.value, -0.4)  # avoids float rounding errors
+def test_PLDDTEnergy(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    small_structure_residues: list[bg.Residue],
+    small_structure: AtomArray,
+) -> None:
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.local_plddt = np.array([0.2, 0.4, 0.6]).reshape(1, 3)
+    mock_folding_result.structure = small_structure
+    energy = bg.energies.PLDDTEnergy(oracle=fake_esmfold, residues=small_structure_residues[:2], weight=2.0)
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
+    assert np.isclose(unweighted_energy, -0.3)  # avoids float rounding errors
+    assert np.isclose(weighted_energy, -0.6)
+
+
+def test_OverallPLDDTEnergy(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    small_structure: AtomArray,
+    small_structure_chains: list[bg.Chain],
+) -> None:
+    folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    folding_result.input_chains = small_structure_chains
+    folding_result.structure = small_structure
+    folding_result.local_plddt = np.array([0.2, 0.4, 0.6]).reshape(1, 3)
+    energy = bg.energies.OverallPLDDTEnergy(oracle=fake_esmfold, weight=2.0)
+    oracles_result = OraclesResultDict({fake_esmfold: folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
+    assert np.isclose(unweighted_energy, -0.4), 'unweighted energy is incorrect'
+    assert np.isclose(weighted_energy, -0.8), 'weighted energy is incorrect'
 
 
 def test_solvent_accessible_surface_area_function_gives_expected_return_array(small_structure: AtomArray) -> None:
@@ -104,144 +153,256 @@ def test_solvent_accessible_surface_area_function_gives_expected_return_array(sm
 
 @patch('bagel.energies.sasa')
 def test_SurfaceAreaEnergy(
-    mock_sasa: Mock, small_structure_residues: list[bg.Residue], small_structure: AtomArray
+    mock_sasa: Mock,
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    small_structure_residues: list[bg.Residue],
+    small_structure: AtomArray,
 ) -> None:
     mock_sasa.return_value = np.arange(5, dtype=float)
-    energy = bg.energies.SurfaceAreaEnergy(residues=small_structure_residues[:1])
+    energy = bg.energies.SurfaceAreaEnergy(oracle=fake_esmfold, residues=small_structure_residues[:1], weight=2.0)
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = small_structure
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
     # returns mean of normalized sasa over given residues
-    energy.compute(structure=small_structure, folding_metrics=None)
-    assert np.isclose(energy.value, 1 / (22 * 2))  # max sasa is 22, and there are 2 atoms in the first residue
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
+    value = 1 / (22 * 2)  # max sasa is 22, and there are 2 atoms in the first residue
+    assert np.isclose(unweighted_energy, value), 'unweighted energy is incorrect'
+    assert np.isclose(weighted_energy, value * 2), 'weighted energy is incorrect'
 
 
 @patch('bagel.energies.sasa')
 def test_HydrophobicEnergy(
-    mock_sasa: Mock, small_structure_residues: list[bg.Residue], small_structure: AtomArray
+    mock_sasa: Mock,
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    small_structure_residues: list[bg.Residue],
+    small_structure: AtomArray,
 ) -> None:
     mock_sasa.return_value = np.array([22, 22, 22, 22, 0])  # atoms of first 2 residues are given max sasa
-    energy = bg.energies.HydrophobicEnergy(residues=small_structure_residues[:2], surface_only=True)
+    energy = bg.energies.HydrophobicEnergy(
+        oracle=fake_esmfold, residues=small_structure_residues[:2], surface_only=True, weight=2.0
+    )
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = small_structure
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
     # returns sum of normalized sasa for hydrophobic atoms, divided by the number of atoms in given residues
-    energy.compute(structure=small_structure, folding_metrics=None)
-    assert np.isclose(energy.value, 2 / 4)  # 4 atoms in given residues, only 2 are part of hydrophobic residue
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
+    value = 2 / 4  # 4 atoms in given residues, only 2 are part of hydrophobic residue
+    assert np.isclose(unweighted_energy, value), 'unweighted energy is incorrect'
+    assert np.isclose(weighted_energy, value * 2), 'weighted energy is incorrect'
 
 
-def test_PAEEnergy_with_cross_term_only(mixed_structure_state: bg.State) -> None:
-    mock_folding_metrics = Mock(bg.folding.FoldingMetrics)
-    mock_folding_metrics.pae = np.arange(7**2).reshape((1, 7, 7))
+def test_PAEEnergy_with_cross_term_only(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    mixed_structure_state: bg.State,
+) -> None:
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.pae = np.arange(7**2).reshape((1, 7, 7))
+    mock_folding_result.structure = mixed_structure_state._oracles_result[fake_esmfold].structure
     residues = sum([chain.residues for chain in mixed_structure_state.chains], start=[])
-    energy = bg.energies.PAEEnergy(group_1_residues=residues[1:6:2], group_2_residues=residues[2:7:2])
-    energy.compute(structure=mixed_structure_state._structure, folding_metrics=mock_folding_metrics)
+    energy = bg.energies.PAEEnergy(oracle=fake_esmfold, residues=[residues[1:6:2], residues[2:7:2]], weight=2.0)
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
     relevant_PAEs = [9, 11, 13, 15, 17, 19, 23, 25, 27, 29, 31, 33, 37, 39, 41, 43, 45, 47]
-    assert np.allclose(energy.value, np.mean(relevant_PAEs) / 30)  # sum of relevant PAEs / (num PAEs * max PAE)
+    # sum of relevant PAEs / (num PAEs * max PAE)
+    assert np.isclose(unweighted_energy, np.mean(relevant_PAEs) / 30), 'unweighted energy is incorrect'
+    assert np.isclose(weighted_energy, np.mean(relevant_PAEs) / 30 * 2), 'weighted energy is incorrect'
 
 
-def test_PAEEnergy_without_cross_term_only(mixed_structure_state: bg.State) -> None:
-    mock_folding_metrics = Mock(bg.folding.FoldingMetrics)
-    mock_folding_metrics.pae = np.arange(7**2).reshape((1, 7, 7))
+def test_PAEEnergy_without_cross_term_only(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    mixed_structure_state: bg.State,
+) -> None:
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.pae = np.arange(7**2).reshape((1, 7, 7))
+    mock_folding_result.structure = mixed_structure_state._oracles_result[fake_esmfold].structure
     residues = sum([chain.residues for chain in mixed_structure_state.chains], start=[])
     energy = bg.energies.PAEEnergy(
-        group_1_residues=residues[1:6:4],
-        group_2_residues=residues[2:7:4],
+        oracle=fake_esmfold,
+        residues=[residues[1:6:4], residues[2:7:4]],
         cross_term_only=False,
+        weight=2.0,
     )
-    energy.compute(structure=mixed_structure_state._structure, folding_metrics=mock_folding_metrics)
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
     relevant_PAEs = [9, 12, 13, 15, 19, 20, 36, 37, 41, 43, 44, 47]
-    assert np.allclose(energy.value, np.mean(relevant_PAEs) / 30)  # sum of relevant PAEs / (num PAEs * max PAE)
+    # sum of relevant PAEs / (num PAEs * max PAE)
+    assert np.isclose(unweighted_energy, np.mean(relevant_PAEs) / 30), 'unweighted energy is incorrect'
+    assert np.isclose(weighted_energy, np.mean(relevant_PAEs) / 30 * 2), 'weighted energy is incorrect'
 
 
-def test_PAEEnergy_of_residues_with_itself(mixed_structure_state: bg.State) -> None:
-    mock_folding_metrics = Mock(bg.folding.FoldingMetrics)
-    mock_folding_metrics.pae = np.arange(7**2).reshape((1, 7, 7))
+def test_PAEEnergy_of_residues_with_itself(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    mixed_structure_state: bg.State,
+) -> None:
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.pae = np.arange(7**2).reshape((1, 7, 7))
+    mock_folding_result.structure = mixed_structure_state._oracles_result[fake_esmfold].structure
     residues = sum([chain.residues for chain in mixed_structure_state.chains], start=[])
-    energy = bg.energies.PAEEnergy(group_1_residues=residues[1:6:2])
-    energy.compute(structure=mixed_structure_state._structure, folding_metrics=mock_folding_metrics)
+    energy = bg.energies.PAEEnergy(
+        oracle=fake_esmfold,
+        residues=[residues[1:6:2]],
+        cross_term_only=False,
+        weight=2.0,
+    )
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
     relevant_PAEs = [8, 10, 12, 22, 24, 26, 36, 38, 40]
-    assert np.allclose(energy.value, np.mean(relevant_PAEs) / 30)  # sum of relevant PAEs / (num PAEs * max PAE)
+    # sum of relevant PAEs / (num PAEs * max PAE)
+    assert np.isclose(unweighted_energy, np.mean(relevant_PAEs) / 30), 'unweighted energy is incorrect'
+    assert np.isclose(weighted_energy, np.mean(relevant_PAEs) / 30 * 2), 'weighted energy is incorrect'
 
 
-def test_RingSymmetryEnergy(square_structure_residues: list[bg.Residue], square_structure: AtomArray) -> None:
-    energy = bg.energies.RingSymmetryEnergy(symmetry_groups=[[residue] for residue in square_structure_residues])
-    energy.compute(structure=square_structure, folding_metrics=None)
+def test_RingSymmetryEnergy(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    square_structure_residues: list[bg.Residue],
+    square_structure: AtomArray,
+) -> None:
+    energy = bg.energies.RingSymmetryEnergy(
+        oracle=fake_esmfold,
+        symmetry_groups=[[residue] for residue in square_structure_residues],
+        weight=2.0,
+    )
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = square_structure
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
     # centroids of each residue backbone make a 2d square of length 1
-    assert np.isclose(energy.value, np.std([1, 1, 2**0.5] * 4))  # Neighbour distances for each atom are 1, 1, and √2
+    value = np.std([1, 1, 2**0.5] * 4)
+    assert np.isclose(unweighted_energy, value), 'unweighted energy is incorrect'
+    assert np.isclose(weighted_energy, value * 2), 'weighted energy is incorrect'
 
-def test_ChemicalPotentialEnergy( square_structure_residues: list[bg.Residue], square_structure: AtomArray) -> None:
-    energy = bg.energies.ChemicalPotentialEnergy(chemical_potential = -1.0, target_size = 8.0, power = 0.5 )
-    energy.compute(structure=square_structure, folding_metrics=None)
-    # Energy should be: chemical_potential * ( abs( number_of_residues - target_size ) )**power 
+
+def test_ChemicalPotentialEnergy(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    square_structure_residues: list[bg.Residue],
+    square_structure: AtomArray,
+) -> None:
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = square_structure
+    energy = bg.energies.ChemicalPotentialEnergy(
+        oracle=fake_esmfold, chemical_potential=-1.0, target_size=8.0, power=0.5, weight=2.0
+    )
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
+    # Energy should be: chemical_potential * ( abs( number_of_residues - target_size ) )**power
     # -1.0 * ( abs( 4.0 - 8.0 )**0.5 ) = -1.0 * ( 4**0.5 ) = -1.0 * 2.0 = -2.0
-    assert np.isclose(energy.value, np.std([1, 1, 2**0.5] * 4))  # Neighbour distances for each atom are 1, 1, and √2
+    value = -2.0
+    assert np.isclose(unweighted_energy, value), 'unweighted energy is incorrect'
+    assert np.isclose(weighted_energy, value * 2), 'weighted energy is incorrect'
 
 
 def test_RingSymmetryEnergy_with_direct_neighbours_only(
-    square_structure_residues: list[bg.Residue], square_structure: AtomArray
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    square_structure_residues: list[bg.Residue],
+    square_structure: AtomArray,
 ) -> None:
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.pae = np.arange(7**2).reshape((1, 7, 7))
+    mock_folding_result.structure = square_structure
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
     energy = bg.energies.RingSymmetryEnergy(
+        oracle=fake_esmfold,
         symmetry_groups=[[residue] for residue in square_structure_residues],
         direct_neighbours_only=True,
+        weight=2.0,
     )
-    energy.compute(structure=square_structure, folding_metrics=None)
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
     # centroids of each residue make a 2d square of length 1. The direct neighbour distance for each atom is 1
-    assert np.isclose(energy.value, 0)
+    assert np.isclose(unweighted_energy, 0), 'unweighted energy is incorrect'
+    assert np.isclose(weighted_energy, 0 * 2), 'weighted energy is incorrect'
 
 
-def test_SeparationEnergy(square_structure_residues: list[bg.Residue], square_structure: AtomArray) -> None:
+def test_SeparationEnergy(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    square_structure_residues: list[bg.Residue],
+    square_structure: AtomArray,
+) -> None:
     energy = bg.energies.SeparationEnergy(
-        group_1_residues=square_structure_residues[:2],
-        group_2_residues=square_structure_residues[2:],
+        oracle=fake_esmfold,
+        residues=[square_structure_residues[:2], square_structure_residues[2:]],
+        weight=2.0,
     )
-    energy.compute(structure=square_structure, folding_metrics=None)
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.pae = np.arange(7**2).reshape((1, 7, 7))
+    mock_folding_result.structure = square_structure
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
     # distance between the centroids of the bottom corners and top corners for a square of length 1 is 1
-    assert np.isclose(energy.value, 1 / 8)  # distance / total number of atoms (2 at each corner)
+    value = 1 / 8
+    assert np.isclose(unweighted_energy, value), 'unweighted energy is incorrect'
+    assert np.isclose(weighted_energy, value * 2), 'weighted energy is incorrect'
 
 
-def test_GlobularEnergy(square_structure_residues: list[bg.Residue], square_structure: AtomArray) -> None:
-    energy = bg.energies.GlobularEnergy(residues=square_structure_residues[:2])
+def test_GlobularEnergy(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    square_structure_residues: list[bg.Residue],
+    square_structure: AtomArray,
+) -> None:
+    energy = bg.energies.GlobularEnergy(
+        oracle=fake_esmfold,
+        residues=square_structure_residues[:2],
+        weight=2.0,
+    )
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.pae = np.arange(7**2).reshape((1, 7, 7))
+    mock_folding_result.structure = square_structure
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
     # the centroid of the first 2 residue backbones are at [0, 0.5, 0] coords. The 4 atoms form a square of length
     # 1 around the centroid, equidistance from it.
-    energy.compute(structure=square_structure, folding_metrics=None)
-    assert np.isclose(energy.value, 0)
+    assert np.isclose(unweighted_energy, 0), 'unweighted energy is incorrect'
+    assert np.isclose(weighted_energy, 0 * 2), 'weighted energy is incorrect'
 
 
 def test_TemplateMatchEnergy_gives_zero_distance_for_rotated_and_shifted_structure(
-    square_structure_residues: list[bg.Residue], square_structure: AtomArray
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    square_structure_residues: list[bg.Residue],
+    square_structure: AtomArray,
 ) -> None:
     # Comparing one of the diagonals of the square to the other
     template_atoms = copy.deepcopy(square_structure[np.isin(square_structure.res_id, [0, 2])])
     template_atoms.coord[:, 1:] += 3.0  # shifting strucutre in y and z
     energy = bg.energies.TemplateMatchEnergy(
-        template_atoms, residues=square_structure_residues[1::2], backbone_only=True
+        oracle=fake_esmfold,
+        template_atoms=template_atoms,
+        residues=square_structure_residues[1::2],
+        backbone_only=True,
+        weight=2.0,
     )
-    energy.compute(structure=square_structure, folding_metrics=None)
-    assert np.isclose(energy.value, 0, atol=1e-7)  # superimposing template onto structure adds some error
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = square_structure
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
+    assert np.isclose(unweighted_energy, 0, atol=1e-7), 'unweighted energy is incorrect'
+    assert np.isclose(weighted_energy, 0 * 2, atol=1e-7), 'weighted energy is incorrect'
 
 
 def test_TemplateMatchEnergy_gives_zero_distance_for_rotated_and_shifted_structure_using_distogram_metric(
-    square_structure_residues: list[bg.Residue], square_structure: AtomArray
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    square_structure_residues: list[bg.Residue],
+    square_structure: AtomArray,
 ) -> None:
     # Comparing one of the diagonals of the square to the other
     template_atoms = copy.deepcopy(square_structure[np.isin(square_structure.res_id, [0, 2])])
     template_atoms.coord[:, 1:] += 3.0  # shifting strucutre in y and z
     energy = bg.energies.TemplateMatchEnergy(
-        template_atoms, residues=square_structure_residues[1::2], backbone_only=True, distogram_separation=True
+        oracle=fake_esmfold,
+        template_atoms=template_atoms,
+        residues=square_structure_residues[1::2],
+        backbone_only=True,
+        distogram_separation=True,
+        weight=2.0,
     )
-    energy.compute(structure=square_structure, folding_metrics=None)
-    assert np.isclose(energy.value, 0, atol=1e-7)  # superimposing template onto structure adds some error
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = square_structure
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
+    assert np.isclose(unweighted_energy, 0, atol=1e-7), 'unweighted energy is incorrect'
+    assert np.isclose(weighted_energy, 0 * 2), 'weighted energy is incorrect'
 
 
 def test_TemplateMatchEnergy_is_correct_with_simple_structure(
-    line_structure_residues: list[bg.Residue],
-    line_structure: AtomArray,
-) -> None:
-    template_atoms = copy.deepcopy(line_structure[line_structure.res_id < 1])
-    template_atoms.coord[0, :] -= [0.1, 0.1, 0]  # shifting back atom sqrt(0.02) backwards in direction of line
-    template_atoms.coord[4, :] += [0.1, 0.1, 0]  # shifting front atom sqrt(0.02) forwards in direction of line
-    energy = bg.energies.TemplateMatchEnergy(template_atoms, residues=line_structure_residues[:2], backbone_only=True)
-    energy.compute(structure=line_structure, folding_metrics=None)
-    # it is only 3 atoms because you only count for backbone atoms, defined as of type C, N and CA
-    assert np.isclose(energy.value, np.mean([0.02, 0.0, 0.02]) ** 0.5)  # first and last template atoms sqrt(0.02) away
-
-
-def test_TemplateMatchEnergy_is_correct_with_simple_structure_using_distogram_metric(
+    fake_esmfold: bg.oracles.folding.ESMFold,
     line_structure_residues: list[bg.Residue],
     line_structure: AtomArray,
 ) -> None:
@@ -249,11 +410,48 @@ def test_TemplateMatchEnergy_is_correct_with_simple_structure_using_distogram_me
     template_atoms.coord[0, :] -= [0.1, 0.1, 0]  # shifting back atom sqrt(0.02) backwards in direction of line
     template_atoms.coord[4, :] += [0.1, 0.1, 0]  # shifting front atom sqrt(0.02) forwards in direction of line
     energy = bg.energies.TemplateMatchEnergy(
-        template_atoms, residues=line_structure_residues[:2], backbone_only=True, distogram_separation=True
+        oracle=fake_esmfold,
+        template_atoms=template_atoms,
+        residues=line_structure_residues[:2],
+        backbone_only=True,
+        weight=2.0,
     )
-    energy.compute(structure=line_structure, folding_metrics=None)
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = line_structure
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
+    # it is only 3 atoms because you only count for backbone atoms, defined as of type C, N and CA
+    value = np.mean([0.02, 0.0, 0.02]) ** 0.5
+    assert np.isclose(unweighted_energy, value), (
+        'unweighted energy is incorrect'
+    )  # first and last template atoms sqrt(0.02) away
+    assert np.isclose(weighted_energy, value * 2), 'weighted energy is incorrect'
+
+
+def test_TemplateMatchEnergy_is_correct_with_simple_structure_using_distogram_metric(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    line_structure_residues: list[bg.Residue],
+    line_structure: AtomArray,
+) -> None:
+    template_atoms = copy.deepcopy(line_structure[line_structure.res_id < 1])
+    template_atoms.coord[0, :] -= [0.1, 0.1, 0]  # shifting back atom sqrt(0.02) backwards in direction of line
+    template_atoms.coord[4, :] += [0.1, 0.1, 0]  # shifting front atom sqrt(0.02) forwards in direction of line
+    energy = bg.energies.TemplateMatchEnergy(
+        oracle=fake_esmfold,
+        template_atoms=template_atoms,
+        residues=line_structure_residues[:2],
+        backbone_only=True,
+        distogram_separation=True,
+        weight=2.0,
+    )
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = line_structure
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
     unique_distogram_distances_squared = [0.02, 0.08, 0.02] * 2  # requires a small sketch to make sense of
-    assert np.isclose(energy.value, np.mean(unique_distogram_distances_squared) ** 0.5)
+    value = np.mean(unique_distogram_distances_squared) ** 0.5
+    assert np.isclose(unweighted_energy, value), 'unweighted energy is incorrect'
+    assert np.isclose(weighted_energy, value * 2), 'weighted energy is incorrect'
 
 
 def test_secondary_structure_elements_function_gives_expected_return_array(small_structure: AtomArray) -> None:
@@ -264,9 +462,19 @@ def test_secondary_structure_elements_function_gives_expected_return_array(small
 
 @patch('bagel.energies.annotate_sse')
 def test_SecondaryStructureEnergy(
-    mock_annotate_sse: Mock, small_structure_residues: list[bg.Residue], small_structure: AtomArray
+    mock_annotate_sse: Mock,
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    small_structure_residues: list[bg.Residue],
+    small_structure: AtomArray,
 ) -> None:
     mock_annotate_sse.return_value = np.array(['a', '', 'c'])
-    energy = bg.energies.SecondaryStructureEnergy(residues=small_structure_residues, target_secondary_structure='coil')
-    energy.compute(small_structure, folding_metrics=None)
-    assert np.isclose(energy.value, 2 / 3)
+    energy = bg.energies.SecondaryStructureEnergy(
+        oracle=fake_esmfold, residues=small_structure_residues, target_secondary_structure='coil', weight=2.0
+    )
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = small_structure
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
+    value = 2 / 3
+    assert np.isclose(unweighted_energy, value), 'unweighted energy is incorrect'
+    assert np.isclose(weighted_energy, value * 2), 'weighted energy is incorrect'

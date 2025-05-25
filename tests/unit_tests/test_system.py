@@ -66,11 +66,23 @@ def test_system_dump_logs_folder_is_correct(mixed_system: bg.System) -> None:
     }
     assert sequences == {'0': 'G:VV:GVVV'}, 'incorrect sequence information saved'
 
+    oracle = mixed_system.states[0].oracles_list[0]
+    oracle_name = type(oracle).__name__
+    assert oracle_name == 'ESMFold', 'incorrect oracle information saved'
+    assert oracle == mixed_system.states[1].oracles_list[0], 'inconsistent oracles between states'
+
     structures = {
-        'small': get_structure(CIFFile().read(file=experiment_folder / 'structures' / f'small_{mock_step}.cif'))[0],
-        'mixed': get_structure(CIFFile().read(file=experiment_folder / 'structures' / f'mixed_{mock_step}.cif'))[0],
+        'small': get_structure(
+            CIFFile().read(file=experiment_folder / 'structures' / f'small_{oracle_name}_{mock_step}.cif')
+        )[0],
+        'mixed': get_structure(
+            CIFFile().read(file=experiment_folder / 'structures' / f'mixed_{oracle_name}_{mock_step}.cif')
+        )[0],
     }
-    correct_structures = {'small': mixed_system.states[0]._structure, 'mixed': mixed_system.states[1]._structure}
+    correct_structures = {
+        'small': mixed_system.states[0]._oracles_result[oracle].structure,
+        'mixed': mixed_system.states[1]._oracles_result[oracle].structure,
+    }
 
     energies = pd.read_csv(experiment_folder / 'energies.csv')
     correct_energies = pd.DataFrame(
@@ -78,8 +90,6 @@ def test_system_dump_logs_folder_is_correct(mixed_system: bg.System) -> None:
             'step': [mock_step],
             'small:pTM': [-0.7],
             'small:selective_surface_area': [0.2],
-            #'mixed:pTM': [-0.4],
-            #'mixed:normalized_globular': [0.5],
             'mixed:local_pLDDT': [-0.4],
             'mixed:cross_PAE': [0.5],
             'small:state_energy': [-0.5],
@@ -113,11 +123,9 @@ def test_system_states_still_reference_shared_chain_object_after_copy_method(sha
     assert copied_system.states[0].chains[0] == copied_system.states[1].chains[0]
 
 
-def test_system_get_total_loss_gives_correct_output(mixed_system: bg.System) -> None:
+def test_system_get_total_energy_gives_correct_output(mixed_system: bg.System) -> None:
     for state in mixed_system.states:
         state.get_energy = Mock()  # disable method for easier testing
-    total_loss = mixed_system.get_total_loss(folding_algorithm=None)
+    total_energy = mixed_system.get_total_energy()
     # state 0: energy=-0.5, state 1: energy=0.1
-    assert np.isclose(
-        total_loss, (-0.5 + 0.1 )
-    )  # system loss is sum of state energies  
+    assert np.isclose(total_energy, (-0.5 + 0.1))  # system energy is sum of state energies
