@@ -1,8 +1,8 @@
 import random
 import bagel as bg
 import os
-import modal
 from typing import Any
+
 def run_simple_binder() -> Any:
     # Get the value of an environment variable
     use_modal = True if os.getenv('USE_MODAL', 'True').lower() in ('true', '1', 'yes') else False
@@ -47,24 +47,6 @@ def run_simple_binder() -> Any:
     ]
     binder_chain = bg.Chain(residues=residues_binder)
 
-    # Now define the energy terms to be applied to the chain. apply them to residues, and specify the weight
-    energy_terms = [
-        bg.energies.PTMEnergy(
-            weight=1.0,
-        ),
-        bg.energies.OverallPLDDTEnergy(
-            weight=1.0,
-        ),
-        bg.energies.HydrophobicEnergy(
-            weight=5.0,
-        ),
-        bg.energies.AlignmentErrorEnergy(
-            group_1_residues=residues_hotspot,
-            group_2_residues=residues_binder,
-            weight=5.0,
-        ),
-    ]
-
     # Now define the folding algorithm
     config = {
         'output_pdb': True,
@@ -72,13 +54,33 @@ def run_simple_binder() -> Any:
         'glycine_linker': 'GGGG',
         'position_ids_skip': 100,
     }
-    esmfold = bg.folding.ESMFolder(use_modal=use_modal, config=config)
+    esmfold = bg.oracles.ESMFold(use_modal=use_modal, config=config)
+
+    # Now define the energy terms to be applied to the chain. apply them to residues, and specify the weight
+    energy_terms = [
+        bg.energies.PTMEnergy(
+            oracle=esmfold,
+            weight=1.0,
+        ),
+        bg.energies.OverallPLDDTEnergy(
+            oracle=esmfold,
+            weight=1.0,
+        ),
+        bg.energies.HydrophobicEnergy(
+            oracle=esmfold,
+            weight=5.0,
+        ),
+        bg.energies.PAEEnergy(
+            oracle=esmfold,
+            residues=[residues_hotspot, residues_binder],
+            weight=5.0,
+        ),
+    ]
 
     # Now define the state
     state = bg.State(
         name='state_A',
         chains=[binder_chain, target_chain],
-        oracles=[esmfold],
         energy_terms=energy_terms,
     )
 
@@ -87,13 +89,12 @@ def run_simple_binder() -> Any:
 
     # Now define the minimizer
     minimizer = bg.minimizer.SimulatedTempering(
-        mutation_protocol=bg.mutation.Canonical(n_mutations=1),
+        mutator=bg.mutation.Canonical(n_mutations=1),
         high_temperature=2,
         low_temperature=0.1,
-        n_steps=10,
+        n_cycles=10,
         n_steps_low=100,
         n_steps_high=20,
-        preserve_detailed_balance=False,
         log_frequency=50,
     )
 

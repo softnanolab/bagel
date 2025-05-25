@@ -31,7 +31,7 @@ class Minimizer(ABC):
         self.mutator = mutator
         self.experiment_name = experiment_name
         self.log_frequency = log_frequency
-        self.log_path: pl.Path = self.initialise_log_path(self.log_path)
+        self.log_path: pl.Path = self.initialise_log_path(log_path)
 
         logger.debug(f'Logging path: {self.log_path}')
         logger.debug(f'Experiment name: {self.experiment_name}')
@@ -242,9 +242,6 @@ class SimulatedAnnealing(MetropolisMinimizer):
             preserve_best_system_every_n_steps=preserve_best_system_every_n_steps,
             log_path=log_path,
         )
-
-    def __post_init__(self) -> None:
-        super().__post_init__()
         self.temperature_schedule = np.linspace(
             start=self.initial_temperature, stop=self.final_temperature, num=self.n_steps
         )
@@ -306,6 +303,15 @@ class SimulatedTempering(MetropolisMinimizer):
         self.n_steps_low = n_steps_low
         self.n_cycles = n_cycles
 
+        cycle_temperatures = np.concatenate(
+            [
+                np.full(shape=self.n_steps_low, fill_value=self.low_temperature),
+                np.full(shape=self.n_steps_high, fill_value=self.high_temperature),
+            ]
+        )
+        self.temperature_schedule = np.tile(cycle_temperatures, reps=self.n_cycles)
+
+
         super().__init__(
             mutator=mutator,
             temperature=low_temperature,
@@ -315,16 +321,6 @@ class SimulatedTempering(MetropolisMinimizer):
             preserve_best_system_every_n_steps=preserve_best_system_every_n_steps,
             log_path=log_path,
         )
-
-    def __post_init__(self) -> None:
-        super().__post_init__()
-        cycle_temperatures = np.concatenate(
-            [
-                np.full(shape=self.n_steps_low, fill_value=self.low_temperature),
-                np.full(shape=self.n_steps_high, fill_value=self.high_temperature),
-            ]
-        )
-        self.temperature_schedule = np.tile(cycle_temperatures, reps=self.n_cycles)
 
     def minimize_system(self, system: System) -> System:
         """Minimize system using simulated tempering."""
