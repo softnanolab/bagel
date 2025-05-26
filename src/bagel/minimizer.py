@@ -136,12 +136,12 @@ class MonteCarloMinimizer(Minimizer):
         """Hook called before each Monte Carlo step."""
         return system
 
-    def _after_step(self, system: System, step: int) -> System:
+    def _after_step(self, system: System, best_system: System, step: int) -> System:
         """Hook called after each Monte Carlo step."""
         if self.preserve_best_system_every_n_steps is not None:
             if (step + 1) % self.preserve_best_system_every_n_steps == 0:
                 logger.debug(f'Starting new cycle with best system from previous cycle')
-                return system.__copy__()
+                return best_system.__copy__()
         return system
 
     def minimize_one_step(self, step: int, system: System) -> tuple[System, bool]:
@@ -172,7 +172,7 @@ class MonteCarloMinimizer(Minimizer):
             new_best = False
             system = self._before_step(system, step)
             system, accept = self.minimize_one_step(step, system)
-            system = self._after_step(system, step)
+            system = self._after_step(system, best_system, step)
 
             assert system.total_energy is not None, 'Cannot evolve system if current energy not available'
 
