@@ -299,7 +299,6 @@ def test_RingSymmetryEnergy_with_direct_neighbours_only(
     )
     unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
     # centroids of each residue make a 2d square of length 1. The direct neighbour distance for each atom is 1
-    import pdb; pdb.set_trace()
     assert np.isclose(unweighted_energy, 0), 'unweighted energy is incorrect'
     assert np.isclose(weighted_energy, 0 * 2), 'weighted energy is incorrect'
 
