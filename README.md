@@ -50,13 +50,11 @@ You also need to set `HF_MODEL_DIR` to an accessible folder, where HuggingFace m
 
 ### Testing
 
-To run the tests, you must specify how to handle any tests that require folding.
+To run the tests, you must specify how to handle Oracles, i.e. whether to run remotely or not.
 
         uv run pytest --oracles skip
 
 Alternative options for --oracles is "modal" and "local".
-
-By default, --numprocesses is set to auto. When running locally, this may have to be overided to avoid running out of CUDA memory.
 
 ## Development Notes
 
