@@ -37,7 +37,7 @@ mutation_bias_no_cystein = {aa: 1.0 / (len(aa_dict) - 1) if aa != 'C' else 0.0 f
 
 hydrophobic_residues = ('VAL', 'ILE', 'LEU', 'PHE', 'MET', 'TRP')
 
-backbone_atoms = ('CA', 'N', 'C', 'O')
+backbone_atoms = ('CA', 'N', 'C')
 
 angstrom = 1.0  # Units of measure for distances
 nm = 10.0  # nm value in units of measure for distances

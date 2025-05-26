@@ -1083,6 +1083,6 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
 
         # Process residues in the order they appear in conserved_chain_id and conserved_res_id
         for chain_id, res_id in zip(conserved_chain_id, conserved_res_id):
-            global_index_list.append(chain_res_to_global[(chain_id, res_id)])
+            global_index_list.append(chain_res_to_global[(str(chain_id), int(res_id))])
 
         return global_index_list

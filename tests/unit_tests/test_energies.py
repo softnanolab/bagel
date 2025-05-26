@@ -289,7 +289,6 @@ def test_RingSymmetryEnergy_with_direct_neighbours_only(
     square_structure: AtomArray,
 ) -> None:
     mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
-    mock_folding_result.pae = np.arange(7**2).reshape((1, 7, 7))
     mock_folding_result.structure = square_structure
     oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
     energy = bg.energies.RingSymmetryEnergy(
@@ -316,7 +315,6 @@ def test_SeparationEnergy(
         weight=2.0,
     )
     mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
-    mock_folding_result.pae = np.arange(7**2).reshape((1, 7, 7))
     mock_folding_result.structure = square_structure
     oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
     unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
@@ -337,7 +335,6 @@ def test_GlobularEnergy(
         weight=2.0,
     )
     mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
-    mock_folding_result.pae = np.arange(7**2).reshape((1, 7, 7))
     mock_folding_result.structure = square_structure
     oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
     unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
