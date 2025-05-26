@@ -2,9 +2,11 @@
 standard template and objects for structure prediction
 """
 
+import os
 import numpy as np
 import numpy.typing as npt
 from ...chain import Chain
+from ...constants import atom_order
 from .utils import reindex_chains
 from pydantic import field_validator
 from .base import FoldingOracle, FoldingResult
@@ -13,8 +15,6 @@ from boileroom import app  # type: ignore
 from boileroom.esmfold import ESMFoldOutput  # type: ignore
 from boileroom.esmfold import ESMFold as ESMFoldBoiler
 
-
-# TODO: add proper types to next modalfold version
 from biotite.structure import AtomArray
 import logging
 
@@ -43,11 +43,6 @@ def validate_array_range(
 class ESMFoldResult(FoldingResult):
     """
     Stores statistics from the ESMFold folding algorithm.
-
-    TODO: Thing whether this should be part of desprot, or modalfold.
-    There might be some clear standards that we would like to enforce in modalfold,
-    but at the same time give user the flexibility to use the output as they want.
-    To be discussed.
     """
 
     input_chains: list[Chain]
@@ -138,6 +133,8 @@ class ESMFold(FoldingOracle):
             import atexit
 
             atexit.register(self.__del__)
+        else:
+            assert os.environ.get('HF_MODEL_DIR'), 'HF_MODEL_DIR must be set when using ESMFold locally'
 
     def __del__(self) -> None:
         """Cleanup the app context when the object is destroyed or at exit"""
@@ -168,9 +165,7 @@ class ESMFold(FoldingOracle):
         if self.use_modal:
             return self._reduce_output(self._remote_fold(self._pre_process(chains)), chains)
         else:
-            logger.info('Given that use_modal is False, trying to fold with ESMFold locally...')
-            logger.info('Assuming that all packages are available locally...')
-            # TODO: Hugging Face Cache might need to be set here properly to make it work
+            logger.debug('Given that use_modal is False, trying to fold with ESMFold locally...')
             return self._reduce_output(self._local_fold(self._pre_process(chains)), chains)
 
     def _remote_fold(self, sequence: List[str]) -> ESMFoldOutput:
@@ -190,18 +185,13 @@ class ESMFold(FoldingOracle):
         """
         Reduce ESMFoldOutput (from ModalFold) to a ESMFoldResult object
         """
-        # TODO: think whether we should output batches, or just a single structure information
-        # otherwise the EnergyTerms that need to always extract the first index in the batch dimension
-        from bagel.constants import atom_order
-        # HACK: This is a hack to get the CA atoms
-        # TODO: Move upstream to ModalFold in version 0.0.11
-
+        # TODO: possibly move removal of batches here, instead of in the EnergyTerms (low priority)
         atoms = output.atom_array
         atoms = reindex_chains(atoms, [chain.chain_ID for chain in chains])
         results = self.result_class(
             input_chains=chains,
             structure=atoms,
-            local_plddt=output.plddt[..., atom_order['CA']],
+            local_plddt=output.plddt[..., atom_order['CA']],  # we only get CA atoms' plddt
             ptm=output.ptm,
             pae=output.predicted_aligned_error,
         )

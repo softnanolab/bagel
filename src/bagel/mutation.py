@@ -86,7 +86,6 @@ class MutationProtocol(ABC):
         chain.mutate_residue(index=index, amino_acid=amino_acid)
 
     def reset_system(self, system: System) -> System:
-        # TODO: add a unit test for this!!!!
         system.total_energy = None
         for state in system.states:
             state._energy_terms_value = {}
@@ -95,7 +94,18 @@ class MutationProtocol(ABC):
 
 
 class Canonical(MutationProtocol):
-    # TODO default factory fix
+    """
+    Canonical mutation protocol, making a substitution at random n residues.
+    It cannot add or remove residues.
+
+    Parameters
+    ----------
+    n_mutations : int, optional
+        Number of mutations to perform in each step.
+    mutation_bias : Dict[str, float], optional
+        Bias for the substitution. The keys are the amino acids, the values are the probabilities.
+    """
+
     def __init__(
         self,
         n_mutations: int = 1,
@@ -118,13 +128,26 @@ class Canonical(MutationProtocol):
 
 
 class GrandCanonical(MutationProtocol):
-    # TODO default factory fix
+    """
+    Grand canonical mutation protocol, making a substitution, addition or removal at random n residues.
+
+    Parameters
+    ----------
+    n_mutations : int, optional
+        Number of mutations to perform in each step.
+    mutation_bias : Dict[str, float], optional
+        Bias for the substitution. The keys are the amino acids, the values are the probabilities.
+    move_probabilities : dict[str, float], optional
+        Probabilities for the different moves. The keys are 'substitution', 'addition', and 'removal', and the values
+        are the probabilities of performing the corresponding move. These should be normalized to sum to 1.
+    """
+
     def __init__(
         self,
         n_mutations: int = 1,
         mutation_bias: Dict[str, float] = mutation_bias_no_cystein,
         move_probabilities: dict[str, float] = {
-            'mutation': 0.5,  # TODO: maybe this should be called substitution? i.e. differentiate the naming here from the protocol
+            'substitution': 0.5,
             'addition': 0.25,
             'removal': 0.25,
         },
@@ -180,14 +203,14 @@ class GrandCanonical(MutationProtocol):
         for i in range(self.n_mutations):
             chain = self.choose_chain(system)
             # Now pick a move to make among removal, addition, or mutation
-            assert self.move_probabilities.keys() == {'mutation', 'addition', 'removal'}, (
+            assert self.move_probabilities.keys() == {'substitution', 'addition', 'removal'}, (
                 'Move probabilities must be mutation, addition and removal'
             )
             move = np.random.choice(
                 list(self.move_probabilities.keys()),
                 p=list(self.move_probabilities.values()),
             )
-            if move == 'mutation':
+            if move == 'substitution':
                 self.mutate_random_residue(chain=chain)
             elif move == 'addition':
                 self.add_random_residue(chain=chain, system=system)
@@ -198,11 +221,3 @@ class GrandCanonical(MutationProtocol):
         delta_energy = system.get_total_energy() - old_system.get_total_energy()
 
         return system, delta_energy
-
-
-@dataclass
-class Genetic(MutationProtocol):
-    name: str = 'GeneticAlgorithm'
-
-    def mate_chains(self, system: System) -> None:
-        raise NotImplementedError
