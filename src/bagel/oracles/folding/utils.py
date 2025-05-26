@@ -6,6 +6,7 @@ from biotite.structure.io.pdb import PDBFile
 
 import pandas as pd  # This is necessary because its "unique" method does not sort elements and leaves them as they are
 
+
 def pdb_file_to_atomarray(pdb_path: Union[str, StringIO]) -> AtomArray:
     assert isinstance(pdb_path, (str, StringIO)), 'pdb_path must be a string or StringIO'
     if isinstance(pdb_path, str):

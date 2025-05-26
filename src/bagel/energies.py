@@ -60,9 +60,9 @@ class EnergyTerm(ABC):
             The oracle to use for the energy term.
         inheritable: bool
             Whether the energy term is inheritable. This is only relevant for :class:`~bagel.mutation.GrandCanonical`.
-            In that type of simulation when adding a new residues, the "inheritable" attribute decides whether or not 
+            In that type of simulation when adding a new residues, the "inheritable" attribute decides whether or not
             the new residue will be added to the residues for which this term is calculated. In general, a new residue
-            inherits all energy terms of one of its neighbours (chosen randomly to be the left or right neighbour), 
+            inherits all energy terms of one of its neighbours (chosen randomly to be the left or right neighbour),
             if these terms are inheritable.
         weight: float = 1.0
             The weight of the energy term.
@@ -211,7 +211,7 @@ class PTMEnergy(EnergyTerm):
 
 
 class ChemicalPotentialEnergy(EnergyTerm):
-    """
+    r"""
     An energy term that purely depends on the number of residues present in a system.
     Note for statistical mechanics: for some choice of parameters, adding this term is equivalent to making a simulation
     in the grand-canonical ensemble, where the free-energy that is minimized is:
