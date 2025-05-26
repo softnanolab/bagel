@@ -8,7 +8,7 @@ Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
 
 from abc import ABC, abstractmethod
 from typing import Any, Type
-from copy import deepcopy
+import pathlib as pl
 import logging
 from pydantic import BaseModel
 from ..chain import Chain
@@ -23,6 +23,10 @@ class OracleResult(BaseModel):
     """
 
     input_chains: list[Chain]
+
+    @abstractmethod
+    def save_attributes(self, filepath: pl.Path) -> None:
+        pass
 
 
 class Oracle(ABC):

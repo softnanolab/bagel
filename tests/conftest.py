@@ -159,9 +159,9 @@ def small_structure_state(
     folding_result = bg.oracles.folding.ESMFoldResult(
         input_chains=small_structure_chains,
         structure=small_structure,
-        ptm=np.array([0.7]),
-        pae=np.zeros((len(small_structure), len(small_structure))),
-        local_plddt=np.zeros(len(small_structure)),
+        ptm=np.array([0.7])[None, :],
+        pae=np.zeros((len(small_structure), len(small_structure)))[None, :, :],
+        local_plddt=np.zeros(len(small_structure))[None, :],
     )
     state._energy_terms_value = {
         energy_terms[0].name: -0.7,
@@ -267,9 +267,9 @@ def mixed_structure_state(
     folding_result = bg.oracles.folding.ESMFoldResult(
         input_chains=line_structure_chains + square_structure_chains,
         structure=concatenate((line_structure, square_structure)),
-        ptm=np.array([0.4]),
-        pae=np.zeros((len(line_structure), len(line_structure))),
-        local_plddt=np.zeros(len(line_structure)),
+        ptm=np.array([0.4])[None, :],
+        pae=np.zeros((len(line_structure), len(line_structure)))[None, :, :],
+        local_plddt=np.zeros(len(line_structure))[None, :],
     )
     state._energy = 0.1
     state._energy_terms_value = {
@@ -287,7 +287,6 @@ def mixed_system(small_structure_state: bg.State, mixed_structure_state: bg.Stat
         states=[small_structure_state, mixed_structure_state],
         name='mixed_system',
     )
-    system._old_energy = 0.67
     system.total_energy = -0.4
     return system
 

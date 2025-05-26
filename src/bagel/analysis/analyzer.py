@@ -3,8 +3,18 @@ import pathlib as pl
 from abc import ABC, abstractmethod
 import matplotlib.pyplot as plt
 import logging
+from biotite.sequence.io.fasta import FastaFile
+from dataclasses import dataclass
+from biotite.structure import AtomArray
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class State:
+    name: str
+    sequences: dict[int, str]
+    # structures: dict[int, AtomArray] not implemented yet
 
 
 class Analyzer(ABC):
@@ -22,9 +32,36 @@ class MonteCarloAnalyzer(Analyzer):
         self._load_data()
 
     def _load_data(self):
+        # Load optimization and energy data
         self.optimization_df = pd.read_csv(self.path / 'optimization.log')
         self.current_energies_df = pd.read_csv(self.path / 'current' / 'energies.csv')
         self.best_energies_df = pd.read_csv(self.path / 'best' / 'energies.csv')
+
+        # Initialize dictionaries for FASTA data
+        self.current_sequences = {}
+        self.best_sequences = {}
+
+        # Load FASTA files from 'current' and 'best' directories
+        for directory in ['current', 'best']:
+            fasta_dir = self.path / directory
+            if not fasta_dir.exists():
+                print(f'Warning: Directory {fasta_dir} does not exist.')
+                continue
+
+            for fasta_file in fasta_dir.glob('*.fasta'):
+                state_name = fasta_file.stem  # e.g., 'state_A'
+                state_sequences = []
+
+                fasta = FastaFile.read(fasta_file)
+                num_sequences = len(fasta.lines) // 2  # each sequence is 2 lines, i.e. header and sequence
+
+                for step in range(num_sequences):
+                    state_sequences.append(fasta[str(step)])
+
+                if directory == 'current':
+                    self.current_sequences[state_name] = state_sequences
+                else:
+                    self.best_sequences[state_name] = state_sequences
 
     def analyze(self):
         pass

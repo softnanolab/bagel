@@ -108,6 +108,24 @@ def test_system_dump_logs_folder_is_correct(mixed_system: bg.System) -> None:
         'incorrect energy information saved'
     )
 
+    # load the pae and plddt files
+    small_pae = np.loadtxt(experiment_folder / 'structures' / f'small_{oracle_name}_{mock_step}.pae')
+    small_plddt = np.loadtxt(experiment_folder / 'structures' / f'small_{oracle_name}_{mock_step}.plddt')
+    mixed_pae = np.loadtxt(experiment_folder / 'structures' / f'mixed_{oracle_name}_{mock_step}.pae')
+    mixed_plddt = np.loadtxt(experiment_folder / 'structures' / f'mixed_{oracle_name}_{mock_step}.plddt')
+    assert np.array_equal(small_pae, mixed_system.states[0]._oracles_result[oracle].pae[0]), (
+        'incorrect pae information saved'
+    )
+    assert np.array_equal(small_plddt, mixed_system.states[0]._oracles_result[oracle].local_plddt[0]), (
+        'incorrect plddt information saved'
+    )
+    assert np.array_equal(mixed_pae, mixed_system.states[1]._oracles_result[oracle].pae[0]), (
+        'incorrect pae information saved'
+    )
+    assert np.array_equal(mixed_plddt, mixed_system.states[1]._oracles_result[oracle].local_plddt[0]), (
+        'incorrect plddt information saved'
+    )
+
     shutil.rmtree(experiment_folder)
 
 

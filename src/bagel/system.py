@@ -87,10 +87,7 @@ class System:
                     if isinstance(oracle, FoldingOracle) and isinstance(oracle_result, FoldingResult):
                         oracle_name = type(oracle).__name__
                         state.to_cif(oracle, structure_path / f'{state.name}_{oracle_name}_{step}.cif')
-                        # np.savetxt(structure_path / f'{state.name}_{oracle_name}_{step}.pae.txt', oracle_result.pae)
-                        # np.savetxt(
-                        #     structure_path / f'{state.name}_{oracle_name}_{step}.plddt.txt', oracle_result.local_plddt
-                        # )
+                        oracle_result.save_attributes(structure_path / f'{state.name}_{oracle_name}_{step}')
                     else:
                         logger.debug(
                             f'Skipping {oracle.__class__.__name__} for CIF export, as it is not a FoldingOracle'

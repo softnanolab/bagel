@@ -232,9 +232,6 @@ class SimulatedAnnealing(MetropolisMinimizer):
     ) -> None:
         if experiment_name is None:
             experiment_name = f'simulated_annealing_{time_stamp()}'
-
-        self.initial_temperature = initial_temperature
-        self.final_temperature = final_temperature
         super().__init__(
             mutator=mutator,
             temperature=initial_temperature,
@@ -244,6 +241,9 @@ class SimulatedAnnealing(MetropolisMinimizer):
             preserve_best_system_every_n_steps=preserve_best_system_every_n_steps,
             log_path=log_path,
         )
+
+        self.initial_temperature = initial_temperature
+        self.final_temperature = final_temperature
         self.temperature_schedule = np.linspace(
             start=self.initial_temperature, stop=self.final_temperature, num=self.n_steps
         )  # type: ignore
@@ -267,8 +267,16 @@ class SimulatedTempering(MetropolisMinimizer):
     ) -> None:
         if experiment_name is None:
             experiment_name = f'simulated_tempering_{time_stamp()}'
-
         total_n_steps = (n_steps_low + n_steps_high) * n_cycles
+        super().__init__(
+            mutator=mutator,
+            temperature=low_temperature,
+            n_steps=total_n_steps,
+            experiment_name=experiment_name,
+            log_frequency=log_frequency,
+            preserve_best_system_every_n_steps=preserve_best_system_every_n_steps,
+            log_path=log_path,
+        )
 
         self.high_temperature = high_temperature
         self.low_temperature = low_temperature
@@ -283,13 +291,3 @@ class SimulatedTempering(MetropolisMinimizer):
             ]
         )
         self.temperature_schedule = np.tile(cycle_temperatures, reps=self.n_cycles)  # type: ignore
-
-        super().__init__(
-            mutator=mutator,
-            temperature=low_temperature,
-            n_steps=total_n_steps,
-            experiment_name=experiment_name,
-            log_frequency=log_frequency,
-            preserve_best_system_every_n_steps=preserve_best_system_every_n_steps,
-            log_path=log_path,
-        )
