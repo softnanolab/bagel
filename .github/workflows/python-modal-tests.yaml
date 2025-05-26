@@ -29,4 +29,4 @@ jobs:
         run: uv run modal token set --token-id ${{ secrets.MODAL_API_TOKEN_ID }} --token-secret ${{ secrets.MODAL_API_TOKEN_SECRET }}
 
       - name: Run tests
-        run: uv run pytest --folding modal
+        run: uv run pytest --oracles modal -n auto

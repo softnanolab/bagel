@@ -7,13 +7,18 @@ Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
 """
 
 import numpy as np
-from .folding import FoldingAlgorithm
+
+# from .folding import FoldingAlgorithm
 from .chain import Chain
 from .system import System
 from .constants import mutation_bias_no_cystein
 from dataclasses import dataclass, field
 from typing import Dict, Tuple
 from abc import ABC, abstractmethod
+from .oracles.base import OraclesResultDict
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -23,11 +28,28 @@ class MutationProtocol(ABC):
 
     @abstractmethod
     def one_step(
-        self, folding_algorithm: FoldingAlgorithm, system: System, old_system: System
-    ) -> Tuple[System, float, float]:
+        self,
+        system: System,
+        old_system: System,
+    ) -> tuple[System, float]:
         """
-        Makes one mutation and returns the new system, the energy difference and the difference in size
-        compared to the old system.
+        Abstract method for performing a single mutation step.
+
+        Parameters
+        ----------
+        system : System
+            The system to be mutated
+        old_system : System
+            The original system before mutation, used for comparison
+
+        Returns
+        -------
+        System
+            The mutated system
+        float
+            The energy difference between the mutated and original system
+        float
+            The difference in chemical potential contribution (related to size) between the mutated and original system
         """
         pass
 
@@ -67,56 +89,71 @@ class MutationProtocol(ABC):
         system.total_energy = None
         for state in system.states:
             state._energy_terms_value = {}
-            state._structure = None
-            state._folding_metrics = None
+            state._oracles_result = OraclesResultDict()
         return system
 
 
 class Canonical(MutationProtocol):
-    # TODO default factory fix
+    """
+    Canonical mutation protocol, making a substitution at random n residues.
+    It cannot add or remove residues.
+
+    Parameters
+    ----------
+    n_mutations : int, optional
+        Number of mutations to perform in each step.
+    mutation_bias : Dict[str, float], optional
+        Bias for the substitution. The keys are the amino acids, the values are the probabilities.
+    """
+
     def __init__(
         self,
-        chemical_potential: float = 0.0,
         n_mutations: int = 1,
         mutation_bias: Dict[str, float] = mutation_bias_no_cystein,
     ):
-        self.chemical_potential = chemical_potential
         self.n_mutations = n_mutations
         self.mutation_bias = mutation_bias
 
     def one_step(
-        self, folding_algorithm: FoldingAlgorithm, system: System, old_system: System
-    ) -> Tuple[System, float, float]:
+        self,
+        system: System,
+        old_system: System,
+    ) -> tuple[System, float]:
         for i in range(self.n_mutations):
             chain = self.choose_chain(system)
             self.mutate_random_residue(chain=chain)
-        # print( "Canonical mutation")
-        # for i in range( len( system.states ) ):
-        #    for j in range( len( system.states[i].chains )):
-        #        print( f"NEW state[{i}].chains[{j}] {system.states[i].chains[j].sequence}")
-        #        print( f"OLD state[{i}].chains[{j}] {old_system.states[i].chains[j].sequence}")
         self.reset_system(system=system)  # Reset the system so it knows it must recalculate fold and energy
-        # print( f"HERE {system.states[0]._folding_metrics}" )
-        delta_energy = system.get_total_energy(folding_algorithm) - old_system.get_total_energy(folding_algorithm)
-        return system, delta_energy, 0.0
+        delta_energy = system.get_total_energy() - old_system.get_total_energy()
+        return system, delta_energy
 
 
 class GrandCanonical(MutationProtocol):
-    # TODO default factory fix
+    """
+    Grand canonical mutation protocol, making a substitution, addition or removal at random n residues.
+
+    Parameters
+    ----------
+    n_mutations : int, optional
+        Number of mutations to perform in each step.
+    mutation_bias : Dict[str, float], optional
+        Bias for the substitution. The keys are the amino acids, the values are the probabilities.
+    move_probabilities : dict[str, float], optional
+        Probabilities for the different moves. The keys are 'substitution', 'addition', and 'removal', and the values
+        are the probabilities of performing the corresponding move. These should be normalized to sum to 1.
+    """
+
     def __init__(
         self,
-        chemical_potential: float = 0.0,
         n_mutations: int = 1,
         mutation_bias: Dict[str, float] = mutation_bias_no_cystein,
         move_probabilities: dict[str, float] = {
-            'mutation': 0.5,
+            'substitution': 0.5,
             'addition': 0.25,
             'removal': 0.25,
         },
     ):
         self.n_mutations = n_mutations
         self.mutation_bias = mutation_bias
-        self.chemical_potential = chemical_potential
         self.move_probabilities = move_probabilities
         # Check that no probabilities are negative
         if any([prob < 0 for prob in self.move_probabilities.values()]):
@@ -127,8 +164,8 @@ class GrandCanonical(MutationProtocol):
             self.move_probabilities = {
                 move: prob / sum(self.move_probabilities.values()) for move, prob in self.move_probabilities.items()
             }
-            print('Recalcalculated move probabilties to ensure they sum to 1')
-            print(self.move_probabilities)
+            logger.warning('Recalculated move probabilties to ensure they sum to 1')
+            logger.info(self.move_probabilities)
 
     def remove_random_residue(self, chain: Chain, system: System) -> None:
         # First of all, only try this if it does not bring chains to 0 length
@@ -159,41 +196,28 @@ class GrandCanonical(MutationProtocol):
             state.add_residue_to_all_energy_terms(chain_ID=chain_ID, residue_index=index)
 
     def one_step(
-        self, folding_algorithm: FoldingAlgorithm, system: System, old_system: System
-    ) -> Tuple[System, float, float]:
+        self,
+        system: System,
+        old_system: System,
+    ) -> tuple[System, float]:
         for i in range(self.n_mutations):
             chain = self.choose_chain(system)
             # Now pick a move to make among removal, addition, or mutation
-            # print('Current probabilties')
-            print(self.move_probabilities)
-            assert self.move_probabilities.keys() == {'mutation', 'addition', 'removal'}, (
+            assert self.move_probabilities.keys() == {'substitution', 'addition', 'removal'}, (
                 'Move probabilities must be mutation, addition and removal'
             )
             move = np.random.choice(
                 list(self.move_probabilities.keys()),
                 p=list(self.move_probabilities.values()),
             )
-            if move == 'mutation':
-                # print( "mutation")
+            if move == 'substitution':
                 self.mutate_random_residue(chain=chain)
             elif move == 'addition':
-                # print( "addition")
                 self.add_random_residue(chain=chain, system=system)
             elif move == 'removal':
-                # print( "removal")
                 self.remove_random_residue(chain=chain, system=system)
 
         self.reset_system(system=system)  # Reset the system so it knows it must recalculate fold and energy
-        # print(f'HERE {system.states[0]._folding_metrics}')
-        delta_energy = system.get_total_energy(folding_algorithm) - old_system.get_total_energy(folding_algorithm)
-        delta_chemical = system.chemical_potential_contribution() - old_system.chemical_potential_contribution()
+        delta_energy = system.get_total_energy() - old_system.get_total_energy()
 
-        return system, delta_energy, delta_chemical
-
-
-@dataclass
-class Genetic(MutationProtocol):
-    name: str = 'GeneticAlgorithm'
-
-    def mate_chains(self, system: System) -> None:
-        raise NotImplementedError
+        return system, delta_energy

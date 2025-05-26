@@ -37,7 +37,6 @@ mutation_bias_no_cystein = {aa: 1.0 / (len(aa_dict) - 1) if aa != 'C' else 0.0 f
 
 hydrophobic_residues = ('VAL', 'ILE', 'LEU', 'PHE', 'MET', 'TRP')
 
-# TODO: maybe we should add O (O involved in peptide bonds) to the list of backbone atoms
 backbone_atoms = ('CA', 'N', 'C')
 
 angstrom = 1.0  # Units of measure for distances
@@ -55,3 +54,47 @@ max_sasa_values = {
 }
 
 probe_radius_water = 1.4 * angstrom
+
+# From OpenFold, used in ESMFold
+# This mapping is used when we need to store atom data in a format that requires
+# fixed atom data size for every residue (e.g. a numpy array).
+atom_types = [
+    'N',
+    'CA',
+    'C',
+    'CB',
+    'O',
+    'CG',
+    'CG1',
+    'CG2',
+    'OG',
+    'OG1',
+    'SG',
+    'CD',
+    'CD1',
+    'CD2',
+    'ND1',
+    'ND2',
+    'OD1',
+    'OD2',
+    'SD',
+    'CE',
+    'CE1',
+    'CE2',
+    'CE3',
+    'NE',
+    'NE1',
+    'NE2',
+    'OE1',
+    'OE2',
+    'CH2',
+    'NH1',
+    'NH2',
+    'OH',
+    'CZ',
+    'CZ2',
+    'CZ3',
+    'NZ',
+    'OXT',
+]
+atom_order = {atom_type: i for i, atom_type in enumerate(atom_types)}
