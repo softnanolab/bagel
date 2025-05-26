@@ -638,9 +638,6 @@ class SeparationEnergy(EnergyTerm):
         structure = oracles_result.get_structure(self.oracle)
         backbone_mask = np.isin(structure.atom_name, backbone_atoms)
         group_1_mask = self.get_atom_mask(structure, residue_group_index=0)
-        import pdb
-
-        pdb.set_trace()
         group_2_mask = self.get_atom_mask(structure, residue_group_index=1)
 
         group_1_atoms = structure[backbone_mask & group_1_mask]
