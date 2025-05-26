@@ -92,7 +92,6 @@ def test_energies_get_correct_atom_mask(
     assert all(mask == np.array([True, True, False, False, False]))
 
 
-
 # Note that here we do ESMFold specific tests, but these should similar extend to other FoldingOracles
 # Once we employ more FoldingOracles, we can make these tests more general, by tackling the FoldingOracle class directly
 def test_PTMEnergy(
@@ -301,6 +300,7 @@ def test_RingSymmetryEnergy_with_direct_neighbours_only(
     )
     unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
     # centroids of each residue make a 2d square of length 1. The direct neighbour distance for each atom is 1
+    import pdb; pdb.set_trace()
     assert np.isclose(unweighted_energy, 0), 'unweighted energy is incorrect'
     assert np.isclose(weighted_energy, 0 * 2), 'weighted energy is incorrect'
 
@@ -478,13 +478,13 @@ def test_embeddings_similarity_energy(
     esm2: bg.oracles.embedding.ESM2,
 ):
     esmfold = bg.oracles.folding.ESMFold()
-    
+
     # Enforce that the oracle is an instance of EmbeddingOracle
     with pytest.raises(AssertionError) as e:
         energy = bg.energies.EmbeddingsSimilarityEnergy(
             oracle=esmfold,
             residues=square_structure_residues,
-            reference_embeddings=np.zeros((len(square_structure_residues), 1280))  # Using typical ESM2 embedding size
+            reference_embeddings=np.zeros((len(square_structure_residues), 1280)),  # Using typical ESM2 embedding size
         )
         assert 'Oracle must be an instance of EmbeddingOracle' in str(e.value)
 
@@ -493,64 +493,72 @@ def test_embeddings_similarity_energy(
         energy = bg.energies.EmbeddingsSimilarityEnergy(
             oracle=esm2,
             residues=square_structure_residues,
-            reference_embeddings=np.zeros((len(square_structure_residues) - 1, 1280))  # Using typical ESM2 embedding size
+            reference_embeddings=np.zeros(
+                (len(square_structure_residues) - 1, 1280)
+            ),  # Using typical ESM2 embedding size
         )
-        assert 'Number of reference embeddings (1) does not match number of residues to include in energy term (2)' in str(e.value)
+        assert (
+            'Number of reference embeddings (1) does not match number of residues to include in energy term (2)'
+            in str(e.value)
+        )
 
     # Test dynamic reference embeddings
     # Create initial two-chain multimer state
-    chain_A = bg.Chain([
-        bg.Residue(name='A', chain_ID='A', index=0),
-        bg.Residue(name='R', chain_ID='A', index=1),
-        bg.Residue(name='N', chain_ID='A', index=2),
-    ])
-    chain_B = bg.Chain([
-        bg.Residue(name='D', chain_ID='B', index=0),
-        bg.Residue(name='C', chain_ID='B', index=1),
-    ])
-    
+    chain_A = bg.Chain(
+        [
+            bg.Residue(name='A', chain_ID='A', index=0),
+            bg.Residue(name='R', chain_ID='A', index=1),
+            bg.Residue(name='N', chain_ID='A', index=2),
+        ]
+    )
+    chain_B = bg.Chain(
+        [
+            bg.Residue(name='D', chain_ID='B', index=0),
+            bg.Residue(name='C', chain_ID='B', index=1),
+        ]
+    )
+
     # Create energy term tracking specific residues across both chains
     tracked_residues = [
         chain_A.residues[1],  # A1
         chain_B.residues[0],  # B0
         chain_A.residues[2],  # A2
     ]
-    
+
     energy = bg.energies.EmbeddingsSimilarityEnergy(
         oracle=esm2,
         residues=tracked_residues,
-        reference_embeddings=np.zeros((len(tracked_residues), 1280))  # Using typical ESM2 embedding size
+        reference_embeddings=np.zeros((len(tracked_residues), 1280)),  # Using typical ESM2 embedding size
     )
-    
+
     # Initial state - verify correct indices
     # Expected: [1, 3, 2] because:
     # Chain A: indices 0,1,2 (first 3 positions)
     # Chain B: indices 0,1 (next 2 positions)
     # So B0 is at global position 3
     initial_indices = energy.conserved_index_list([chain_A, chain_B])
-    assert initial_indices == [1, 3, 2], f"Initial indices incorrect: {initial_indices}"
-    
+    assert initial_indices == [1, 3, 2], f'Initial indices incorrect: {initial_indices}'
+
     # Test dynamic changes:
     # 1. Add residue before tracked residue in chain A
     new_residue = bg.Residue(name='W', chain_ID='A', index=1)
     energy.shift_residues_indices_before_addition(chain_id=new_residue.chain_ID, res_index=new_residue.index)
     chain_A.add_residue(amino_acid=new_residue.name, index=new_residue.index)
-    
+
     # Now indices should be [2, 4, 3] because:
     # - A1 moved to position 2
     # - B0 moved to position 4 (due to new residue in chain A)
     # - A2 moved to position 3
     indices_after_addition = energy.conserved_index_list([chain_A, chain_B])
-    assert indices_after_addition == [2, 4, 3], f"Indices after addition incorrect: {indices_after_addition}"
-    
+    assert indices_after_addition == [2, 4, 3], f'Indices after addition incorrect: {indices_after_addition}'
+
     # 2. Remove a residue from chain A that affects positions
     chain_A.remove_residue(index=0)
     # Update energy term indices
     energy.remove_residue(chain_id='A', res_index=0)
     energy.shift_residues_indices_after_removal(chain_id='A', res_index=0)
-    
+
     # Now indices should be [1, 3, 2] because:
     # - Removing first residue shifts everything back
     indices_after_removal = energy.conserved_index_list([chain_A, chain_B])
-    assert indices_after_removal == [1, 3, 2], f"Indices after removal incorrect: {indices_after_removal}"
-
+    assert indices_after_removal == [1, 3, 2], f'Indices after removal incorrect: {indices_after_removal}'

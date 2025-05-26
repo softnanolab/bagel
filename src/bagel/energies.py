@@ -1067,12 +1067,9 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
 
     def conserved_index_list(self, chains: list[Chain]) -> list[int]:
         """Returns the indices of the conserved residues (stored in .residue_group[0]) in the pLM embedding array."""
-        # TODO: This is a completely untested function and needs to be tested!!!!
-        # TODO: Also, it might not be fully necessary, but need to think about it
-        # This is only relevant with a multimer, which is yet to be implemented, let's do other things first
         conserved_chain_id, conserved_res_id = self.residue_groups[0]
         global_index_list = []
-        
+
         # Create a mapping of (chain_id, res_index) to global index
         offset = 0
         chain_res_to_global = {}
@@ -1080,9 +1077,9 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
             for j, residue in enumerate(chain.residues):
                 chain_res_to_global[(chain.chain_ID, residue.index)] = offset + j
             offset += len(chain.residues)
-        
+
         # Process residues in the order they appear in conserved_chain_id and conserved_res_id
         for chain_id, res_id in zip(conserved_chain_id, conserved_res_id):
             global_index_list.append(chain_res_to_global[(chain_id, res_id)])
-            
+
         return global_index_list

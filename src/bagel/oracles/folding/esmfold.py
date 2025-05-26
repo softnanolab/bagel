@@ -156,7 +156,7 @@ class ESMFold(FoldingOracle):
         results = self.result_class(
             input_chains=chains,
             structure=atoms,
-            local_plddt=output.plddt[..., atom_order['CA']], # we only get CA atoms' plddt
+            local_plddt=output.plddt[..., atom_order['CA']],  # we only get CA atoms' plddt
             ptm=output.ptm,
             pae=output.predicted_aligned_error,
         )

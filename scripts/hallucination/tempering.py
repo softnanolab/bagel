@@ -10,8 +10,8 @@ esmfold = bg.folding.ESMFold(use_modal=True)
 state = bg.State(
     chains=[bg.Chain(residues)],
     energy_terms=[
-        bg.energies.PTMEnergy(weight=1.0), 
-        bg.energies.OverallPLDDTEnergy(weight=1.0), 
+        bg.energies.PTMEnergy(weight=1.0),
+        bg.energies.OverallPLDDTEnergy(weight=1.0),
         bg.energies.HydrophobicEnergy(weight=5.0)
         ],
     name='state_A',

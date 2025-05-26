@@ -2,6 +2,7 @@ import bagel as bg
 import numpy as np
 from biotite.structure import AtomArray
 
+
 def test_state_remove_residue_from_all_energy_terms_removes_correct_residue(mixed_structure_state: bg.State) -> None:
     mixed_structure_state.chains[2].remove_residue(index=2)
     mixed_structure_state.remove_residue_from_all_energy_terms(chain_ID='E', residue_index=2)
@@ -42,8 +43,10 @@ def test_state_add_residue_to_all_energy_terms_adds_residue_to_residue_group(mix
     assert np.all(chain_ids == ['E', 'E', 'E', 'E'])  # extra D not added
     assert np.all(res_ids == [0, 1, 2, 3])  # index of original residue shifted up
 
+
 def test_state_get_energy(fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch) -> None:
     """Test the get_energy method of State class."""
+
     # Mock the predict method of ESMFold
     def mock_predict(self, chains):
         # Create a mock structure with minimal required data
@@ -53,13 +56,14 @@ def test_state_get_energy(fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch)
             structure=mock_structure,
             ptm=np.array([0.7]),  # Mock plDDT value
             pae=np.zeros((0, 0)),  # Empty PAE matrix
-            local_plddt=np.array([])  # Empty local plDDT scores
+            local_plddt=np.array([]),  # Empty local plDDT scores
         )
-    monkeypatch.setattr(bg.oracles.folding.ESMFold, "predict", mock_predict)
-    
+
+    monkeypatch.setattr(bg.oracles.folding.ESMFold, 'predict', mock_predict)
+
     # Create a mock Chain
     chain = bg.Chain([bg.Residue(name='A', chain_ID='A', index=i) for i in range(3)])
-    
+
     # Create mock energy terms with different weights
     class MockEnergyTerm(bg.energies.EnergyTerm):
         def compute(self, oracles_result):
@@ -78,54 +82,48 @@ def test_state_get_energy(fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch)
         weight=3.0,
         inheritable=True,
     )
-    
+
     # Create state with mock components
-    state = bg.State(
-        name='test_state',
-        chains=[chain],
-        energy_terms=[energy_term1, energy_term2]
-    )
-    
+    state = bg.State(name='test_state', chains=[chain], energy_terms=[energy_term1, energy_term2])
+
     # Test 1: First call - should calculate everything from scratch
     energy = state.get_energy()
     assert energy == 5.0  # 1.0 * 2.0 + 1.0 * 3.0
     assert state._energy == 5.0
     assert state._energy_terms_value == {'MockEnergyTerm1': 1.0, 'MockEnergyTerm2': 1.0}
     assert fake_esmfold in state._oracles_result
-    
+
     # Test 2: Second call - should use cached values
     original_oracles_result = state._oracles_result.copy()
     energy = state.get_energy()
     assert energy == 5.0
     assert state._oracles_result == original_oracles_result  # Should not recalculate oracle results
-    
+
     # Test 3: Test with empty energy terms
-    empty_state = bg.State(
-        name='empty_state',
-        chains=[chain],
-        energy_terms=[]
-    )
+    empty_state = bg.State(name='empty_state', chains=[chain], energy_terms=[])
     assert empty_state.get_energy() == 0.0
-    
+
     # Test 4: Test with multiple oracles
     class MockOracleA(bg.oracles.Oracle):
         result_class = str  # Define result class for this mock oracle
+
         def predict(self, chains):
-            return "ResultA"
-            
+            return 'ResultA'
+
     class MockOracleB(bg.oracles.Oracle):
         result_class = str  # Define result class for this mock oracle
+
         def predict(self, chains):
-            return "ResultB"
-    
+            return 'ResultB'
+
     class MultiOracleEnergyTerm(bg.energies.EnergyTerm):
         def compute(self, oracles_result):
             # Just return 1.0 for both weighted and unweighted
             return 1.0, 1.0
-            
+
     oracle_a = MockOracleA()
     oracle_b = MockOracleB()
-    
+
     term_a = MultiOracleEnergyTerm(
         name='MultiOracleTermA',
         oracle=oracle_a,  # Single oracle per term
@@ -138,15 +136,10 @@ def test_state_get_energy(fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch)
         weight=2.0,
         inheritable=True,
     )
-    
-    multi_oracle_state = bg.State(
-        name='multi_oracle_state',
-        chains=[chain],
-        energy_terms=[term_a, term_b]
-    )
-    
+
+    multi_oracle_state = bg.State(name='multi_oracle_state', chains=[chain], energy_terms=[term_a, term_b])
+
     energy = multi_oracle_state.get_energy()
-    import pdb; pdb.set_trace()
     assert energy == 2.0  # 1.0 + 2.0
     assert len(multi_oracle_state._oracles_result) == 2  # Should have results from both oracles
     assert oracle_a in multi_oracle_state._oracles_result

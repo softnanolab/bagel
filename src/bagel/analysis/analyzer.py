@@ -6,6 +6,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class Analyzer(ABC):
     def __init__(self, path: str):
         self.path = pl.Path(path)
@@ -14,18 +15,20 @@ class Analyzer(ABC):
     def analyze(self):
         pass
 
+
 class MonteCarloAnalyzer(Analyzer):
     def __init__(self, path: str):
         super().__init__(path)
         self._load_data()
 
     def _load_data(self):
-        self.optimization_df = pd.read_csv(self.path / "optimization.log")
-        self.current_energies_df = pd.read_csv(self.path / "current" / "energies.csv")
-        self.best_energies_df = pd.read_csv(self.path / "best" / "energies.csv")
-        
+        self.optimization_df = pd.read_csv(self.path / 'optimization.log')
+        self.current_energies_df = pd.read_csv(self.path / 'current' / 'energies.csv')
+        self.best_energies_df = pd.read_csv(self.path / 'best' / 'energies.csv')
+
     def analyze(self):
         pass
+
 
 class SimulatedTemperingAnalyzer(MonteCarloAnalyzer):
     def __init__(self, path: str):
@@ -47,16 +50,14 @@ class SimulatedTemperingAnalyzer(MonteCarloAnalyzer):
 
         # Create plot
         fig, ax = plt.subplots(figsize=(10, 5))
-        
+
         # Plot cumulative evolution
         for temperature in sorted(self.acceptance_rates.keys()):
             temp_data = self.optimization_df[self.optimization_df['temperature'] == temperature].sort_values('step')
-            ax.plot(
-                temp_data['step'],
-                self.acceptance_rates[temperature],
-                label=f'Temperature {temperature}'
+            ax.plot(temp_data['step'], self.acceptance_rates[temperature], label=f'Temperature {temperature}')
+            logger.info(
+                f'Temperature {temperature} final acceptance rate: {self.acceptance_rates[temperature][-1]:.3f}'
             )
-            logger.info(f"Temperature {temperature} final acceptance rate: {self.acceptance_rates[temperature][-1]:.3f}")
 
         ax.set_xlabel('Step')
         ax.set_ylabel('Acceptance Rate')

@@ -105,6 +105,7 @@ class Canonical(MutationProtocol):
     mutation_bias : Dict[str, float], optional
         Bias for the substitution. The keys are the amino acids, the values are the probabilities.
     """
+
     def __init__(
         self,
         n_mutations: int = 1,
@@ -140,6 +141,7 @@ class GrandCanonical(MutationProtocol):
         Probabilities for the different moves. The keys are 'substitution', 'addition', and 'removal', and the values
         are the probabilities of performing the corresponding move. These should be normalized to sum to 1.
     """
+
     def __init__(
         self,
         n_mutations: int = 1,

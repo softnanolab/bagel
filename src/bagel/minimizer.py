@@ -311,7 +311,6 @@ class SimulatedTempering(MetropolisMinimizer):
         )
         self.temperature_schedule = np.tile(cycle_temperatures, reps=self.n_cycles)
 
-
         super().__init__(
             mutator=mutator,
             temperature=low_temperature,
