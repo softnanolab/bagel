@@ -59,7 +59,11 @@ class EnergyTerm(ABC):
         oracle: Oracle
             The oracle to use for the energy term.
         inheritable: bool
-            Whether the energy term is inheritable.
+            Whether the energy term is inheritable. This is only relevant for :class:`~bagel.mutation.GrandCanonical`.
+            In that type of simulation when adding a new residues, the "inheritable" attribute decides whether or not 
+            the new residue will be added to the residues for which this term is calculated. In general, a new residue
+            inherits all energy terms of one of its neighbours (chosen randomly to be the left or right neighbour), 
+            if these terms are inheritable.
         weight: float = 1.0
             The weight of the energy term.
         """
@@ -209,8 +213,15 @@ class PTMEnergy(EnergyTerm):
 class ChemicalPotentialEnergy(EnergyTerm):
     """
     An energy term that purely depends on the number of residues present in a system.
-    For some choices of parameters, this is equivalent to a chemical potential contribution to the grand-canonical
-    free energy Omega = E - mu * N
+    Note for statistical mechanics: for some choice of parameters, adding this term is equivalent to making a simulation
+    in the grand-canonical ensemble, where the free-energy that is minimized is:
+
+    .. math::
+
+        \Omega = E - \mu N
+
+    where :math:`\Omega` is the grand potential, :math:`E` is the energy, :math:`\mu` is the chemical potential,
+    and :math:`N` is the number of residues.
     """
 
     def __init__(
@@ -1029,7 +1040,6 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
         super().__init__(name=name, oracle=oracle, inheritable=False, weight=weight)
         # with the current implementation, the energy term is not inheritable, as reference embeddings would change
         # and would need to be changed dynamically, which is not fully supported yet
-        # TODO: add assertions for embedding dimension with respect to reference embeddings dimension (i.e. 650M model has 1280 dimensions) (low-priority)
         self.residue_groups = [residue_list_to_group(residues)]
         self.reference_embeddings = reference_embeddings
         assert self.reference_embeddings.shape[0] == len(self.residue_groups[0][0]), (

@@ -9,7 +9,6 @@ from unittest.mock import Mock
 
 
 def test_system_dump_config_file_is_correct(mixed_system: bg.System) -> None:
-    # TODO: this should be likely also tested through the Minimizer somehow, as that initializes the folder
     mock_output_folder = pl.Path(__file__).resolve().parent.parent / 'data' / mixed_system.name
     mock_experiment = test_system_dump_config_file_is_correct.__name__
 
@@ -45,7 +44,6 @@ def test_system_dump_config_file_is_correct(mixed_system: bg.System) -> None:
 
 
 def test_system_dump_logs_folder_is_correct(mixed_system: bg.System) -> None:
-    # TODO: this should be likely also tested through the Minimizer somehow, as that initializes the folder
     mock_step = 0
     mock_output_folder = pl.Path(__file__).resolve().parent.parent / 'data' / mixed_system.name
     mock_experiment = test_system_dump_logs_folder_is_correct.__name__

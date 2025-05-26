@@ -155,7 +155,6 @@ class ESMFold(FoldingOracle):
         """
         Reduce ESMFoldOutput (from ModalFold) to a ESMFoldResult object
         """
-        # TODO: possibly move removal of batches here, instead of in the EnergyTerms (low priority)
         atoms = output.atom_array
         atoms = reindex_chains(atoms, [chain.chain_ID for chain in chains])
         results = self.result_class(
