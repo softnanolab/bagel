@@ -8,6 +8,7 @@ from unittest.mock import Mock
 from biotite.structure import AtomArray, Atom, array, concatenate
 import bagel as bg
 
+
 def pytest_addoption(parser):
     """Globally adds flag to pytest command line call. Used to specify how to handle tests that require oracles."""
     parser.addoption(
