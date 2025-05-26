@@ -26,9 +26,9 @@
 
         uv sync
 
-5. (Optional) If you also want to develop this package.
+6. (Optional) If you want to run all protein models locally.
 
-        uv sync --extra dev
+        uv sync --extra local
 
 ### Use
 
@@ -36,40 +36,35 @@ Run code within the environment.
 
         uv run python scripts/script.py
 
+### Oracles
+One can either run Oracles locally, or remotely.
 
-To add libraries to the enviroment:
+- `use_modal=True`: Run Oracles on [Modal](www.modal.com). Using the [boileroom](https://pypi.org/project/boileroom) package, running remotely is made seamless and does not require installing any dependencies. However, you need to have credits to use Modal.
+- `use_modal=False`: Run Oracles locally through [boileroom](https://pypi.org/project/boileroom). You need a GPU with suitable memory requirements.
 
-        uv add numpy
-
-If the library is only required for development and not production:
-
-        uv add --dev pytest
-
-### Folding
-
-We are optionally using `modalfold` for protein folding. This is a standalone package implementing protein structure prediction tools with Modal, abstracting all the problematic dependencies.
-
-To use this, one needs a Modal account with credits. After creating an account, one needs to authenticate through:
+To use Modal, one needs to create an account and authenticate through:
 
         modal token new
 
-Otherwise protein folding can be run locally. The temporary solution is requires:
-
-        uv pip install git+https://github.com/jakublala/my_transformers.git
-
-And then make sure to set `ESMFold(use_modal=False)`.
+You also need to set `HF_MODEL_DIR` to an accessible folder, where HuggingFace models will be stored.
 
 ### Testing
 
 To run the tests, you must specify how to handle any tests that require folding.
 
-        uv run pytest --folding skip
+        uv run pytest --oracles skip
 
-Alternative options for --folding is "modal" and "local".
+Alternative options for --oracles is "modal" and "local".
 
 By default, --numprocesses is set to auto. When running locally, this may have to be overided to avoid running out of CUDA memory.
 
 ## Development Notes
+
+First, you need to install the development dependencies
+
+        uv sync --extra dev
+
+
 
 ## Docs
 

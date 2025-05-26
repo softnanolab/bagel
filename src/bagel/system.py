@@ -6,18 +6,15 @@ MIT License
 Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
 """
 
-from biotite.structure.io.pdbx import CIFFile, set_structure
-from collections import OrderedDict
 from .state import State
 from .chain import Chain, Residue
-from typing import Any
 from dataclasses import dataclass
-from .folding import FoldingAlgorithm
+
+from .oracles.folding import FoldingOracle, FoldingResult
 from .constants import aa_dict
 from copy import deepcopy
 import pathlib as pl
 import numpy as np
-import pandas as pd
 
 import logging
 
@@ -35,30 +32,20 @@ class System:
 
     def __copy__(self) -> 'System':
         """Copy the system object, setting the energy to None"""
-        return System(
-            states=deepcopy(self.states),
-            total_energy=self.total_energy,
-            name=self.name,
-        )
+        return deepcopy(self)
 
-    def get_total_energy(self, folding_algorithm: FoldingAlgorithm) -> float:
+    def get_total_energy(self) -> float:
         if self.total_energy is None:
-            self.total_energy = np.sum([state.get_energy(folding_algorithm) for state in self.states])
+            self.total_energy = np.sum([state.get_energy() for state in self.states])
         return self.total_energy
-
-    def get_total_loss(self, folding_algorithm: FoldingAlgorithm) -> float:
-        if self.total_energy is None:
-            self.total_energy = np.sum([state.get_energy(folding_algorithm) for state in self.states])
-        self.total_loss = self.total_energy + self.chemical_potential_contribution()
-        return self.total_loss
 
     def dump_logs(self, step: int, path: pl.Path, save_structure: bool = True) -> None:
         r"""
         Saves logging information for the system under the given directory path. This folder contains:
 
         - a CSV file named 'energies.csv'. Columns include 'step', '\<state.name\>_\<energy.name\>' for all energies,
-          '\<state.name\>_chemical_potential_energy', '\<state.name\>_energy' and 'system_energy'. Note the final
-          column is the sum of the mean weighted energies and the chemical potential energies of each state.
+          '\<state.name\>_energy' and 'system_energy'. Note the final
+          column is the sum of the mean weighted energies of each state.
         - a FASTA file for all sequences named '\<state.name\>.fasta'. Each header is the sequence's step and each
           sequence is a string of amino acid letters with : seperating each chain.
         - a further directory named 'structures' containing all CIF files. Files are named '\<state.name>_\<step>.cif'
@@ -86,8 +73,8 @@ class System:
 
         energies: dict[str, int | float] = {'step': step}  #  order of insertion consistent in every dump_logs call
         for state in self.states:
-            for energy in state.energy_terms:
-                energies[f'{state.name}:{energy.name}'] = energy.value
+            for energy_name, energy_value in state._energy_terms_value.items():
+                energies[f'{state.name}:{energy_name}'] = energy_value
             assert state._energy is not None, 'State energy not calculated. Call get_energy() first.'
             energies[f'{state.name}:state_energy'] = state._energy  # HACK
 
@@ -96,9 +83,15 @@ class System:
                 file.write(f'{":".join(state.total_sequence)}\n')
 
             if save_structure:
-                file = CIFFile()
-                set_structure(file, state._structure)  # HACK
-                file.write(structure_path / f'{state.name}_{step}.cif')  # type: ignore
+                for oracle, oracle_result in state._oracles_result.items():
+                    if isinstance(oracle, FoldingOracle) and isinstance(oracle_result, FoldingResult):
+                        oracle_name = type(oracle).__name__
+                        state.to_cif(oracle, structure_path / f'{state.name}_{oracle_name}_{step}.cif')
+                        oracle_result.save_attributes(structure_path / f'{state.name}_{oracle_name}_{step}')
+                    else:
+                        logger.debug(
+                            f'Skipping {oracle.__class__.__name__} for CIF export, as it is not a FoldingOracle'
+                        )
 
         energies['system_energy'] = self.total_energy
 
@@ -123,7 +116,7 @@ class System:
             file.write('state,energy,weight\n')
             for state in self.states:
                 for i, term in enumerate(state.energy_terms):
-                    file.write(f'{state.name},{term.name},{state.energy_terms_weights[i]}\n')
+                    file.write(f'{state.name},{term.name},{term.weight}\n')
 
     def add_chain(self, sequence: str, mutability: list[int], chain_ID: str, state_index: list[int]) -> None:
         """
@@ -152,6 +145,3 @@ class System:
         # Add the chain to the states it is part of
         for st_idx in state_index:
             self.states[st_idx].chains.append(new_chain)
-
-    def chemical_potential_contribution(self) -> float:
-        return sum([state.get_chemical_potential_contribution() for state in self.states])

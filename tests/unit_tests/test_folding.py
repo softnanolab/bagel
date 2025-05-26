@@ -3,31 +3,43 @@ import bagel as bg
 from biotite.structure import AtomArray  # type: ignore
 
 
-def test_monomer_folding(folder, monomer):
-    atoms, metrics = folder.fold(monomer)
+def test_monomer_folding(esmfold, monomer):
+    results = esmfold.fold(monomer)
 
-    assert atoms is not None, 'Output should not be None'
-    assert isinstance(atoms, AtomArray), 'Output should be an AtomArray'
-    assert metrics is not None, 'Output should not be None'
-    assert isinstance(metrics, bg.folding.ESMFoldingMetrics), 'Output should be an bg.folding.ESMFoldingMetrics'
-
-
-def test_dimer_folding(folder, dimer):
-    atoms, metrics = folder.fold(dimer)
-
-    assert atoms is not None, 'Output should not be None'
-    assert isinstance(atoms, AtomArray), 'Output should be an AtomArray'
-    assert metrics is not None, 'Output should not be None'
-    assert isinstance(metrics, bg.folding.ESMFoldingMetrics), 'Output should be an bg.folding.ESMFoldingMetrics'
+    assert results is not None, 'Output should not be None'
+    assert isinstance(results, bg.oracles.folding.ESMFoldResult), 'Output should be an bg.oracles.folding.ESMFoldResult'
+    assert results.structure is not None, 'Output should not be None'
+    assert isinstance(results.structure, AtomArray), 'Output should be an AtomArray'
+    assert results.local_plddt is not None, 'Output should not be None'
+    assert isinstance(results.local_plddt, np.ndarray), 'Output should be an np.ndarray'
+    assert results.ptm is not None, 'Output should not be None'
+    assert isinstance(results.ptm, np.ndarray), 'Output should be an np.ndarray'
 
 
-def test_trimer_folding(folder, trimer):
-    atoms, metrics = folder.fold(trimer)
+def test_dimer_folding(esmfold, dimer):
+    results = esmfold.fold(dimer)
 
-    assert atoms is not None, 'Output should not be None'
-    assert isinstance(atoms, AtomArray), 'Output should be an AtomArray'
-    assert metrics is not None, 'Output should not be None'
-    assert isinstance(metrics, bg.folding.ESMFoldingMetrics), 'Output should be an bg.folding.ESMFoldingMetrics'
+    assert results is not None, 'Output should not be None'
+    assert isinstance(results, bg.oracles.folding.ESMFoldResult), 'Output should be an bg.oracles.folding.ESMFoldResult'
+    assert results.structure is not None, 'Output should not be None'
+    assert isinstance(results.structure, AtomArray), 'Output should be an AtomArray'
+    assert results.local_plddt is not None, 'Output should not be None'
+    assert isinstance(results.local_plddt, np.ndarray), 'Output should be an np.ndarray'
+    assert results.ptm is not None, 'Output should not be None'
+    assert isinstance(results.ptm, np.ndarray), 'Output should be an np.ndarray'
+
+
+def test_trimer_folding(esmfold, trimer):
+    results = esmfold.fold(trimer)
+
+    assert results is not None, 'Output should not be None'
+    assert isinstance(results, bg.oracles.folding.ESMFoldResult), 'Output should be an bg.oracles.folding.ESMFoldResult'
+    assert results.structure is not None, 'Output should not be None'
+    assert isinstance(results.structure, AtomArray), 'Output should be an AtomArray'
+    assert results.local_plddt is not None, 'Output should not be None'
+    assert isinstance(results.local_plddt, np.ndarray), 'Output should be an np.ndarray'
+    assert results.ptm is not None, 'Output should not be None'
+    assert isinstance(results.ptm, np.ndarray), 'Output should be an np.ndarray'
 
     # Test custom chain IDs
-    assert np.all(np.unique(atoms.chain_id) == ['C-A', 'C-B', 'C-C']), 'Chain IDs should be C-A, C-B, C-C'
+    assert np.all(np.unique(results.structure.chain_id) == ['C-A', 'C-B', 'C-C']), 'Chain IDs should be C-A, C-B, C-C'

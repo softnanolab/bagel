@@ -2,18 +2,20 @@
 standard template and objects for structure prediction
 """
 
+import os
+import pathlib as pl
 import numpy as np
 import numpy.typing as npt
-from ..chain import Chain
+from ...chain import Chain
+from ...constants import atom_order
 from .utils import reindex_chains
 from pydantic import field_validator
-from .base import FoldingAlgorithm, FoldingMetrics
-from typing import List, Any
-from modalfold import app  # type: ignore
-from modalfold.esmfold import ESMFold, ESMFoldOutput  # type: ignore
+from .base import FoldingOracle, FoldingResult
+from typing import List, Any, Type
+from boileroom import app  # type: ignore
+from boileroom.esmfold import ESMFoldOutput  # type: ignore
+from boileroom.esmfold import ESMFold as ESMFoldBoiler
 
-
-# TODO: add proper types to next modalfold version
 from biotite.structure import AtomArray
 import logging
 
@@ -39,16 +41,13 @@ def validate_array_range(
     return array
 
 
-class ESMFoldingMetrics(FoldingMetrics):
+class ESMFoldResult(FoldingResult):
     """
     Stores statistics from the ESMFold folding algorithm.
-
-    TODO: Thing whether this should be part of desprot, or modalfold.
-    There might be some clear standards that we would like to enforce in modalfold,
-    but at the same time give user the flexibility to use the output as they want.
-    To be discussed.
     """
 
+    input_chains: list[Chain]
+    structure: AtomArray  # structure of the predicted model
     local_plddt: npt.NDArray[np.float64]  # global template modelling score (0 to 1)
     ptm: npt.NDArray[np.float64]  # global predicted local distance difference test score (0 to 1)
     pae: npt.NDArray[np.float64]  # pairwise predicted alignment error
@@ -69,13 +68,19 @@ class ESMFoldingMetrics(FoldingMetrics):
     def validate_ptm(cls, v: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         return validate_array_range(v, 'ptm', 0, 1)
 
+    def save_attributes(self, filepath: pl.Path) -> None:
+        np.savetxt(filepath.with_suffix('.plddt'), self.local_plddt[0], fmt='%.6f', header='plddt')
+        np.savetxt(filepath.with_suffix('.pae'), self.pae[0], fmt='%.6f', header='pae')
 
-class ESMFolder(FoldingAlgorithm):
+
+class ESMFold(FoldingOracle):
     """
     Object that uses ESMFold to predict structure of proteins from sequence.
 
     WIP: For now we will be using ModalFold to do this reliably without much env issues.
     """
+
+    result_class: Type[ESMFoldResult] = ESMFoldResult
 
     def __init__(self, use_modal: bool = False, config: dict[str, Any] = {}):
         """
@@ -110,7 +115,7 @@ class ESMFolder(FoldingAlgorithm):
             self.modal_app_context = app.run()
             self.modal_app_context.__enter__()  # type: ignore
         config = {**self.default_config, **config}
-        self.model = ESMFold(config)
+        self.model = ESMFoldBoiler(config)
 
     def _pre_process(self, chains: list[Chain]) -> list[str]:
         """
@@ -121,34 +126,41 @@ class ESMFolder(FoldingAlgorithm):
         monomers = [chain.sequence for chain in chains]
         return [':'.join(monomers)]
 
-    def fold(self, chains: List[Chain]) -> tuple[AtomArray, ESMFoldingMetrics]:
+    def fold(self, chains: List[Chain]) -> ESMFoldResult:
         """
         Fold a list of chains using ESMFold.
         """
         if self.use_modal:
             return self._reduce_output(self._remote_fold(self._pre_process(chains)), chains)
         else:
-            logger.info('Given that use_modal is False, trying to fold with ESMFold locally...')
-            logger.info('Assuming that all packages are available locally...')
-            # TODO: Hugging Face Cache might need to be set here properly to make it work
+            logger.debug('Given that use_modal is False, trying to fold with ESMFold locally...')
+            assert os.environ.get('HF_MODEL_DIR'), 'HF_MODEL_DIR must be set when using ESMFold locally'
             return self._reduce_output(self._local_fold(self._pre_process(chains)), chains)
 
     def _remote_fold(self, sequence: List[str]) -> ESMFoldOutput:
         return self.model.fold.remote(sequence)
 
     def _local_fold(self, sequence: List[str]) -> ESMFoldOutput:
+        # assert that transformers is installed
+        try:
+            import transformers
+        except ImportError:
+            raise ImportError(
+                'transformers is not installed. Please install it to use ESMFold locally. See README.md for installation instructions.'
+            )
         return self.model.fold.local(sequence)
 
-    def _reduce_output(self, output: ESMFoldOutput, chains: List[Chain]) -> tuple[AtomArray, ESMFoldingMetrics]:
+    def _reduce_output(self, output: ESMFoldOutput, chains: List[Chain]) -> ESMFoldResult:
         """
-        Reduce ESMFoldOutput (from ModalFold) to a ESMFoldingMetrics object
+        Reduce ESMFoldOutput (from ModalFold) to a ESMFoldResult object
         """
         atoms = output.atom_array
-        metrics = ESMFoldingMetrics(
-            local_plddt=output.plddt,
+        atoms = reindex_chains(atoms, [chain.chain_ID for chain in chains])
+        results = self.result_class(
+            input_chains=chains,
+            structure=atoms,
+            local_plddt=output.plddt[..., atom_order['CA']],  # we only get CA atoms' plddt
             ptm=output.ptm,
             pae=output.predicted_aligned_error,
         )
-        atoms = reindex_chains(atoms, [chain.chain_ID for chain in chains])
-
-        return atoms, metrics
+        return results
