@@ -58,9 +58,6 @@ ignore_missing_imports = true
 module = ["tests.*"] #tells editor's mypy linter to ignore these modules
 ignore_errors = true
 
-[tool.pytest.ini_options]
-addopts = "--numprocesses auto"
-
 [tool.ruff]
 line-length = 120
 include = ["pyproject.toml", "**/src/bagel/*.py", "**/tests/*.py"]

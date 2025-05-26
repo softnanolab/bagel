@@ -103,8 +103,6 @@ class ESMFold(FoldingOracle):
             import atexit
 
             atexit.register(self.__del__)
-        else:
-            assert os.environ.get('HF_MODEL_DIR'), 'HF_MODEL_DIR must be set when using ESMFold locally'
 
     def __del__(self) -> None:
         """Cleanup the app context when the object is destroyed or at exit"""
@@ -136,6 +134,7 @@ class ESMFold(FoldingOracle):
             return self._reduce_output(self._remote_fold(self._pre_process(chains)), chains)
         else:
             logger.debug('Given that use_modal is False, trying to fold with ESMFold locally...')
+            assert os.environ.get('HF_MODEL_DIR'), 'HF_MODEL_DIR must be set when using ESMFold locally'
             return self._reduce_output(self._local_fold(self._pre_process(chains)), chains)
 
     def _remote_fold(self, sequence: List[str]) -> ESMFoldOutput:
