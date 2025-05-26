@@ -13,7 +13,7 @@ def test_grandcanonical_does_not_change_chain_length_when_mutator_not_allowed_to
 
     minimizer = bg.minimizer.SimulatedAnnealing(
         mutator=bg.mutation.GrandCanonical(
-            move_probabilities={'mutation': 1.0, 'addition': 0.0, 'removal': 0.0}
+            move_probabilities={'substitution': 1.0, 'addition': 0.0, 'removal': 0.0}
         ),  # high temperature ensures removal would always be accepted if it was ever chosen.
         initial_temperature=very_high_temp,
         final_temperature=very_high_temp,
@@ -37,7 +37,7 @@ def test_grandcanonical_does_not_increase_chain_length_when_mutator_not_allowed_
 
     minimizer = bg.minimizer.SimulatedAnnealing(
         mutator=bg.mutation.GrandCanonical(
-            move_probabilities={'mutation': 0.0, 'addition': 0.0, 'removal': 1.0}
+            move_probabilities={'substitution': 0.0, 'addition': 0.0, 'removal': 1.0}
         ),  # very high T ensures addition would always be accepted when chosen.
         initial_temperature=very_high_temp,
         final_temperature=very_high_temp,
@@ -61,7 +61,7 @@ def test_grandcanonical_does_not_zero_chain_length_when_mutator_only_allowed_to_
 
     minimizer = bg.minimizer.SimulatedAnnealing(
         mutator=bg.mutation.GrandCanonical(
-            move_probabilities={'mutation': 0.0, 'addition': 0.0, 'removal': 1.0}
+            move_probabilities={'substitution': 0.0, 'addition': 0.0, 'removal': 1.0}
         ),  # very high T ensures removal always accepted if possible
         initial_temperature=very_high_temp,
         final_temperature=very_high_temp,

@@ -28,7 +28,6 @@ def residue_list_to_group(residues: list[Residue]) -> ResidueGroup:
     return (np.array([res.chain_ID for res in residues]), np.array([res.index for res in residues]))
 
 
-# TODO: add weight attributes here to the energy terms
 class EnergyTerm(ABC):
     """
     Standard energy term to build the loss (total energy) function to be minimized.
@@ -71,15 +70,11 @@ class EnergyTerm(ABC):
         self.residue_groups: list[ResidueGroup] = []
 
     def __post_init__(self) -> None:
-        # TODO: add general assertion checks for any energy term (0-body, 1-body, etc.)
         """Checks required attributes have been set after class is initialised"""
         assert hasattr(self, 'name'), 'name attribute must be set in class initialiser'
         assert hasattr(self, 'residue_groups'), 'residue_groups attribute must be set in class initialiser'
-        value: float = 0.0
-        # @STEFANO: We should remove this value behaviour, as it doesn't make much sense and is dangerous
-        # The value gets stored, but the value is a function of the oracle result, not the energy term
-        # i.e. when can retrieve the value later, but cannot directly reference what was the input, i.e. the oracle result
         assert hasattr(self, 'inheritable'), 'inheritable attribute must be set in class initialiser'
+        assert hasattr(self, 'weight'), 'weight attribute must be set in class initialiser'
         if self.name == 'template_match' or self.name == 'backbone_template_match':
             assert self.inheritable is False, 'template_match energy term should NEVER be inheritable'
 
@@ -152,7 +147,7 @@ class EnergyTerm(ABC):
 
     def get_residue_mask(self, structure: AtomArray, residue_group_index: int) -> npt.NDArray[np.bool_]:
         """Creates residue mask from residue group. Structure used to find unique residues in state"""
-        # TODO: Re-write this to be consistent with input_chains, now that we keep track of it
+        # TODO: Re-write this to be consistent with input_chains, now that we keep track of it (low priority)
         residue_group = self.residue_groups[residue_group_index]
         chain_ids, res_indices = residue_group
         residue_mask = np.array([], dtype=bool)
@@ -167,8 +162,8 @@ class EnergyTerm(ABC):
         residue_group = self.residue_groups[residue_group_index]
         chain_ids, res_indices = residue_group
         atom_mask = np.full(shape=len(structure), fill_value=False)
-        # TODO: Is this possibly causing an issue with the sorting? Need a unit test for this.
-        # Check whether pd.unique is necessary here.
+        # TODO: Is this possibly causing an issue with the sorting? Need a unit test for this. (high-priority)
+        # Check whether pd.unique is necessary here. (low-priority)
         for chain in np.unique(chain_ids):
             chain_mask = structure.chain_id == chain
             # Note: in an atom_array object like structure .res_id is what we call the residue index and is an integer
@@ -1031,9 +1026,10 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
         super().__init__(name=name, oracle=oracle, inheritable=False, weight=weight)
         # with the current implementation, the energy term is not inheritable, as reference embeddings would change
         # and would need to be changed dynamically, which is not fully supported yet
+        # TODO: add assertions for embedding dimension with respect to reference embeddings dimension (i.e. 650M model has 1280 dimensions) (low-priority)
         self.residue_groups = [residue_list_to_group(residues)]
         self.reference_embeddings = reference_embeddings
-        assert self.reference_embeddings.shape[0] == len(self.residue_groups[0]), (
+        assert self.reference_embeddings.shape[0] == len(self.residue_groups[0][0]), (
             f'Number of reference embeddings ({self.reference_embeddings.shape[0]}) does not'
             f'match number of residues to include in energy term ({len(self.residue_groups[0])})'
         )
@@ -1076,15 +1072,17 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
         # This is only relevant with a multimer, which is yet to be implemented, let's do other things first
         conserved_chain_id, conserved_res_id = self.residue_groups[0]
         global_index_list = []
-        # Chains already has chains in the correct order
+        
+        # Create a mapping of (chain_id, res_index) to global index
         offset = 0
-        for i, chain in enumerate(chains):
-            chain_id = chain.chain_ID
+        chain_res_to_global = {}
+        for chain in chains:
             for j, residue in enumerate(chain.residues):
-                residue_global_index = offset + j
-                # Check if the residue is in the conserved residues
-                for k in range(len(conserved_chain_id)):
-                    if chain_id == conserved_chain_id[k] and residue.index == conserved_res_id[k]:
-                        global_index_list.append(residue_global_index)
+                chain_res_to_global[(chain.chain_ID, residue.index)] = offset + j
             offset += len(chain.residues)
+        
+        # Process residues in the order they appear in conserved_chain_id and conserved_res_id
+        for chain_id, res_id in zip(conserved_chain_id, conserved_res_id):
+            global_index_list.append(chain_res_to_global[(chain_id, res_id)])
+            
         return global_index_list

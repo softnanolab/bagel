@@ -2,6 +2,7 @@
 standard template and objects for structure prediction
 """
 
+import os
 import numpy as np
 import numpy.typing as npt
 from ...chain import Chain
@@ -50,6 +51,8 @@ class ESM2(EmbeddingOracle):
             import atexit
 
             atexit.register(self.__del__)
+        else:
+            assert os.environ.get('HF_MODEL_DIR'), 'HF_MODEL_DIR must be set when using ESM-2 locally'
 
         self._load(config)
 
@@ -80,14 +83,10 @@ class ESM2(EmbeddingOracle):
         self.input_chains = chains
         processed_chains = self._pre_process(chains)
 
-        if ':' in processed_chains[0]:
-            raise NotImplementedError('ESM-2 does not support multimers as of modalfold v0.0.13')
-
         if self.use_modal:
             return self._post_process(self._remote_embed(processed_chains))
         else:
-            logger.info('Given that use_modal is False, trying to embed with ESM-2 locally...')
-            # TODO: Hugging Face Cache might need to be set here properly to make it work
+            logger.debug('Given that use_modal is False, trying to embed with ESM-2 locally...')
             return self._post_process(self._local_embed(processed_chains))
 
     def _remote_embed(self, sequence: List[str]) -> ESM2Output:

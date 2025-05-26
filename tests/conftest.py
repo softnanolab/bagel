@@ -397,7 +397,7 @@ def huge_system() -> bg.State:
 
 
 @pytest.fixture
-def energies_system(fake_esmfold: bg.oracles.folding.ESMFold) -> bg.State:
+def energies_system(fake_esmfold: bg.oracles.folding.ESMFold) -> bg.System:
     """System where each state has an energy term that tracks all residues in state"""
     sequence = np.random.choice(list(bg.constants.aa_dict.keys()), size=5)
 

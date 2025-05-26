@@ -37,8 +37,7 @@ mutation_bias_no_cystein = {aa: 1.0 / (len(aa_dict) - 1) if aa != 'C' else 0.0 f
 
 hydrophobic_residues = ('VAL', 'ILE', 'LEU', 'PHE', 'MET', 'TRP')
 
-# TODO: maybe we should add O (O involved in peptide bonds) to the list of backbone atoms
-backbone_atoms = ('CA', 'N', 'C')
+backbone_atoms = ('CA', 'N', 'C', 'O')
 
 angstrom = 1.0  # Units of measure for distances
 nm = 10.0  # nm value in units of measure for distances
