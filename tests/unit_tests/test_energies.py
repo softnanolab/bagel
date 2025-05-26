@@ -1,6 +1,6 @@
 import bagel as bg
 from bagel.oracles import OraclesResultDict
-from biotite.structure import AtomArray, sasa, annotate_sse, get_residue_count, concatenate
+from biotite.structure import AtomArray, sasa, annotate_sse, get_residue_count, concatenate, Atom, array
 import numpy as np
 from unittest.mock import Mock, patch
 import copy
@@ -90,6 +90,109 @@ def test_energies_get_correct_atom_mask(
     energy = bg.energies.PLDDTEnergy(oracle=fake_esmfold, residues=[bg.Residue(name='V', chain_ID='A', index=0)])
     mask = energy.get_atom_mask(structure=small_structure, residue_group_index=0)
     assert all(mask == np.array([True, True, False, False, False]))
+
+    # Create individual atoms
+    atoms = []
+    # Chain C (GLY, ALA)
+    atoms.extend([
+        Atom([0, 0, 0], chain_id="C", res_id=0, atom_name="N", res_name="GLY"),    # C0 N
+        Atom([0.5, 0, 0], chain_id="C", res_id=0, atom_name="CA", res_name="GLY"), # C0 CA
+        Atom([1, 0, 0], chain_id="C", res_id=1, atom_name="N", res_name="ALA"),    # C1 N
+        Atom([1.5, 0, 0], chain_id="C", res_id=1, atom_name="CA", res_name="ALA"), # C1 CA
+    ])
+    # Chain B (SER, THR)
+    atoms.extend([
+        Atom([0, 1, 0], chain_id="B", res_id=0, atom_name="N", res_name="SER"),    # B0 N
+        Atom([0.5, 1, 0], chain_id="B", res_id=0, atom_name="CA", res_name="SER"), # B0 CA
+        Atom([1, 1, 0], chain_id="B", res_id=1, atom_name="N", res_name="THR"),    # B1 N
+        Atom([1.5, 1, 0], chain_id="B", res_id=1, atom_name="CA", res_name="THR"), # B1 CA
+    ])
+    # Chain A (VAL, LEU)
+    atoms.extend([
+        Atom([0, 0, 1], chain_id="A", res_id=0, atom_name="N", res_name="VAL"),    # A0 N
+        Atom([0.5, 0, 1], chain_id="A", res_id=0, atom_name="CA", res_name="VAL"), # A0 CA
+        Atom([1, 0, 1], chain_id="A", res_id=1, atom_name="N", res_name="LEU"),    # A1 N
+        Atom([1.5, 0, 1], chain_id="A", res_id=1, atom_name="CA", res_name="LEU"), # A1 CA
+    ])
+    
+    # Create the structure
+    structure = array(atoms)
+    
+    # Create energy term with residues in different order than structure
+    # This tests if order preservation matters
+    group1_residues = [
+        bg.Residue(name='V', chain_ID='A', index=0), # A0
+        bg.Residue(name='G', chain_ID='C', index=0), # C0
+        bg.Residue(name='A', chain_ID='C', index=1), # C1
+        bg.Residue(name='S', chain_ID='B', index=0), # B0
+    ]
+    
+    group2_residues = [
+        bg.Residue(name='L', chain_ID='A', index=1), # A1
+        bg.Residue(name='T', chain_ID='B', index=1), # B1
+    ]
+    
+    energy = bg.energies.SeparationEnergy(oracle=fake_esmfold, residues=(group1_residues, group2_residues))
+    
+    # Test first residue group mask
+    mask1 = energy.get_atom_mask(structure, residue_group_index=0)
+    expected_mask1 = np.array([
+        True, True,  # C0 atoms
+        True, True,    # C1 atoms
+        True, True,    # B0 atoms
+        False, False,  # B1 atoms
+        True, True,    # A0 atoms
+        False, False,  # A1 atoms
+    ])
+    
+    assert np.array_equal(mask1, expected_mask1), (
+        f"First group mask incorrect. Expected:\n{expected_mask1}\nGot:\n{mask1}"
+    )
+    
+    # Test second residue group mask
+    mask2 = energy.get_atom_mask(structure, residue_group_index=1)
+    expected_mask2 = np.array([
+        False, False,  # C0 atoms
+        False, False,  # C1 atoms
+        False, False,  # B0 atoms
+        True, True,    # B1 atoms
+        False, False,  # A0 atoms
+        True, True,    # A1 atoms
+    ])
+    
+    assert np.array_equal(mask2, expected_mask2), (
+        f"Second group mask incorrect. Expected:\n{expected_mask2}\nGot:\n{mask2}"
+    )
+    
+    # Additional test: verify that the masked atoms for first group have the expected coordinates
+    masked_atoms1 = structure[mask1]
+    expected_coords1 = np.array([
+        [0, 0, 0],    # C0 N
+        [0.5, 0, 0],  # C0 CA
+        [1, 0, 0],    # C1 N
+        [1.5, 0, 0],  # C1 CA
+        [0, 1, 0],    # B0 N
+        [0.5, 1, 0],  # B0 CA
+        [0, 0, 1],    # A0 N
+        [0.5, 0, 1],  # A0 CA
+    ])
+    
+    assert np.allclose(masked_atoms1.coord, expected_coords1), (
+        f"First group masked atom coordinates incorrect. Expected:\n{expected_coords1}\nGot:\n{masked_atoms1.coord}"
+    )
+    
+    # Additional test: verify that the masked atoms for second group have the expected coordinates
+    masked_atoms2 = structure[mask2]
+    expected_coords2 = np.array([
+        [1, 1, 0],    # B1 N
+        [1.5, 1, 0],  # B1 CA
+        [1, 0, 1],    # A1 N
+        [1.5, 0, 1],  # A1 CA
+    ])
+    
+    assert np.allclose(masked_atoms2.coord, expected_coords2), (
+        f"Second group masked atom coordinates incorrect. Expected:\n{expected_coords2}\nGot:\n{masked_atoms2.coord}"
+    )
 
 
 # Note that here we do ESMFold specific tests, but these should similar extend to other FoldingOracles
