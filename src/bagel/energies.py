@@ -65,7 +65,7 @@ class EnergyTerm(ABC):
         oracle: Oracle
             The oracle to use for the energy term.
         inheritable: bool
-            Whether the energy term is inheritable. 
+            Whether the energy term is inheritable.
         weight: float = 1.0
             The weight of the energy term.
         """
@@ -172,12 +172,12 @@ class EnergyTerm(ABC):
         chain_ids, res_indices = residue_group
         atom_mask = np.full(shape=len(structure), fill_value=False)
         for chain in np.unique(chain_ids):
-            chain_mask = structure.chain_id == chain # gets all atoms from a given chain
-            
+            chain_mask = structure.chain_id == chain  # gets all atoms from a given chain
+
             # Note: in an atom_array object like structure .res_id is what we call the residue index and is an integer
-            chain_res_ids = structure[chain_mask].res_id # gets all residues indices from a given chain
-            chain_res_ids_in_group = res_indices[chain_ids == chain] # gets all residue indices in the residue group
-            
+            chain_res_ids = structure[chain_mask].res_id  # gets all residues indices from a given chain
+            chain_res_ids_in_group = res_indices[chain_ids == chain]  # gets all residue indices in the residue group
+
             # for that specific chain, check if the residue indices are in the residue group
             atom_mask[chain_mask] = np.isin(chain_res_ids, chain_res_ids_in_group)
         return atom_mask
@@ -638,7 +638,9 @@ class SeparationEnergy(EnergyTerm):
         structure = oracles_result.get_structure(self.oracle)
         backbone_mask = np.isin(structure.atom_name, backbone_atoms)
         group_1_mask = self.get_atom_mask(structure, residue_group_index=0)
-        import pdb; pdb.set_trace()
+        import pdb
+
+        pdb.set_trace()
         group_2_mask = self.get_atom_mask(structure, residue_group_index=1)
 
         group_1_atoms = structure[backbone_mask & group_1_mask]
