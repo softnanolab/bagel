@@ -105,9 +105,13 @@ class EnergyTerm(ABC):
 
     def shift_residues_indices_after_removal(self, chain_id: str, res_index: int) -> None:
         """
-        Shifts internally stored res_indices on a given chain to reflect a residue has been removed from chain.
-        In practice, this means the indexes in residue_groups for all residues after the one removed it are
+        Shifts internally stored res_indices on a given chain to reflect a residue has been removed from the chain.
+
+        In practice, this means the indexes in ``residue_groups`` for all residues after the one removed are
         shifted down by 1. Must be called every time a residue is removed from a chain.
+
+        For instance, if implementing a new mutation scheme in ``mutation.py``, this method must be called every time
+        a residue is removed from a chain (see :class:`~bagel.mutation.GrandCanonical` for an example).
         """
         for i, residue_group in enumerate(self.residue_groups):
             chain_ids, res_indices = residue_group
@@ -147,7 +151,6 @@ class EnergyTerm(ABC):
 
     def get_residue_mask(self, structure: AtomArray, residue_group_index: int) -> npt.NDArray[np.bool_]:
         """Creates residue mask from residue group. Structure used to find unique residues in state"""
-        # TODO: Re-write this to be consistent with input_chains, now that we keep track of it (low priority)
         residue_group = self.residue_groups[residue_group_index]
         chain_ids, res_indices = residue_group
         residue_mask = np.array([], dtype=bool)

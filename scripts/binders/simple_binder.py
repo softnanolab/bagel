@@ -18,12 +18,11 @@ def run_simple_binder() -> Any:
     # >1IL8_1|Chains A, B|INTERLEUKIN-8|Homo sapiens (9606)
 
     target_sequence = 'SAKELRCQCIKTYSKPFHPKFIKELRVIESGPHCANTEIIVKLSDGRELCLDPKENWVQRVVEKFLKRAENS'
-    target_sequence = target_sequence[:20]
 
     # Now define the mutability of the residues, all immutable in this case since this is the target sequence
     mutability = [False for _ in range(len(target_sequence))]
 
-    # Now define the chain
+    # Now define a chain providing a list of residues
     residues_target = [
         bg.Residue(name=aa, chain_ID='Maxi', index=i, mutable=mut)
         for i, (aa, mut) in enumerate(zip(target_sequence, mutability))
@@ -47,12 +46,11 @@ def run_simple_binder() -> Any:
     ]
     binder_chain = bg.Chain(residues=residues_binder)
 
-    # Now define the folding algorithm
+    # Now define the FoldingOracle
+    # See https://openreview.net/forum?id=g8S53BmXE6 for linker parameter tuning
     config = {
-        'output_pdb': True,
-        'output_cif': False,
         'glycine_linker': 'GGGG',
-        'position_ids_skip': 100,
+        'position_ids_skip': 1024,
     }
     esmfold = bg.oracles.ESMFold(use_modal=use_modal, config=config)
 
@@ -88,8 +86,10 @@ def run_simple_binder() -> Any:
     initial_system = bg.System(states=[state])
 
     # Now define the minimizer
+    # Simulated tempering does n_steps_low at a low temperature (enhancing local minimization),
+    # and n_steps_high at a high temperature (exploring the space)
     minimizer = bg.minimizer.SimulatedTempering(
-        mutator=bg.mutation.Canonical(n_mutations=1),
+        mutator=bg.mutation.Canonical(n_mutations=1), # cannot add/remove residues, only substitutes for different amino acid types
         high_temperature=2,
         low_temperature=0.1,
         n_cycles=10,
