@@ -120,7 +120,7 @@ class MonteCarloMinimizer(Minimizer):
         if experiment_name is None:
             experiment_name = f'mc_minimizer_{time_stamp()}'
 
-        self.temperature = temperature
+        self.temperature_schedule = np.full(shape=n_steps, fill_value=temperature)
         self.n_steps = n_steps
         self.preserve_best_system_every_n_steps = preserve_best_system_every_n_steps
         super().__init__(
@@ -144,13 +144,13 @@ class MonteCarloMinimizer(Minimizer):
                 return system.__copy__()
         return system
 
-    def minimize_one_step(self, temperature: float, system: System) -> tuple[System, bool]:
+    def minimize_one_step(self, step: int, system: System) -> tuple[System, bool]:
         """Perform one Monte Carlo step."""
         mutated_system, delta_energy = self.mutator.one_step(
             system=system.__copy__(),
             old_system=system,
         )
-        acceptance_probability = self.get_acceptance_probability(delta_energy, temperature)
+        acceptance_probability = self.get_acceptance_probability(delta_energy, self.temperature_schedule[step])
         logger.debug(f'{delta_energy=}, {acceptance_probability=}')
 
         if acceptance_probability > np.random.uniform(low=0.0, high=1.0):
@@ -171,7 +171,7 @@ class MonteCarloMinimizer(Minimizer):
         for step in range(self.n_steps):
             new_best = False
             system = self._before_step(system, step)
-            system, accept = self.minimize_one_step(self.temperature, system)
+            system, accept = self.minimize_one_step(step, system)
             system = self._after_step(system, step)
 
             assert system.total_energy is not None, 'Cannot evolve system if current energy not available'
@@ -180,7 +180,9 @@ class MonteCarloMinimizer(Minimizer):
                 new_best = True
                 best_system = system.__copy__()
 
-            self.log_step(step, system, best_system, new_best, temperature=self.temperature, accept=accept)
+            self.log_step(
+                step, system, best_system, new_best, temperature=self.temperature_schedule[step], accept=accept
+            )
 
         assert best_system.total_energy is not None, f'Best energy {best_system.total_energy} cannot be None!'
         return best_system
@@ -215,7 +217,7 @@ class MetropolisMinimizer(MonteCarloMinimizer):
 
 
 class SimulatedAnnealing(MetropolisMinimizer):
-    """Simulated annealing with linear temperature schedule."""
+    """Simulated annealing with linearly decreasing temperature schedule."""
 
     def __init__(
         self,
@@ -244,36 +246,7 @@ class SimulatedAnnealing(MetropolisMinimizer):
         )
         self.temperature_schedule = np.linspace(
             start=self.initial_temperature, stop=self.final_temperature, num=self.n_steps
-        )
-
-    def minimize_system(self, system: System) -> System:
-        """Minimize system using simulated annealing."""
-        system.get_total_energy()
-        best_system = system.__copy__()
-        assert system.total_energy is not None, 'Cannot start without system having a calculated energy'
-        assert best_system.total_energy is not None, (
-            'Cannot start without lowest energy system having a calculated energy'
-        )
-
-        self.log_initial_system(system, best_system)
-
-        for step in range(self.n_steps):
-            new_best = False
-            system = self._before_step(system, step)
-            temperature = self.temperature_schedule[step]
-            system, accept = self.minimize_one_step(temperature, system)
-            system = self._after_step(system, step)
-
-            assert system.total_energy is not None, 'Cannot evolve system if current energy not available'
-
-            if system.total_energy < best_system.total_energy:
-                new_best = True
-                best_system = system.__copy__()
-
-            self.log_step(step, system, best_system, new_best, temperature=temperature, accept=accept)
-
-        assert best_system.total_energy is not None, f'Best energy {best_system.total_energy} cannot be None!'
-        return best_system
+        )  # type: ignore
 
 
 class SimulatedTempering(MetropolisMinimizer):
@@ -309,8 +282,7 @@ class SimulatedTempering(MetropolisMinimizer):
                 np.full(shape=self.n_steps_high, fill_value=self.high_temperature),
             ]
         )
-        self.temperature_schedule = np.tile(cycle_temperatures, reps=self.n_cycles)
-
+        self.temperature_schedule = np.tile(cycle_temperatures, reps=self.n_cycles)  # type: ignore
 
         super().__init__(
             mutator=mutator,
@@ -321,32 +293,3 @@ class SimulatedTempering(MetropolisMinimizer):
             preserve_best_system_every_n_steps=preserve_best_system_every_n_steps,
             log_path=log_path,
         )
-
-    def minimize_system(self, system: System) -> System:
-        """Minimize system using simulated tempering."""
-        system.get_total_energy()
-        best_system = system.__copy__()
-        assert system.total_energy is not None, 'Cannot start without system having a calculated energy'
-        assert best_system.total_energy is not None, (
-            'Cannot start without lowest energy system having a calculated energy'
-        )
-
-        self.log_initial_system(system, best_system)
-
-        for step in range(self.n_steps):
-            new_best = False
-            system = self._before_step(system, step)
-            temperature = self.temperature_schedule[step]
-            system, accept = self.minimize_one_step(temperature, system)
-            system = self._after_step(system, step)
-
-            assert system.total_energy is not None, 'Cannot evolve system if current energy not available'
-
-            if system.total_energy < best_system.total_energy:
-                new_best = True
-                best_system = system.__copy__()
-
-            self.log_step(step, system, best_system, new_best, temperature=temperature, accept=accept)
-
-        assert best_system.total_energy is not None, f'Best energy {best_system.total_energy} cannot be None!'
-        return best_system

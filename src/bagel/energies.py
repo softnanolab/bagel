@@ -75,10 +75,6 @@ class EnergyTerm(ABC):
         """Checks required attributes have been set after class is initialised"""
         assert hasattr(self, 'name'), 'name attribute must be set in class initialiser'
         assert hasattr(self, 'residue_groups'), 'residue_groups attribute must be set in class initialiser'
-        value: float = 0.0
-        # @STEFANO: We should remove this value behaviour, as it doesn't make much sense and is dangerous
-        # The value gets stored, but the value is a function of the oracle result, not the energy term
-        # i.e. when can retrieve the value later, but cannot directly reference what was the input, i.e. the oracle result
         assert hasattr(self, 'inheritable'), 'inheritable attribute must be set in class initialiser'
         if self.name == 'template_match' or self.name == 'backbone_template_match':
             assert self.inheritable is False, 'template_match energy term should NEVER be inheritable'
@@ -110,9 +106,13 @@ class EnergyTerm(ABC):
 
     def shift_residues_indices_after_removal(self, chain_id: str, res_index: int) -> None:
         """
-        Shifts internally stored res_indices on a given chain to reflect a residue has been removed from chain.
-        In practice, this means the indexes in residue_groups for all residues after the one removed it are
+        Shifts internally stored res_indices on a given chain to reflect a residue has been removed from the chain.
+
+        In practice, this means the indexes in ``residue_groups`` for all residues after the one removed are
         shifted down by 1. Must be called every time a residue is removed from a chain.
+
+        For instance, if implementing a new mutation scheme in ``mutation.py``, this method must be called every time
+        a residue is removed from a chain (see :class:`~bagel.mutation.GrandCanonical` for an example).
         """
         for i, residue_group in enumerate(self.residue_groups):
             chain_ids, res_indices = residue_group
@@ -152,7 +152,6 @@ class EnergyTerm(ABC):
 
     def get_residue_mask(self, structure: AtomArray, residue_group_index: int) -> npt.NDArray[np.bool_]:
         """Creates residue mask from residue group. Structure used to find unique residues in state"""
-        # TODO: Re-write this to be consistent with input_chains, now that we keep track of it
         residue_group = self.residue_groups[residue_group_index]
         chain_ids, res_indices = residue_group
         residue_mask = np.array([], dtype=bool)

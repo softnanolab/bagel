@@ -6,19 +6,15 @@ MIT License
 Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
 """
 
-from biotite.structure.io.pdbx import CIFFile, set_structure
-from collections import OrderedDict
 from .state import State
 from .chain import Chain, Residue
-from typing import Any
 from dataclasses import dataclass
 
-from .oracles.folding import FoldingOracle
+from .oracles.folding import FoldingOracle, FoldingResult
 from .constants import aa_dict
 from copy import deepcopy
 import pathlib as pl
 import numpy as np
-import pandas as pd
 
 import logging
 
@@ -87,17 +83,18 @@ class System:
                 file.write(f'{":".join(state.total_sequence)}\n')
 
             if save_structure:
-                for oracle in state.oracles_list:
-                    if isinstance(oracle, FoldingOracle):
+                for oracle, oracle_result in state._oracles_result.items():
+                    if isinstance(oracle, FoldingOracle) and isinstance(oracle_result, FoldingResult):
                         oracle_name = type(oracle).__name__
                         state.to_cif(oracle, structure_path / f'{state.name}_{oracle_name}_{step}.cif')
+                        # np.savetxt(structure_path / f'{state.name}_{oracle_name}_{step}.pae.txt', oracle_result.pae)
+                        # np.savetxt(
+                        #     structure_path / f'{state.name}_{oracle_name}_{step}.plddt.txt', oracle_result.local_plddt
+                        # )
                     else:
                         logger.debug(
                             f'Skipping {oracle.__class__.__name__} for CIF export, as it is not a FoldingOracle'
                         )
-                # file = CIFFile()
-                # set_structure(file, state._structure)  # HACK
-                # file.write(structure_path / f'{state.name}_{step}.cif')  # type: ignore
 
         energies['system_energy'] = self.total_energy
 

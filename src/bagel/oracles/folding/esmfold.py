@@ -72,6 +72,41 @@ class ESMFoldResult(FoldingResult):
     def validate_ptm(cls, v: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         return validate_array_range(v, 'ptm', 0, 1)
 
+    def save_array(self, array_name: str, path: str) -> None:
+        """
+        Save a numpy array field to a file using np.savetxt.
+
+        Parameters
+        ----------
+        array_name : str
+            Name of the array field to save. Must be one of: 'local_plddt', 'ptm', or 'pae'
+        path : str
+            Path where to save the array
+
+        Raises
+        ------
+        ValueError
+            If array_name is not a valid array field
+        """
+        if not hasattr(self, array_name):
+            raise ValueError(f"Array field '{array_name}' not found. Must be one of: 'local_plddt', 'ptm', or 'pae'")
+
+        array = getattr(self, array_name)
+        if not isinstance(array, np.ndarray):
+            raise ValueError(f"Field '{array_name}' is not a numpy array")
+
+        # If array is multi-dimensional, save it with appropriate format
+        if array.ndim > 1:
+            # For 2D arrays like pae, use a format that preserves the structure
+            fmt = '%10.6f'
+            header = f'# {array_name} array shape: {array.shape}'
+        else:
+            # For 1D arrays like local_plddt and ptm
+            fmt = '%.6f'
+            header = f'# {array_name} array length: {len(array)}'
+
+        np.savetxt(path, array, fmt=fmt, header=header)
+
 
 class ESMFold(FoldingOracle):
     """
