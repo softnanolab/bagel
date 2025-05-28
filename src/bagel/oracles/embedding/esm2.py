@@ -108,7 +108,9 @@ class ESM2(EmbeddingOracle):
         return self.model.embed.local(sequence)
 
     def _post_process(self, output: ESM2Output) -> ESM2Result:
-        embeddings = output.embeddings[0, 1:-1, :]  # remove first and last token embeddings (not a residue)
+        #! TODO This will need to be reverted back once change in boileroom is done
+        #embeddings = output.embeddings[0, 1:-1, :]  # remove first and last token embeddings (not a residue)
+        embeddings = output.embeddings[0, :, :]  # remove first and last token embeddings (not a residue)
         assert len(embeddings.shape) == 2, (
             f'Embeddings is expected to be a 2D tensor, not shape: {embeddings.shape}. '
             'The ESM2 Oracle does not support batches.'
