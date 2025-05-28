@@ -606,7 +606,6 @@ class SeparationEnergy(EnergyTerm):
         self,
         oracle: FoldingOracle,
         residues: tuple[list[Residue], list[Residue]],
-        normalize: bool = True,
         inheritable: bool = True,
         weight: float = 1.0,
     ) -> None:
@@ -617,18 +616,15 @@ class SeparationEnergy(EnergyTerm):
         ----------
         residues: tuple[list[Residue],list[Residue]]
             A tuple containing two lists of residues, those to include in the first [0] and second [1] group.
-        normalize: bool, default=True
-            Whether the distance calculated is divided by the number of atoms in both groups.
         inheritable: bool, default=True
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
         weight: float = 1.0
             The weight of the energy term.
         """
-        name = f'{"normalized_" if normalize else ""}separation'
+        name = 'separation'
         super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight)
         self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
-        self.normalize = normalize
         assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
         assert 'structure' in self.oracle.result_class.model_fields, (
             'SeparationEnergy requires oracle to return structure in result_class'
@@ -645,9 +641,6 @@ class SeparationEnergy(EnergyTerm):
         group_1_centroid = np.mean(group_1_atoms.coord, axis=0)
         group_2_centroid = np.mean(group_2_atoms.coord, axis=0)
         distance = np.linalg.norm(group_1_centroid - group_2_centroid)
-
-        if self.normalize:
-            distance /= len(group_1_atoms) + len(group_2_atoms)
 
         value = float(distance)
         return value, value * self.weight
@@ -666,7 +659,6 @@ class GlobularEnergy(EnergyTerm):
         oracle: Oracle,
         residues: list[Residue] | None = None,
         inheritable: bool = True,
-        normalize: bool = True,
         weight: float = 1.0,
     ) -> None:
         """
@@ -681,15 +673,12 @@ class GlobularEnergy(EnergyTerm):
         inheritable: bool, default=True
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
-        normalize: bool, default=True
-            Whether the mean centroid distance calculated is divided by the number of atoms considered.
         weight: float = 1.0
             The weight of the energy term.
         """
-        name = f'{"normalized_" if normalize else ""}globular'
+        name = 'globular'
         super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight)
         self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
-        self.normalize = normalize
         assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
         assert 'structure' in self.oracle.result_class.model_fields, (
             'GlobularEnergy requires oracle to return structure in result_class'
@@ -706,8 +695,6 @@ class GlobularEnergy(EnergyTerm):
         relevant_atoms = structure[backbone_mask & selected_mask]
         centroid = np.mean(relevant_atoms.coord, axis=0, keepdims=True)
         centroid_distances = np.linalg.norm(relevant_atoms.coord - centroid, axis=1)
-        if self.normalize:
-            centroid_distances /= len(relevant_atoms)
 
         value = np.std(centroid_distances)
         return value, value * self.weight
@@ -836,14 +823,24 @@ class SecondaryStructureEnergy(EnergyTerm):
 
 
 class EllipsoidEnergy(EnergyTerm):
-    """
-    Energy that drives the overall shape of the structure towards an ellipsoid of given aspect ratio. This is found by
-    finding the principle cartesian axes of the backbone atoms using principle component analysis. The positions of the
-    atoms in this new basis are then inserted into the standard equation of an ellipsoid (x/a + y/b + z/c - 1 = 0, where
-    a, b, and c are the ideal length, width, and depth of the desired ellipsoid with a volume equal to a sphere with a
-    radius equal to the radius of gyration). If the atoms lie outside of this ellipsoid (the left hand side is greater
-    than 0), the atoms experience a spring force type energy that attracts them back into the ellipsoid. All atoms also
-    experience a recipricol exponential type repulsive energy that evenly distributes them inside the volume.
+    r"""
+    Energy that drives the overall shape of the structure towards an ellipsoid of a given aspect ratio.
+
+    This is achieved by:
+      1. Finding the principal Cartesian axes of the backbone atoms using principal component analysis (PCA).
+      2. Transforming the atomic coordinates into this new basis.
+      3. Inserting the transformed coordinates into the standard equation of an ellipsoid:
+
+         .. math::
+
+            \left(\frac{x}{a}\right)^2 + \left(\frac{y}{b}\right)^2 + \left(\frac{z}{c}\right)^2 - 1 = 0
+
+         where :math:`a`, :math:`b`, and :math:`c` are the ideal length, width, and depth of the desired ellipsoid,
+         chosen such that the ellipsoid has the same volume as a sphere with a radius equal to the radius of gyration.
+
+    Atoms that lie outside of this ellipsoid (i.e., the left-hand side of the equation is greater than 0)
+    experience a spring-force type energy that attracts them back into the ellipsoid.
+    All atoms also experience a reciprocal exponential type repulsive energy that evenly distributes them inside the volume.
     """
 
     def __init__(
@@ -908,7 +905,7 @@ class EllipsoidEnergy(EnergyTerm):
         a, b, c = self.aspect_ratio * radius_of_gyration  # ensures a*b*c = radius of gyration cubed
 
         # calculating attractive energy
-        relative_distances = x / a + y / b + z / c - 1
+        relative_distances = (x / a) ** 2 + (y / b) ** 2 + (z / c) ** 2 - 1
         outer_mask = relative_distances > 0  # mask for all atoms that lie outside of ellipsoid
         attractive_energy = np.sum(self.k_attractive * relative_distances[outer_mask])
 

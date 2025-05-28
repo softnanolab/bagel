@@ -447,7 +447,7 @@ def test_SeparationEnergy(
     oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
     unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
     # distance between the centroids of the bottom corners and top corners for a square of length 1 is 1
-    value = 1 / 8
+    value = 1.0
     assert np.isclose(unweighted_energy, value), 'unweighted energy is incorrect'
     assert np.isclose(weighted_energy, value * 2), 'weighted energy is incorrect'
 
