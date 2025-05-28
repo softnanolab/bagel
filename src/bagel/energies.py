@@ -823,14 +823,24 @@ class SecondaryStructureEnergy(EnergyTerm):
 
 
 class EllipsoidEnergy(EnergyTerm):
-    """
-    Energy that drives the overall shape of the structure towards an ellipsoid of given aspect ratio. This is found by
-    finding the principle cartesian axes of the backbone atoms using principle component analysis. The positions of the
-    atoms in this new basis are then inserted into the standard equation of an ellipsoid (x/a + y/b + z/c - 1 = 0, where
-    a, b, and c are the ideal length, width, and depth of the desired ellipsoid with a volume equal to a sphere with a
-    radius equal to the radius of gyration). If the atoms lie outside of this ellipsoid (the left hand side is greater
-    than 0), the atoms experience a spring force type energy that attracts them back into the ellipsoid. All atoms also
-    experience a recipricol exponential type repulsive energy that evenly distributes them inside the volume.
+    r"""
+    Energy that drives the overall shape of the structure towards an ellipsoid of a given aspect ratio.
+
+    This is achieved by:
+      1. Finding the principal Cartesian axes of the backbone atoms using principal component analysis (PCA).
+      2. Transforming the atomic coordinates into this new basis.
+      3. Inserting the transformed coordinates into the standard equation of an ellipsoid:
+
+         .. math::
+
+            \left(\frac{x}{a}\right)^2 + \left(\frac{y}{b}\right)^2 + \left(\frac{z}{c}\right)^2 - 1 = 0
+
+         where :math:`a`, :math:`b`, and :math:`c` are the ideal length, width, and depth of the desired ellipsoid,
+         chosen such that the ellipsoid has the same volume as a sphere with a radius equal to the radius of gyration.
+
+    Atoms that lie outside of this ellipsoid (i.e., the left-hand side of the equation is greater than 0)
+    experience a spring-force type energy that attracts them back into the ellipsoid.
+    All atoms also experience a reciprocal exponential type repulsive energy that evenly distributes them inside the volume.
     """
 
     def __init__(
@@ -895,7 +905,7 @@ class EllipsoidEnergy(EnergyTerm):
         a, b, c = self.aspect_ratio * radius_of_gyration  # ensures a*b*c = radius of gyration cubed
 
         # calculating attractive energy
-        relative_distances = x / a + y / b + z / c - 1
+        relative_distances = (x / a) ** 2 + (y / b) ** 2 + (z / c) ** 2 - 1
         outer_mask = relative_distances > 0  # mask for all atoms that lie outside of ellipsoid
         attractive_energy = np.sum(self.k_attractive * relative_distances[outer_mask])
 
