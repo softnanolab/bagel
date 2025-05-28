@@ -606,7 +606,6 @@ class SeparationEnergy(EnergyTerm):
         self,
         oracle: FoldingOracle,
         residues: tuple[list[Residue], list[Residue]],
-        normalize: bool = True,
         inheritable: bool = True,
         weight: float = 1.0,
     ) -> None:
@@ -617,18 +616,15 @@ class SeparationEnergy(EnergyTerm):
         ----------
         residues: tuple[list[Residue],list[Residue]]
             A tuple containing two lists of residues, those to include in the first [0] and second [1] group.
-        normalize: bool, default=True
-            Whether the distance calculated is divided by the number of atoms in both groups.
         inheritable: bool, default=True
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
         weight: float = 1.0
             The weight of the energy term.
         """
-        name = f'{"normalized_" if normalize else ""}separation'
+        name = 'separation'
         super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight)
         self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
-        self.normalize = normalize
         assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
         assert 'structure' in self.oracle.result_class.model_fields, (
             'SeparationEnergy requires oracle to return structure in result_class'
@@ -645,9 +641,6 @@ class SeparationEnergy(EnergyTerm):
         group_1_centroid = np.mean(group_1_atoms.coord, axis=0)
         group_2_centroid = np.mean(group_2_atoms.coord, axis=0)
         distance = np.linalg.norm(group_1_centroid - group_2_centroid)
-
-        if self.normalize:
-            distance /= len(group_1_atoms) + len(group_2_atoms)
 
         value = float(distance)
         return value, value * self.weight
@@ -666,7 +659,6 @@ class GlobularEnergy(EnergyTerm):
         oracle: Oracle,
         residues: list[Residue] | None = None,
         inheritable: bool = True,
-        normalize: bool = True,
         weight: float = 1.0,
     ) -> None:
         """
@@ -681,15 +673,12 @@ class GlobularEnergy(EnergyTerm):
         inheritable: bool, default=True
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
-        normalize: bool, default=True
-            Whether the mean centroid distance calculated is divided by the number of atoms considered.
         weight: float = 1.0
             The weight of the energy term.
         """
-        name = f'{"normalized_" if normalize else ""}globular'
+        name = 'globular'
         super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight)
         self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
-        self.normalize = normalize
         assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
         assert 'structure' in self.oracle.result_class.model_fields, (
             'GlobularEnergy requires oracle to return structure in result_class'
@@ -706,9 +695,7 @@ class GlobularEnergy(EnergyTerm):
         relevant_atoms = structure[backbone_mask & selected_mask]
         centroid = np.mean(relevant_atoms.coord, axis=0, keepdims=True)
         centroid_distances = np.linalg.norm(relevant_atoms.coord - centroid, axis=1)
-        if self.normalize:
-            centroid_distances /= len(relevant_atoms)
-
+        
         value = np.std(centroid_distances)
         return value, value * self.weight
 
