@@ -695,7 +695,7 @@ class GlobularEnergy(EnergyTerm):
         relevant_atoms = structure[backbone_mask & selected_mask]
         centroid = np.mean(relevant_atoms.coord, axis=0, keepdims=True)
         centroid_distances = np.linalg.norm(relevant_atoms.coord - centroid, axis=1)
-        
+
         value = np.std(centroid_distances)
         return value, value * self.weight
 

@@ -4,7 +4,7 @@ import numpy as np
 from typing import Any
 
 def run_generate_mimic() -> Any:
-    
+
     # Get the value of an environment variable
     use_modal = True if os.getenv('USE_MODAL', 'True').lower() in ('true', '1', 'yes') else False
 
@@ -13,24 +13,24 @@ def run_generate_mimic() -> Any:
 
     # Define the target protein we want to mimic
     # Here it is:
-    # 7NJC_1|Chain A|Zinc finger (CCCH type) motif-containing protein|Toxoplasma gondii 
+    # 7NJC_1|Chain A|Zinc finger (CCCH type) motif-containing protein|Toxoplasma gondii
     # (strain ATCC 50611 / Me49) (508771)
     # sequence: GDPFGHVASPQSTKRFFIIKSNRMSNIYTSIQHGVWATSKGNSRKLSNAFTSTDHVLLLFSANESGGFQGFGRMMSLPDPQLFPGIWGPVQLRLGSNFRVMWLKQCKIEFEELGKVTNPWNDDLPLRKSRDGTEVPPALGSLLCTWMSQRPSEDLLAGTGIDPATR
     target_sequence = 'GDPFGHVASPQSTKRFFIIKSNRMSNIYTSIQHGVWATSKGNSRKLSNAFTSTDHVLLLFSANESGGFQGFGRMMSLPDPQLFPGIWGPVQLRLGSNFRVMWLKQCKIEFEELGKVTNPWNDDLPLRKSRDGTEVPPALGSLLCTWMSQRPSEDLLAGTGIDPATR'
-    
-    # Define the mutability of the residues. Here, mutable residues are those NOT binding to RNA, 
+
+    # Define the mutability of the residues. Here, mutable residues are those NOT binding to RNA,
     # as observed in the PDB structure, all others are immutable.
     mutable_list = list( range(16) + range(66, 120) + range(131,157) )
     mutability = np.array( [ True if i in mutable_list else False for i in range(len(target_sequence)) ] )
-                  
+
     # Extract embeddings for the residues that you want to remain constant and whose environment
-    # you want to maintain 
+    # you want to maintain
     # First define the EmbeddingOracle
     esm2 = bg.oracles.ESM2( use_modal=use_modal, config={ 'model_name': 'esm2_t33_650M_UR50D', } )
 
     result = esm2.embed( sequence=[target_sequence] )
     reference_embeddings = result.embeddings[mutability]  # get the embeddings for the reference (immutable) residues
-    
+
     # Define a chain providing a list of residues
     all_residues = [
         bg.Residue(name=aa, chain_ID='zinger', index=i, mutable=mut)
