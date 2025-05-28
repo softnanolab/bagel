@@ -1043,6 +1043,8 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
         # with the current implementation, the energy term is not inheritable, as reference embeddings would change
         # and would need to be changed dynamically, which is not fully supported yet
         self.residue_groups = [residue_list_to_group(residues)]
+        # Normalise the reference embeddings to unit length
+        reference_embeddings = reference_embeddings / np.linalg.norm(reference_embeddings, axis=1, keepdims=True)
         self.reference_embeddings = reference_embeddings
         assert self.reference_embeddings.shape[0] == len(self.residue_groups[0][0]), (
             f'Number of reference embeddings ({self.reference_embeddings.shape[0]}) does not'
@@ -1073,6 +1075,9 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
         assert conserved_embeddings.shape == self.reference_embeddings.shape, (
             f'Conserved embeddings shape {conserved_embeddings.shape} does not match reference embeddings {self.reference_embeddings.shape}'
         )
+        # Normalise the conserved embeddings to unit length
+        conserved_embeddings = conserved_embeddings / np.linalg.norm(conserved_embeddings, axis=1, keepdims=True)
+
         # The following generates a 1D tensor of shape (n_conserved_residues)
         cosine = np.sum(conserved_embeddings * self.reference_embeddings, axis=1)
         similarity = np.mean(cosine)
