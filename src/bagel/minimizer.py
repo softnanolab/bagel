@@ -110,8 +110,9 @@ class MonteCarloMinimizer(Minimizer):
     def __init__(
         self,
         mutator: MutationProtocol,
-        temperature: float,
+        temperature: float | list[float] | np.ndarray[Any, np.dtype[np.number]],
         n_steps: int,
+        acceptance_criterion: str = "metropolis",
         experiment_name: str | None = None,
         log_frequency: int = 100,
         preserve_best_system_every_n_steps: int | None = None,
@@ -120,17 +121,43 @@ class MonteCarloMinimizer(Minimizer):
         if experiment_name is None:
             experiment_name = f'mc_minimizer_{time_stamp()}'
 
-        self.temperature_schedule = np.full(shape=n_steps, fill_value=temperature)
+        if isinstance(temperature, float):
+            self.temperature_schedule = np.full(shape=n_steps, fill_value=temperature)
+        elif isinstance(temperature, list) or isinstance(temperature, np.ndarray):
+            self.temperature_schedule = np.array(temperature)
+            if len(self.temperature_schedule) != n_steps:
+                raise ValueError(
+                    f'temperature must be a float or a list/array of floats with length {n_steps}, not {len(self.temperature_schedule)}'
+                )
+        else:
+            raise ValueError(f'temperature must be a float or a list/array of floats, not {type(temperature)}')
+
         self.n_steps = n_steps
         self.preserve_best_system_every_n_steps = preserve_best_system_every_n_steps
+        self.acceptance_criterion = self._get_acceptance_criterion(acceptance_criterion)
         super().__init__(
             mutator=mutator, experiment_name=experiment_name, log_frequency=log_frequency, log_path=log_path
         )
 
-    @abstractmethod
-    def get_acceptance_probability(self, delta_energy: float, temperature: float) -> float:
-        """Calculate acceptance probability for a move."""
-        raise NotImplementedError('This method should be implemented by the subclass')
+    def _get_acceptance_criterion(self, name: str) -> Callable[[float, float], float]:
+        """
+        Get the acceptance criterion function based on name.
+
+        Parameters
+        ----------
+        name : str
+            Name of the acceptance criterion. Currently supported:
+            - "metropolis": Metropolis criterion exp(-ΔE/T)
+
+        Returns
+        -------
+        Callable[[float, float], float]
+            Function that takes delta_energy and temperature and returns acceptance probability
+        """
+        if name == "metropolis":
+            return lambda delta_energy, temperature: float(np.exp(-delta_energy / temperature))
+        else:
+            raise ValueError(f"Unknown acceptance criterion: {name}")
 
     def _before_step(self, system: System, step: int) -> System:
         """Hook called before each Monte Carlo step."""
@@ -150,7 +177,7 @@ class MonteCarloMinimizer(Minimizer):
             system=system.__copy__(),
             old_system=system,
         )
-        acceptance_probability = self.get_acceptance_probability(delta_energy, self.temperature_schedule[step])
+        acceptance_probability = self.acceptance_criterion(delta_energy, self.temperature_schedule[step])
         logger.debug(f'{delta_energy=}, {acceptance_probability=}')
 
         if acceptance_probability > np.random.uniform(low=0.0, high=1.0):
@@ -188,35 +215,7 @@ class MonteCarloMinimizer(Minimizer):
         return best_system
 
 
-class MetropolisMinimizer(MonteCarloMinimizer):
-    """Metropolis Monte Carlo minimizer with Boltzmann acceptance criterion."""
-
-    def __init__(
-        self,
-        mutator: MutationProtocol,
-        temperature: float,
-        n_steps: int,
-        experiment_name: str | None = None,
-        log_frequency: int = 100,
-        preserve_best_system_every_n_steps: int | None = None,
-        log_path: pl.Path | str | None = None,
-    ) -> None:
-        super().__init__(
-            mutator=mutator,
-            temperature=temperature,
-            n_steps=n_steps,
-            experiment_name=experiment_name,
-            log_frequency=log_frequency,
-            preserve_best_system_every_n_steps=preserve_best_system_every_n_steps,
-            log_path=log_path,
-        )
-
-    def get_acceptance_probability(self, delta_energy: float, temperature: float) -> float:
-        """Calculate Metropolis acceptance probability."""
-        return float(np.exp(-delta_energy / temperature))
-
-
-class SimulatedAnnealing(MetropolisMinimizer):
+class SimulatedAnnealing(MonteCarloMinimizer):
     """Simulated annealing with linearly decreasing temperature schedule."""
 
     def __init__(
@@ -225,6 +224,7 @@ class SimulatedAnnealing(MetropolisMinimizer):
         initial_temperature: float,
         final_temperature: float,
         n_steps: int,
+        acceptance_criterion: str = "metropolis",
         experiment_name: str | None = None,
         log_frequency: int = 100,
         preserve_best_system_every_n_steps: int | None = None,
@@ -234,8 +234,9 @@ class SimulatedAnnealing(MetropolisMinimizer):
             experiment_name = f'simulated_annealing_{time_stamp()}'
         super().__init__(
             mutator=mutator,
-            temperature=initial_temperature,
+            temperature=initial_temperature,  # This will be overwritten
             n_steps=n_steps,
+            acceptance_criterion=acceptance_criterion,
             experiment_name=experiment_name,
             log_frequency=log_frequency,
             preserve_best_system_every_n_steps=preserve_best_system_every_n_steps,
@@ -249,7 +250,7 @@ class SimulatedAnnealing(MetropolisMinimizer):
         )  # type: ignore
 
 
-class SimulatedTempering(MetropolisMinimizer):
+class SimulatedTempering(MonteCarloMinimizer):
     """Simulated tempering with cycling temperature schedule."""
 
     def __init__(
@@ -260,6 +261,7 @@ class SimulatedTempering(MetropolisMinimizer):
         n_steps_high: int,
         n_steps_low: int,
         n_cycles: int,
+        acceptance_criterion: str = "metropolis",
         experiment_name: str | None = None,
         log_frequency: int = 100,
         preserve_best_system_every_n_steps: int | None = None,
@@ -270,8 +272,9 @@ class SimulatedTempering(MetropolisMinimizer):
         total_n_steps = (n_steps_low + n_steps_high) * n_cycles
         super().__init__(
             mutator=mutator,
-            temperature=low_temperature,
+            temperature=low_temperature,  # This will be overwritten
             n_steps=total_n_steps,
+            acceptance_criterion=acceptance_criterion,
             experiment_name=experiment_name,
             log_frequency=log_frequency,
             preserve_best_system_every_n_steps=preserve_best_system_every_n_steps,
