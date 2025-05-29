@@ -57,8 +57,6 @@ class ESM2(EmbeddingOracle):
             import atexit
 
             atexit.register(self.__del__)
-        else:
-            assert os.environ.get('HF_MODEL_DIR'), 'HF_MODEL_DIR must be set when using ESM-2 locally'
 
         self._load(config)
 
@@ -93,6 +91,7 @@ class ESM2(EmbeddingOracle):
             return self._post_process(self._remote_embed(processed_chains))
         else:
             logger.debug('Given that use_modal is False, trying to embed with ESM-2 locally...')
+            assert os.environ.get('HF_MODEL_DIR'), 'HF_MODEL_DIR must be set when using ESM-2 locally'
             return self._post_process(self._local_embed(processed_chains))
 
     def _remote_embed(self, sequence: List[str]) -> ESM2Output:

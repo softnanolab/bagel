@@ -62,8 +62,8 @@ def esmfold(request, modal_app_context) -> bg.oracles.folding.ESMFold:
         raise ValueError(f'Unknown --oracles flag: {flag}')
 
 
-@pytest.fixture
-def esm2(request, modal_app) -> bg.oracles.embedding.ESM2:
+@pytest.fixture(scope='session')
+def esm2(request, modal_app_context) -> bg.oracles.embedding.ESM2:
     """Fixture that returns an ESM2 object."""
     flag = request.config.getoption('--oracles')
     if flag == 'skip':
@@ -74,10 +74,11 @@ def esm2(request, modal_app) -> bg.oracles.embedding.ESM2:
         del model
     elif flag == 'modal':
         with modal.enable_output():
-            with modal_app.run() as modal_app_context:
-                model = bg.oracles.embedding.ESM2(use_modal=True, modal_app_context=modal_app_context)
-        yield model
-        del model
+            model = bg.oracles.embedding.ESM2(use_modal=True, modal_app_context=modal_app_context)
+            yield model
+            del model
+    else:
+        raise ValueError(f'Unknown --oracles flag: {flag}')
 
 
 @pytest.fixture
