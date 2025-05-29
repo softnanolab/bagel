@@ -37,8 +37,9 @@ import modal
 def modal_app_context() -> modal.App:
     modal_app_context = app.run()
     modal_app_context.__enter__()
-    return modal_app_context
-
+    yield modal_app_context
+    # Teardown: exit the Modal app context after all tests
+    modal_app_context.__exit__(None, None, None)
 
 @pytest.fixture(scope='session')  # ensures only 1 Modal App is requested per process
 def esmfold(request, modal_app_context) -> bg.oracles.folding.ESMFold:
