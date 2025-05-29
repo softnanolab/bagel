@@ -34,12 +34,15 @@ from boileroom import app
 import modal
 
 @pytest.fixture(scope='session')
-def modal_app_context() -> modal.App:
-    modal_app_context = app.run()
-    modal_app_context.__enter__()
-    yield modal_app_context
-    # Teardown: exit the Modal app context after all tests
-    modal_app_context.__exit__(None, None, None)
+def modal_app_context(request) -> modal.App:
+    flag = request.config.getoption('--oracles')
+    if flag == 'modal':
+        modal_app_context = app.run()
+        modal_app_context.__enter__()
+        yield modal_app_context
+        modal_app_context.__exit__(None, None, None)
+    else:
+        yield None
 
 @pytest.fixture(scope='session')  # ensures only 1 Modal App is requested per process
 def esmfold(request, modal_app_context) -> bg.oracles.folding.ESMFold:
