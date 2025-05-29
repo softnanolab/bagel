@@ -15,6 +15,7 @@ from typing import List, Any, Type
 from boileroom import app  # type: ignore
 from boileroom.esmfold import ESMFoldOutput  # type: ignore
 from boileroom.esmfold import ESMFold as ESMFoldBoiler
+from modal import App
 
 from biotite.structure import AtomArray
 import logging
@@ -82,12 +83,13 @@ class ESMFold(FoldingOracle):
 
     result_class: Type[ESMFoldResult] = ESMFoldResult
 
-    def __init__(self, use_modal: bool = False, config: dict[str, Any] = {}):
+    def __init__(self, use_modal: bool = False, config: dict[str, Any] = {}, modal_app_context: App | None = None):
         """
         NOTE this can only be called once. Attempting to initialise this object multiple times in one process creates
         breaking exceptions.
         """
         self.use_modal = use_modal
+        self.modal_app_context = modal_app_context
         self.default_config = {
             'output_pdb': False,
             'output_cif': False,
@@ -97,7 +99,7 @@ class ESMFold(FoldingOracle):
         }
         self._load(config)
 
-        if self.use_modal:
+        if self.use_modal and self.modal_app_context is None:
             # Register the cleanup function to be called at exit, so no
             # ephermal app is left running when the object is destroyed
             import atexit
@@ -111,7 +113,7 @@ class ESMFold(FoldingOracle):
             self.modal_app_context = None
 
     def _load(self, config: dict[str, Any] = {}) -> None:
-        if self.use_modal:
+        if self.use_modal and self.modal_app_context is None:
             self.modal_app_context = app.run()
             self.modal_app_context.__enter__()  # type: ignore
         config = {**self.default_config, **config}
