@@ -112,7 +112,7 @@ class MonteCarloMinimizer(Minimizer):
         mutator: MutationProtocol,
         temperature: float | list[float] | np.ndarray[Any, np.dtype[np.number]],
         n_steps: int,
-        acceptance_criterion: str = "metropolis",
+        acceptance_criterion: str = 'metropolis',
         experiment_name: str | None = None,
         log_frequency: int = 100,
         preserve_best_system_every_n_steps: int | None = None,
@@ -120,6 +120,8 @@ class MonteCarloMinimizer(Minimizer):
     ) -> None:
         if experiment_name is None:
             experiment_name = f'mc_minimizer_{time_stamp()}'
+
+        self.temperature_schedule: np.ndarray[Any, np.dtype[np.number]]
 
         if isinstance(temperature, float):
             self.temperature_schedule = np.full(shape=n_steps, fill_value=temperature)
@@ -154,10 +156,10 @@ class MonteCarloMinimizer(Minimizer):
         Callable[[float, float], float]
             Function that takes delta_energy and temperature and returns acceptance probability
         """
-        if name == "metropolis":
+        if name == 'metropolis':
             return lambda delta_energy, temperature: float(np.exp(-delta_energy / temperature))
         else:
-            raise ValueError(f"Unknown acceptance criterion: {name}")
+            raise ValueError(f'Unknown acceptance criterion: {name}')
 
     def _before_step(self, system: System, step: int) -> System:
         """Hook called before each Monte Carlo step."""
@@ -224,7 +226,7 @@ class SimulatedAnnealing(MonteCarloMinimizer):
         initial_temperature: float,
         final_temperature: float,
         n_steps: int,
-        acceptance_criterion: str = "metropolis",
+        acceptance_criterion: str = 'metropolis',
         experiment_name: str | None = None,
         log_frequency: int = 100,
         preserve_best_system_every_n_steps: int | None = None,
@@ -247,7 +249,7 @@ class SimulatedAnnealing(MonteCarloMinimizer):
         self.final_temperature = final_temperature
         self.temperature_schedule = np.linspace(
             start=self.initial_temperature, stop=self.final_temperature, num=self.n_steps
-        )  # type: ignore
+        )
 
 
 class SimulatedTempering(MonteCarloMinimizer):
@@ -261,7 +263,7 @@ class SimulatedTempering(MonteCarloMinimizer):
         n_steps_high: int,
         n_steps_low: int,
         n_cycles: int,
-        acceptance_criterion: str = "metropolis",
+        acceptance_criterion: str = 'metropolis',
         experiment_name: str | None = None,
         log_frequency: int = 100,
         preserve_best_system_every_n_steps: int | None = None,
@@ -293,4 +295,4 @@ class SimulatedTempering(MonteCarloMinimizer):
                 np.full(shape=self.n_steps_high, fill_value=self.high_temperature),
             ]
         )
-        self.temperature_schedule = np.tile(cycle_temperatures, reps=self.n_cycles)  # type: ignore
+        self.temperature_schedule = np.tile(cycle_temperatures, reps=self.n_cycles)
