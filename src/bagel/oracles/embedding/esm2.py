@@ -12,7 +12,7 @@ from typing import List, Any
 from boileroom import app  # type: ignore
 from boileroom.esm2 import ESM2Output  # type: ignore
 from boileroom.esm2 import ESM2 as ESM2Boiler
-
+from modal import App
 import logging
 
 logger = logging.getLogger(__name__)
@@ -38,7 +38,9 @@ class ESM2(EmbeddingOracle):
 
     result_class = ESM2Result
 
-    def __init__(self, use_modal: bool = False, config: dict[str, Any] = {}) -> None:
+    def __init__(
+        self, use_modal: bool = False, config: dict[str, Any] = {}, modal_app_context: App | None = None
+    ) -> None:
         """
         NOTE this can only be called once. Attempting to initialise this object multiple times in one process creates
         breaking exceptions.
@@ -46,18 +48,17 @@ class ESM2(EmbeddingOracle):
         WIP: For now we will be using ModalFold to do this reliably without much env issues.
         """
         self.use_modal = use_modal
+        self.modal_app_context = modal_app_context
         self.default_config = {
             'output_hidden_states': False,
             'model_name': 'esm2_t33_650M_UR50D',
         }
-        if self.use_modal:
+        if self.use_modal and self.modal_app_context is None:
             # Register the cleanup function to be called at exit, so no
             # ephermal app is left running when the object is destroyed
             import atexit
 
             atexit.register(self.__del__)
-        else:
-            assert os.environ.get('HF_MODEL_DIR'), 'HF_MODEL_DIR must be set when using ESM-2 locally'
 
         self._load(config)
 
@@ -68,7 +69,7 @@ class ESM2(EmbeddingOracle):
             self.modal_app_context = None
 
     def _load(self, config: dict[str, Any] = {}) -> None:
-        if self.use_modal:
+        if self.use_modal and self.modal_app_context is None:
             self.modal_app_context = app.run()
             self.modal_app_context.__enter__()  # type: ignore
         config = {**self.default_config, **config}
@@ -92,6 +93,7 @@ class ESM2(EmbeddingOracle):
             return self._post_process(self._remote_embed(processed_chains))
         else:
             logger.debug('Given that use_modal is False, trying to embed with ESM-2 locally...')
+            assert os.environ.get('HF_MODEL_DIR'), 'HF_MODEL_DIR must be set when using ESM-2 locally'
             return self._post_process(self._local_embed(processed_chains))
 
     def _remote_embed(self, sequence: List[str]) -> ESM2Output:

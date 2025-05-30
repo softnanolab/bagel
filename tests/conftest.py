@@ -30,9 +30,24 @@ to bugs. The below fixture for example would create a new ESMFolder for each mod
 This was leading to test breaking exceptions.
 """
 
+from boileroom import app
+import modal
+
+
+@pytest.fixture(scope='session')
+def modal_app_context(request) -> modal.App:
+    flag = request.config.getoption('--oracles')
+    if flag == 'modal':
+        modal_app_context = app.run()
+        modal_app_context.__enter__()
+        yield modal_app_context
+        modal_app_context.__exit__(None, None, None)
+    else:
+        yield None
+
 
 @pytest.fixture(scope='session')  # ensures only 1 Modal App is requested per process
-def esmfold(request) -> bg.oracles.folding.ESMFold:
+def esmfold(request, modal_app_context) -> bg.oracles.folding.ESMFold:
     """
     Fixture that must be called in tests that require oracles.
     Behaviour based on  the --oracles flag of the origional pytest call.
@@ -40,22 +55,36 @@ def esmfold(request) -> bg.oracles.folding.ESMFold:
     flag = request.config.getoption('--oracles')
     if flag == 'skip':
         pytest.skip(reason='--oracles flag of the origional pytest call set to skip')
-    else:
-        model = bg.oracles.folding.ESMFold(use_modal=flag == 'modal')
+    elif flag == 'local':
+        model = bg.oracles.folding.ESMFold(use_modal=False)
         yield model
         del model
+    elif flag == 'modal':
+        with modal.enable_output():
+            model = bg.oracles.folding.ESMFold(use_modal=True, modal_app_context=modal_app_context)
+            yield model
+            del model
+    else:
+        raise ValueError(f'Unknown --oracles flag: {flag}')
 
 
-@pytest.fixture
-def esm2(request) -> bg.oracles.embedding.ESM2:
+@pytest.fixture(scope='session')
+def esm2(request, modal_app_context) -> bg.oracles.embedding.ESM2:
     """Fixture that returns an ESM2 object."""
     flag = request.config.getoption('--oracles')
     if flag == 'skip':
         pytest.skip(reason='--oracles flag of the origional pytest call set to skip')
-    else:
-        model = bg.oracles.embedding.ESM2(use_modal=flag == 'modal')
+    elif flag == 'local':
+        model = bg.oracles.embedding.ESM2(use_modal=False)
         yield model
         del model
+    elif flag == 'modal':
+        with modal.enable_output():
+            model = bg.oracles.embedding.ESM2(use_modal=True, modal_app_context=modal_app_context)
+            yield model
+            del model
+    else:
+        raise ValueError(f'Unknown --oracles flag: {flag}')
 
 
 @pytest.fixture
