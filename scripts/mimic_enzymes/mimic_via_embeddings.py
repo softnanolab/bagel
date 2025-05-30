@@ -18,27 +18,22 @@ def run_generate_mimic() -> Any:
         print(f'Whether to use modal: {use_modal}')
 
         # Define the target enzyme we want to mimic
-        # Here it is one half of an antibody for mice CD3, we select the Heavy chain
-        # >3R08_1|Chain A[auth L]|Mouse anti-mouse CD3epsilon antibody 2C11 light chain|Cricetulus migratorius (3122392)
-        # DIQMTQSPSSLPASLGDRVTINCQASQDISNYLNWYQQKPGKAPKLLIYYTNKLADGVPSRFSGSGSGRDSSFTISSLESEDIGSYYCQQYYNYPWTFGPGTKLEIKRADAKPTVSIFPPSSEQLGTGSATLVCFVNNFYPKDINVKWKVDGSEKRDGVLQSVTDQDSKDSTYSLSSTLSLTKADYERHNLYTCEVTHKTSTAAIVKTLNRNE
-        # >3R08_2|Chain B[auth H]|Mouse anti-mouse CD3epsilon antibody 2C11 heavy chain|Cricetulus migratorius (3122392)
-        # EVQLVESGGGLVQPGKSLKLSCEASGFTFSGYGMHWVRQAPGRGLESVAYITSSSINIKYADAVKGRFTVSRDNAKNLLFLQMNILKSEDTAMYYCARFDWDKNYWGQGTMVTVSSAKTTAPSVYPLAPACDSTTSTTNTVTLGCLVKGYFPEPVTVIWNSGALTSGVHTFPSVLHSGLYSLSSSVTVPSSTWPSQTVTCNVAHPASSTTVDLKIE
-        # >3R08_3|Chain C[auth E]|T-cell surface glycoprotein CD3 epsilon chain|Cricetulus migratorius (3122392)
-        # DDAENIEYKVSISGTSVELTCPLDSDENLKWEKNGQELPQKHDKHLVLQDFSEVEDSGYYVCYTPASNKNTYLYLKARVSEY
-
-        target_sequence = 'EVQLVESGGGLVQPGKSLKLSCEASGFTFSGYGMHWVRQAPGRGLESVAYITSSSINIKYADAVKGRFTVSRDNAKNLLFLQMNILKSEDTAMYYCARFDWDKNYWGQGTMVTVSSAKTTAPSVYPLAPACDSTTSTTNTVTLGCLVKGYFPEPVTVIWNSGALTSGVHTFPSVLHSGLYSLSSSVTVPSSTWPSQTVTCNVAHPASSTTVDLKIE'
+        # Here it is (just to make a random example):
+        # 7NJC_1|Chain A|Zinc finger (CCCH type) motif-containing protein|Toxoplasma gondii 
+        # (strain ATCC 50611 / Me49) (508771)
+        # sequence: GDPFGHVASPQSTKRFFIIKSNRMSNIYTSIQHGVWATSKGNSRKLSNAFTSTDHVLLLFSANESGGFQGFGRMMSLPDPQLFPGIWGPVQLRLGSNFRVMWLKQCKIEFEELGKVTNPWNDDLPLRKSRDGTEVPPALGSLLCTWMSQRPSEDLLAGTGIDPATR
+        target_sequence = 'GDPFGHVASPQSTKRFFIIKSNRMSNIYTSIQHGVWATSKGNSRKLSNAFTSTDHVLLLFSANESGGFQGFGRMMSLPDPQLFPGIWGPVQLRLGSNFRVMWLKQCKIEFEELGKVTNPWNDDLPLRKSRDGTEVPPALGSLLCTWMSQRPSEDLLAGTGIDPATR'
     
-        # Define the mutability of the residues. Here, mutable residues are those NOT binding to CD3,
+        # Define the mutability of the residues. Here, mutable residues are those NOT binding to RNA,
         # in the PDB structure, as observed in the PDB structure, all others are immutable. 
-        # /H:93-99 /H:27-34 /H:48-64 are NOT mutable, the rest are mutable.
-        mutable_list = list( range(0, 27) ) + list( range(35, 48) ) + list( range(65, 93) ) + list( range(100, 110) ) + list( range(111, 118) ) + list( range(119, 127) )
+        mutable_list = list( range(16) ) + list( range(66, 120) ) + list( range(131,157) )
         mutability = [ True if i in mutable_list else False for i in range(len(target_sequence)) ] 
         print(f"Length of target sequence: {len(target_sequence)}")
                   
     
         # Define a chain providing a list of residues
         all_residues = [
-            bg.Residue(name=aa, chain_ID='CD3H', index=i, mutable=mut)
+            bg.Residue(name=aa, chain_ID='zing', index=i, mutable=mut)
             for i, (aa, mut) in enumerate(zip(target_sequence, mutability))
         ]
         # For use later, define the conserved residues
@@ -84,7 +79,7 @@ def run_generate_mimic() -> Any:
         # see Rajendran et al 2025. So we do standard MC with fixed temperature of 0.001. 
         # We are not really minimizing the system, but rather generating a diverse set of structures
         # at a fixed temperature in this way.
-        minimizer = bg.minimizer.MetropolisMinimizer(
+        minimizer = bg.minimizer.MonteCarloMinimizer(
             mutator=bg.mutation.Canonical(n_mutations=1), # cannot add/remove residues, only substitutes for different amino acid types
             temperature=0.001,  # fixed temperature for the MC sampling
             n_steps=2000,  # number of steps to run the minimizer
