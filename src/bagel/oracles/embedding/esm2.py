@@ -38,7 +38,9 @@ class ESM2(EmbeddingOracle):
 
     result_class = ESM2Result
 
-    def __init__(self, use_modal: bool = False, config: dict[str, Any] = {}, modal_app_context: App | None = None) -> None:
+    def __init__(
+        self, use_modal: bool = False, config: dict[str, Any] = {}, modal_app_context: App | None = None
+    ) -> None:
         """
         NOTE this can only be called once. Attempting to initialise this object multiple times in one process creates
         breaking exceptions.

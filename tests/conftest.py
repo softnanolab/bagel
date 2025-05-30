@@ -33,6 +33,7 @@ This was leading to test breaking exceptions.
 from boileroom import app
 import modal
 
+
 @pytest.fixture(scope='session')
 def modal_app_context(request) -> modal.App:
     flag = request.config.getoption('--oracles')
@@ -43,6 +44,7 @@ def modal_app_context(request) -> modal.App:
         modal_app_context.__exit__(None, None, None)
     else:
         yield None
+
 
 @pytest.fixture(scope='session')  # ensures only 1 Modal App is requested per process
 def esmfold(request, modal_app_context) -> bg.oracles.folding.ESMFold:
