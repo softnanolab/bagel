@@ -2,7 +2,6 @@
 
 ![Tests](https://img.shields.io/github/actions/workflow/status/softnanolab/bagel-wip/python-modal-tests.yaml?branch=main)
 
-
 ### Installation
 
 1. Clone the repo.
