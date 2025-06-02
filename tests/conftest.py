@@ -379,10 +379,11 @@ def simple_state(fake_esmfold: bg.oracles.folding.ESMFold) -> bg.State:
 
 @pytest.fixture
 def real_simple_state(simple_state: bg.State, esmfold: bg.oracles.folding.ESMFold) -> bg.State:
-    simple_state._energy_terms_value = {}
-    for term in simple_state.energy_terms:
+    state_copy = simple_state.__copy__()
+    state_copy._energy_terms_value = {}
+    for term in state_copy.energy_terms:
         term.oracle = esmfold
-    return simple_state
+    return state_copy
 
 
 @pytest.fixture

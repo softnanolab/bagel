@@ -22,7 +22,7 @@ jobs:
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --extra dev
 
       - name: Authenticate Modal
         shell: bash -l {0}
