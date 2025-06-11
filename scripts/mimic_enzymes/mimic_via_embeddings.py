@@ -4,7 +4,7 @@ import numpy as np
 from typing import Any
 import modal
 
-# This script implements the method described in Rajendran et al 2025 to mimic enzymes
+# This script implements the method described in Wu et al 2025 to mimic enzymes
 # using the ESM2 embeddings. It uses the Metropolis minimizer to generate a diverse set of structures
 # that maintain the environment of the conserved residues, while mutating the rest of the residues.
 

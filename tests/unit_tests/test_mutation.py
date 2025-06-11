@@ -61,7 +61,7 @@ def test_GrandCanonical_MutationProtocol_does_not_remove_all_residues_in_chain(
 def test_mutation_protocol_resets_system_total_energy(
     real_simple_state: bg.State,
 ) -> None:
-    system = bg.System(states=[real_simple_state, real_simple_state.__copy__()])
+    system = bg.System(states=[real_simple_state, real_simple_state])
     system.get_total_energy()
     assert system.total_energy is not None, 'system total energy is None'
     assert system.total_energy + 1.4 < 0.5, 'system total energy is not correct'

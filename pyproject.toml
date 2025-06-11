@@ -15,7 +15,7 @@ keywords = ["protein", "protein design", "optimisation", "drug", "binder"]
 requires-python = ">=3.12"
 dependencies = [
     "biotite>=1.0.1",
-    "boileroom==0.0.15",
+    "boileroom==0.1.0",
     "numpy>=2.2.0",
     "pandas>=2.2.3",
     "pydantic>=2.10.6",
@@ -27,6 +27,7 @@ dev = [
     "ipykernel>=6.29.5",
     "mypy>=1.14.1",
     "pytest>=8.3.4",
+    "pytest-xdist>=3.6.1",
     "pytest-cov>=6.0.0",
     "pytest-repeat>=0.9.4",
     "ruff>=0.8.6",
