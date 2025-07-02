@@ -33,15 +33,9 @@ def main(
     ]
 
     target_chain = bg.Chain(residues=residues_target)
-    target_residue_ids = [
-        105, 106, 107, 108, 109, 110, 111,
-        150, 151, 152, 153, 154, 155, 156, 157, 158, 159,
-        45, 46, 47, 48
-        ]
-    residues_target_hotspot = [residues_target[i] for i in target_residue_ids]
-
+    
     # For the binder, start with a random sequence of amino acids selecting randomly from the 30 amino acids
-    binder_length = 20
+    binder_length = 30
 
     # Jakub: RESTART!
     if binder_sequence is None:
@@ -92,12 +86,12 @@ def main(
             ),
         bg.energies.PAEEnergy(
             oracle=esmfold,
-            residues=[residues_target_hotspot, residues_binder],
+            residues=[residues_target, residues_binder],
             weight=6.0,
         ),
         bg.energies.SeparationEnergy(
             oracle=esmfold,
-            residues=[residues_target_hotspot, residues_binder],
+            residues=[residues_target, residues_binder],
             weight=1.0,
         ),
     ]

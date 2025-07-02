@@ -129,7 +129,8 @@ def main(
         }
 
     # Note: the result in the paper comes from a parallel tempering implementation in previous version of the codebase
-    # which is not yet implemented, but the simulated tempering below should produce similar results
+    # which is not yet implemented, but the simulated tempering below should produce equivalent results
+    # The difference is only in the optimization; not in the energy terms, i.e. the definition of the System energy
     minimizer = bg.minimizer.SimulatedTempering(
         mutator=mutator,
         high_temperature=optimization_params['high_temperature'],
