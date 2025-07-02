@@ -35,7 +35,7 @@ def main(
 
     # Now define residues in the hotspot where you want to bind.
     # Last 98-140 AAs are 'disordered', i.e. targeted
-    residue_ids = range(99, 141)
+    residue_ids = range(99, 140)
 
     residues_hotspot = [residues_target[i] for i in residue_ids]
     target_chain = bg.Chain(residues=residues_target)
@@ -84,6 +84,13 @@ def main(
         bg.energies.PLDDTEnergy(
             oracle=esmfold,
             residues=residues_binder,
+            # TODO: name
+            weight=4.0
+        ),
+        bg.energies.PLDDTEnergy(
+            oracle=esmfold,
+            residues=residues_hotspot,
+            # TODO: name
             weight=4.0
         ),
         bg.energies.HydrophobicEnergy(
