@@ -38,7 +38,6 @@ def main(
         [119, 120, 121, 122, 123, 124],
         [144, 145, 146],
         [205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215],
-        # [249, 250, 251, 252, 253] <- this last was is really deep in the pocket, so will avoid it for now
         ]
     residue_ids = [item for sublist in residue_ids for item in sublist]
 
