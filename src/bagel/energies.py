@@ -50,6 +50,7 @@ class EnergyTerm(ABC):
         oracle: Oracle,
         inheritable: bool,
         weight: float = 1.0,
+        custom_name: str | None = None,
     ) -> None:
         """
         Initialises EnergyTerm class.
@@ -68,8 +69,10 @@ class EnergyTerm(ABC):
             Whether the energy term is inheritable.
         weight: float = 1.0
             The weight of the energy term.
+        custom_name: str | None = None
+            Optional custom name to append to the energy term name.
         """
-        self.name = name
+        self.name = name if custom_name is None else f'{name}_{custom_name}'
         self.oracle = oracle
         self.weight = weight
         self.inheritable = inheritable
@@ -81,7 +84,7 @@ class EnergyTerm(ABC):
         assert hasattr(self, 'residue_groups'), 'residue_groups attribute must be set in class initialiser'
         assert hasattr(self, 'inheritable'), 'inheritable attribute must be set in class initialiser'
         assert hasattr(self, 'weight'), 'weight attribute must be set in class initialiser'
-        if self.name == 'template_match' or self.name == 'backbone_template_match':
+        if 'template_match' in self.name:
             assert self.inheritable is False, 'template_match energy term should NEVER be inheritable'
 
         assert self.oracle is not None, 'oracle attribute must be set in class initialiser'
@@ -193,6 +196,7 @@ class PTMEnergy(EnergyTerm):
         self,
         oracle: FoldingOracle,
         weight: float = 1.0,
+        custom_name: str | None = None,
     ) -> None:
         """
         Initialises Predicted Template Modelling Score Energy class.
@@ -203,8 +207,10 @@ class PTMEnergy(EnergyTerm):
             The oracle to use for the energy term.
         weight: float
             The weight of the energy term.
+        custom_name: str | None = None
+            Optional custom name to append to the energy term name.
         """
-        super().__init__(name='pTM', inheritable=True, oracle=oracle, weight=weight)
+        super().__init__(name='pTM', inheritable=True, oracle=oracle, weight=weight, custom_name=custom_name)
         assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
         assert 'ptm' in self.oracle.result_class.model_fields, 'PTMEnergy requires oracle to return ptm in result_class'
 
@@ -236,6 +242,7 @@ class ChemicalPotentialEnergy(EnergyTerm):
         target_size: int = 0,
         chemical_potential: float = 1.0,
         weight: float = 1.0,
+        custom_name: str | None = None,
     ) -> None:
         """
         Initialises Chemical Potential Energy class.
@@ -252,8 +259,10 @@ class ChemicalPotentialEnergy(EnergyTerm):
             The chemical potential of the system.
         weight: float
             The weight of the energy term.
+        custom_name: str | None = None
+            Optional custom name to append to the energy term name.
         """
-        super().__init__(name='chem_pot', inheritable=True, oracle=oracle, weight=weight)
+        super().__init__(name='chem_pot', inheritable=True, oracle=oracle, weight=weight, custom_name=custom_name)
         self.power = power
         self.target_size = target_size
         self.chemical_potential = chemical_potential
@@ -286,6 +295,7 @@ class PLDDTEnergy(EnergyTerm):
         residues: list[Residue] | None,
         inheritable: bool = True,
         weight: float = 1.0,
+        custom_name: str | None = None,
     ) -> None:
         """Initialises Local Predicted Local Distance Difference Test Energy class.
 
@@ -300,6 +310,8 @@ class PLDDTEnergy(EnergyTerm):
             residue could then be added to this energy term.
         weight: float = 1.0
             The weight of the energy term.
+        custom_name: str | None = None
+            Optional custom name to append to the energy term name.
         """
         if isinstance(self, OverallPLDDTEnergy):
             name = 'global_pLDDT'
@@ -307,7 +319,7 @@ class PLDDTEnergy(EnergyTerm):
             name = 'local_pLDDT'
         else:
             raise ValueError(f'Unknown energy term type: {type(self)}')
-        super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight)
+        super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight, custom_name=custom_name)
         if residues is not None:
             self.residue_groups = [residue_list_to_group(residues)]
         else:
@@ -337,7 +349,7 @@ class OverallPLDDTEnergy(PLDDTEnergy):
     Overall Predicted Local Distance Difference Test energy.
     """
 
-    def __init__(self, oracle: FoldingOracle, weight: float = 1.0) -> None:
+    def __init__(self, oracle: FoldingOracle, weight: float = 1.0, custom_name: str | None = None) -> None:
         """Initialises Overall Predicted Local Distance Difference Test Energy class.
 
         Parameters
@@ -346,8 +358,10 @@ class OverallPLDDTEnergy(PLDDTEnergy):
             The oracle to use for the energy term.
         weight: float
             The weight of the energy term.
+        custom_name: str | None = None
+            Optional custom name to append to the energy term name.
         """
-        super().__init__(oracle=oracle, inheritable=True, weight=weight, residues=None)
+        super().__init__(oracle=oracle, inheritable=True, weight=weight, residues=None, custom_name=custom_name)
         assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
         assert 'local_plddt' in self.oracle.result_class.model_fields, (
             'OverallPLDDTEnergy requires oracle to return local_plddt in result_class'
@@ -369,6 +383,7 @@ class SurfaceAreaEnergy(EnergyTerm):
         probe_radius: float | None = None,
         max_sasa: float | None = None,
         weight: float = 1.0,
+        custom_name: str | None = None,
     ) -> None:
         """
         Initialises Surface Area Energy Class.
@@ -386,9 +401,11 @@ class SurfaceAreaEnergy(EnergyTerm):
             The VdW-radius of the solvent molecules used in the SASA calculation. Default is the water VdW-radius.
         max_sasa: float or None, default=None
             The maximum SASA value used if normalization is enabled. Default is the full surface area of a Sulfur atom.
+        custom_name: str | None = None
+            Optional custom name to append to the energy term name.
         """
         name = 'surface_area' if residues is None else f'{"selective_" if residues is not None else ""}surface_area'
-        super().__init__(name=name, inheritable=inheritable, oracle=oracle, weight=weight)
+        super().__init__(name=name, inheritable=inheritable, oracle=oracle, weight=weight, custom_name=custom_name)
         self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
         self.probe_radius = probe_radius_water if probe_radius is None else probe_radius
         self.max_sasa = max_sasa_values['S'] if max_sasa is None else max_sasa
@@ -422,12 +439,15 @@ class HydrophobicEnergy(EnergyTerm):
         residues: list[Residue] | None = None,
         surface_only: bool = False,
         weight: float = 1.0,
+        custom_name: str | None = None,
     ) -> None:
         """
         Initialises hydrophobic energy class.
 
         Parameters
         ----------
+        oracle: FoldingOracle
+            The oracle to use for the energy term.
         inheritable: bool, default=True
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
@@ -438,8 +458,12 @@ class HydrophobicEnergy(EnergyTerm):
             in the calculation. If true, result is scaled by normalised solute accessible surface area values.
         weight: float = 1.0
             The weight of the energy term.
+        custom_name: str | None = None
+            Optional custom name to append to the energy term name.
         """
-        super().__init__(name='hydrophobic', inheritable=inheritable, oracle=oracle, weight=weight)
+        super().__init__(
+            name='hydrophobic', inheritable=inheritable, oracle=oracle, weight=weight, custom_name=custom_name
+        )
         self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
         self.surface_only = surface_only
         assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
@@ -477,6 +501,7 @@ class PAEEnergy(EnergyTerm):
         inheritable: bool = True,
         cross_term_only: bool = True,
         weight: float = 1.0,
+        custom_name: str | None = None,
     ) -> None:
         """
         Initialises the alignment error energy class.
@@ -495,9 +520,11 @@ class PAEEnergy(EnergyTerm):
             also considers the uncertainty in distances between atoms within the same group.
         weight: float = 1.0
             The weight of the energy term.
+        custom_name: str | None = None
+            Optional custom name to append to the energy term name.
         """
         name = f'{"cross_" if cross_term_only else ""}PAE'
-        super().__init__(name=name, inheritable=inheritable, oracle=oracle, weight=weight)
+        super().__init__(name=name, inheritable=inheritable, oracle=oracle, weight=weight, custom_name=custom_name)
         self.cross_term_only = cross_term_only
         if len(residues) == 1:
             self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[0])]
@@ -545,6 +572,7 @@ class RingSymmetryEnergy(EnergyTerm):
         inheritable: bool = True,
         direct_neighbours_only: bool = False,
         weight: float = 1.0,
+        custom_name: str | None = None,
     ) -> None:
         """Initialises ring symmetry energy class.
 
@@ -563,9 +591,11 @@ class RingSymmetryEnergy(EnergyTerm):
             only), or each group to all other groups. Defaults to the latter.
         weight: float = 1.0
             The weight of the energy term.
+        custom_name: str | None = None
+            Optional custom name to append to the energy term name.
         """
         name = f'{"neighbour_" if direct_neighbours_only else ""}ring_symmetry'
-        super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight)
+        super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight, custom_name=custom_name)
         assert (len(symmetry_groups) > 1) and (len(symmetry_groups[0]) >= 1), 'Multiple symmetry groups required.'
         self.residue_groups = [residue_list_to_group(symmetry_group) for symmetry_group in symmetry_groups]
         self.direct_neighbours_only: bool = direct_neighbours_only
@@ -608,12 +638,15 @@ class SeparationEnergy(EnergyTerm):
         residues: tuple[list[Residue], list[Residue]],
         inheritable: bool = True,
         weight: float = 1.0,
+        custom_name: str | None = None,
     ) -> None:
         """
         Initialises separation energy class.
 
         Parameters
         ----------
+        oracle: FoldingOracle
+            The oracle to use for the energy term.
         residues: tuple[list[Residue],list[Residue]]
             A tuple containing two lists of residues, those to include in the first [0] and second [1] group.
         inheritable: bool, default=True
@@ -621,9 +654,11 @@ class SeparationEnergy(EnergyTerm):
             residue could then be added to this energy term.
         weight: float = 1.0
             The weight of the energy term.
+        custom_name: str | None = None
+            Optional custom name to append to the energy term name.
         """
         name = 'separation'
-        super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight)
+        super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight, custom_name=custom_name)
         self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
         assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
         assert 'structure' in self.oracle.result_class.model_fields, (
@@ -660,6 +695,7 @@ class GlobularEnergy(EnergyTerm):
         residues: list[Residue] | None = None,
         inheritable: bool = True,
         weight: float = 1.0,
+        custom_name: str | None = None,
     ) -> None:
         """
         Initialises globular energy class.
@@ -675,9 +711,11 @@ class GlobularEnergy(EnergyTerm):
             residue could then be added to this energy term.
         weight: float = 1.0
             The weight of the energy term.
+        custom_name: str | None = None
+            Optional custom name to append to the energy term name.
         """
         name = 'globular'
-        super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight)
+        super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight, custom_name=custom_name)
         self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
         assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
         assert 'structure' in self.oracle.result_class.model_fields, (
@@ -714,12 +752,15 @@ class TemplateMatchEnergy(EnergyTerm):
         backbone_only: bool = False,
         distogram_separation: bool = False,
         weight: float = 1.0,
+        custom_name: str | None = None,
     ) -> None:
         """
         Initialises template match energy class.
 
         Parameters
         ----------
+        oracle: Oracle
+            The oracle to use for the energy term.
         template_atoms: AtomArray
             An array of atoms that specify the desired positions of the structure.
         residues: list[Residue]
@@ -730,9 +771,13 @@ class TemplateMatchEnergy(EnergyTerm):
             Whether strucutre - template separation is measured by taking the root mean square of the difference between
             the two pairwise distance matrices. By default, the root mean square of the difference in positions is used
             instead.
+        weight: float = 1.0
+            The weight of the energy term.
+        custom_name: str | None = None
+            Optional custom name to append to the energy term name.
         """
         name = f'{"backbone_" if backbone_only else ""}template_match'
-        super().__init__(name=name, oracle=oracle, inheritable=False, weight=weight)
+        super().__init__(name=name, oracle=oracle, inheritable=False, weight=weight, custom_name=custom_name)
         self.residue_groups = [residue_list_to_group(residues)]
         self.template_atoms = template_atoms
         self.backbone_only = backbone_only
@@ -783,6 +828,7 @@ class SecondaryStructureEnergy(EnergyTerm):
         target_secondary_structure: str,
         inheritable: bool = True,
         weight: float = 1.0,
+        custom_name: str | None = None,
     ) -> None:
         """
         Initialises the secondary structure energy class.
@@ -800,9 +846,11 @@ class SecondaryStructureEnergy(EnergyTerm):
             residue could then be added to this energy term.
         weight: float = 1.0
             The weight of the energy term.
+        custom_name: str | None = None
+            Optional custom name to append to the energy term name.
         """
         name = f'{target_secondary_structure.lower()}'
-        super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight)
+        super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight, custom_name=custom_name)
         self.residue_groups = [residue_list_to_group(residues)]
         options = ('alpha-helix', 'beta-sheet', 'coil')
         assert target_secondary_structure in options, f'{target_secondary_structure} not recognised. options: {options}'
@@ -850,12 +898,15 @@ class EllipsoidEnergy(EnergyTerm):
         k_attractive: float = 1.0,
         k_repulsive: float = 10.0,
         weight: float = 1.0,
+        custom_name: str | None = None,
     ) -> None:
         """
         Initializes elipsoid energy class.
 
         Parameters
         ----------
+        oracle: Oracle
+            The oracle to use for the energy term.
         aspect_ratio: tuple[float, float, float]
             The desired relative length, width, and height of the ellipsoid.
         k_attractive: float, default=1.0
@@ -864,9 +915,13 @@ class EllipsoidEnergy(EnergyTerm):
         k_repulsive: float, default=10.0
             Constant of proportionality for the recipricol exponential type repulsive energy that evenly distributes
             all backbone atoms within the ellipsoid volume.
+        weight: float = 1.0
+            The weight of the energy term.
+        custom_name: str | None = None
+            Optional custom name to append to the energy term name.
         """
         name = 'ellipsoid'
-        super().__init__(name=name, oracle=oracle, inheritable=True, weight=weight)
+        super().__init__(name=name, oracle=oracle, inheritable=True, weight=weight, custom_name=custom_name)
         self.residue_groups = []
         self.k_attractive = k_attractive
         self.k_repulsive = k_repulsive
@@ -938,6 +993,7 @@ class CuboidEnergy(EnergyTerm):
         k_repulsive: float = 10.0,
         sharpness: float = 2.0,
         weight: float = 1.0,
+        custom_name: str | None = None,
     ) -> None:
         """
         Initializes cuboid energy class.
@@ -959,9 +1015,11 @@ class CuboidEnergy(EnergyTerm):
             perfect right angled vertex.
         weight: float = 1.0
             The weight of the energy term.
+        custom_name: str | None = None
+            Optional custom name to append to the energy term name.
         """
         name = 'cuboid'
-        super().__init__(name=name, oracle=oracle, inheritable=True, weight=weight)
+        super().__init__(name=name, oracle=oracle, inheritable=True, weight=weight, custom_name=custom_name)
         self.residue_groups = []
         self.k_attractive = k_attractive
         self.k_repulsive = k_repulsive
@@ -1022,6 +1080,7 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
         residues: list[Residue],
         reference_embeddings: npt.NDArray[np.float64],
         weight: float = 1.0,
+        custom_name: str | None = None,
     ) -> None:
         """
         Initialises EmbeddingsSimilarityEnergy class.
@@ -1034,12 +1093,13 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
             Which residues to include in the calculation.
         reference_embeddings: np.ndarray
             The reference embeddings to compare to.
-        inheritable: bool, default=False
-            If a new residue is added next to a residue included in this energy term, this dictates whether that new
-            residue could then be added to this energy term.
+        weight: float = 1.0
+            The weight of the energy term.
+        custom_name: str | None = None
+            Optional custom name to append to the energy term name.
         """
         name = 'embeddings_similarity'
-        super().__init__(name=name, oracle=oracle, inheritable=False, weight=weight)
+        super().__init__(name=name, oracle=oracle, inheritable=False, weight=weight, custom_name=custom_name)
         # with the current implementation, the energy term is not inheritable, as reference embeddings would change
         # and would need to be changed dynamically, which is not fully supported yet
         self.residue_groups = [residue_list_to_group(residues)]

@@ -52,8 +52,8 @@ class ESMFoldResult(FoldingResult):
     local_plddt: npt.NDArray[np.float64]  # local ( per residue ) predicted LDDT score (0 to 1)
     ptm: npt.NDArray[np.float64]  # (global) predicted template modelling score (0 to 1)
     pae: npt.NDArray[np.float64]  # pairwise predicted alignment error
-    
-    # for ptm: see Zhang Y and Skolnick J (2004). "Scoring function for automated assessment of 
+
+    # for ptm: see Zhang Y and Skolnick J (2004). "Scoring function for automated assessment of
     # protein structure template quality". Proteins. 57 (4): 702–710. doi:10.1002/prot.20264
 
     @classmethod
