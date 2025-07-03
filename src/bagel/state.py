@@ -80,7 +80,7 @@ class State:
         # Check that all energy term names are unique
         energy_term_names = [term.name for term in self.energy_terms]
         assert len(energy_term_names) == len(set(energy_term_names)), (
-            f"Energy term names must be unique. Found duplicates: {energy_term_names}. Please rename using 'custom_name'."
+            f"Energy term names must be unique. Found duplicates: {energy_term_names}. Please rename using 'name'."
         )
 
         total_energy = 0.0
