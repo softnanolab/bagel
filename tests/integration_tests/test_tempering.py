@@ -113,3 +113,69 @@ def test_tempering_preserve_best_system_every_n_steps(
     assert len(list(current_dir.glob('*.pae'))) == 16, 'There should be 16 .pae files in the current directory.'
     assert len(list(current_dir.glob('*.plddt'))) == 16, 'There should be 16 .plddt files in the current directory.'
     assert len(list(current_dir.glob('*.cif'))) == 16, 'There should be 16 .cif files in the current directory.'
+
+
+def test_tempering_energy_term_names_in_csv_files(
+    esmfold: bg.oracles.folding.ESMFold,
+    test_log_path: pl.Path,
+    very_high_temp: float,
+) -> None:
+    """Test that custom energy term names are correctly recorded in energies.csv files."""
+
+    residues = [bg.Residue(name='G', chain_ID='TEST', index=i, mutable=True) for i in range(5)]
+
+    # Create energy terms with custom names
+    state = bg.State(
+        chains=[bg.Chain(residues)],
+        energy_terms=[
+            bg.energies.PTMEnergy(name='test', oracle=esmfold, weight=1.0),
+            bg.energies.OverallPLDDTEnergy(oracle=esmfold, weight=1.0),
+            bg.energies.OverallPLDDTEnergy(name='test', oracle=esmfold, weight=1.0),
+        ],
+        name='test',
+    )
+
+    test_system = bg.System(states=[state], name='test_energy_names')
+
+    minimizer = bg.minimizer.SimulatedTempering(
+        mutator=bg.mutation.Canonical(),
+        high_temperature=very_high_temp,  # Ensures any mutation is accepted
+        low_temperature=0.001,
+        n_steps_high=2,
+        n_steps_low=1,
+        n_cycles=2,  # Short run for testing
+        preserve_best_system_every_n_steps=None,
+        log_frequency=1,
+        log_path=test_log_path,
+    )
+
+    best_system = minimizer.minimize_system(test_system)
+
+    from bagel.analysis.analyzer import SimulatedTemperingAnalyzer
+
+    analyzer = SimulatedTemperingAnalyzer(test_log_path / minimizer.experiment_name)
+
+    # Expected energy term names using the actual state name
+    expected_energy_names = [f'{state.name}:pTM_test', f'{state.name}:global_pLDDT', f'{state.name}:global_pLDDT_test']
+
+    # Check that custom energy term names appear in specific columns (2nd, 3rd, 4th) in current energies CSV
+    current_energy_columns = analyzer.current_energies_df.columns.tolist()
+
+    for i, expected_name in enumerate(expected_energy_names):
+        column_index = i + 1  # 2nd, 3rd, 4th columns (indices 1, 2, 3)
+        actual_name = current_energy_columns[column_index]
+        assert actual_name == expected_name, (
+            f'Column {column_index + 1} in current energies CSV should be "{expected_name}", got "{actual_name}". '
+            f'Full columns: {current_energy_columns}'
+        )
+
+    # Check that custom energy term names appear in specific columns (2nd, 3rd, 4th) in best energies CSV
+    best_energy_columns = analyzer.best_energies_df.columns.tolist()
+
+    for i, expected_name in enumerate(expected_energy_names):
+        column_index = i + 1  # 2nd, 3rd, 4th columns (indices 1, 2, 3)
+        actual_name = best_energy_columns[column_index]
+        assert actual_name == expected_name, (
+            f'Column {column_index + 1} in best energies CSV should be "{expected_name}", got "{actual_name}". '
+            f'Full columns: {best_energy_columns}'
+        )
