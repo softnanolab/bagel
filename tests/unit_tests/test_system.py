@@ -21,6 +21,15 @@ def test_system_dump_config_file_is_correct(mixed_system: bg.System) -> None:
 
     file = mock_output_folder / mock_experiment / 'config.csv'
     assert file.exists(), 'config file not present in expected location'
+
+    # Check the version.txt file
+    version_file = mock_output_folder / mock_experiment / 'version.txt'
+    assert version_file.exists(), 'version.txt file not present in expected location'
+    with open(version_file, 'r') as vfile:
+        version_line = vfile.readline().strip()
+    assert version_line == str(bg.__version__), f'version.txt does not match version: {version_line}'
+
+    # Now read the CSV
     config = pd.read_csv(file)
 
     assert all(config.columns == ['state', 'energy', 'weight']), 'config does not contain correct columns'
