@@ -157,7 +157,9 @@ class ESMFold(FoldingOracle):
 
     def _reduce_output(self, output: ESMFoldOutput, chains: List[Chain]) -> ESMFoldResult:
         """
-        Reduce ESMFoldOutput (from ModalFold) to a ESMFoldResult object
+        Reduce ESMFoldOutput (from boileroom.esmfold) to a ESMFoldResult object.
+        In principle, any other metric from ESMFoldOutput can be passed down into the ESMFoldResult object.
+        For instance, one could pass the distogram_logits to create an EnergyTerm related to that. 
         """
         atoms = output.atom_array
         atoms = reindex_chains(atoms, [chain.chain_ID for chain in chains])
