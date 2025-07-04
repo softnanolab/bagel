@@ -54,7 +54,7 @@ def test_state_get_energy(fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch)
         return bg.oracles.folding.ESMFoldResult(
             input_chains=chains,
             structure=mock_structure,
-            ptm=np.array([0.7]),  # Mock plDDT value
+            ptm=np.array([0.7]),  # Mock pTM value
             pae=np.zeros((0, 0)),  # Empty PAE matrix
             local_plddt=np.array([]),  # Empty local plDDT scores
         )
@@ -70,6 +70,7 @@ def test_state_get_energy(fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch)
             # Return both unweighted and weighted energies
             return 1.0, 1.0 * self.weight
 
+    # Test 1: First call - should calculate everything from scratch
     energy_term1 = MockEnergyTerm(
         name='MockEnergyTerm1',
         oracle=fake_esmfold,
@@ -86,7 +87,6 @@ def test_state_get_energy(fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch)
     # Create state with mock components
     state = bg.State(name='test_state', chains=[chain], energy_terms=[energy_term1, energy_term2])
 
-    # Test 1: First call - should calculate everything from scratch
     energy = state.get_energy()
     assert energy == 5.0  # 1.0 * 2.0 + 1.0 * 3.0
     assert state._energy == 5.0
@@ -103,7 +103,67 @@ def test_state_get_energy(fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch)
     empty_state = bg.State(name='empty_state', chains=[chain], energy_terms=[])
     assert empty_state.get_energy() == 0.0
 
-    # Test 4: Test with multiple oracles
+    # Test 4: Test that duplicate energy term names raise AssertionError
+    duplicate_term1 = MockEnergyTerm(
+        name='MockEnergyTerm',
+        oracle=fake_esmfold,
+        weight=2.0,
+        inheritable=True,
+    )
+    duplicate_term2 = MockEnergyTerm(
+        name='MockEnergyTerm',
+        oracle=fake_esmfold,
+        weight=3.0,
+        inheritable=True,
+    )
+
+    duplicate_state = bg.State(
+        name='duplicate_test_state', chains=[chain], energy_terms=[duplicate_term1, duplicate_term2]
+    )
+
+    try:
+        duplicate_state.get_energy()
+        assert False, 'Expected AssertionError for duplicate energy term names'
+    except AssertionError:
+        pass
+
+    # Test 5: Test with duplicate PTM energy term
+    ptm_duplicate_term1 = bg.energies.PTMEnergy(
+        oracle=fake_esmfold,
+        weight=2.0,
+    )
+    ptm_duplicate_term2 = bg.energies.PTMEnergy(
+        oracle=fake_esmfold,
+        weight=3.0,
+    )
+
+    ptm_duplicate_state = bg.State(
+        name='ptm_duplicate_test_state', chains=[chain], energy_terms=[ptm_duplicate_term1, ptm_duplicate_term2]
+    )
+
+    try:
+        ptm_duplicate_state.get_energy()
+        assert False, 'Expected AssertionError for duplicate PTM energy term names'
+    except AssertionError:
+        pass
+
+    # Test 6: Test with named PTM energy term
+    ptm_term1 = bg.energies.PTMEnergy(
+        name='1',
+        oracle=fake_esmfold,
+        weight=2.0,
+    )
+    ptm_term2 = bg.energies.PTMEnergy(
+        name='2',
+        oracle=fake_esmfold,
+        weight=3.0,
+    )
+
+    ptm_state = bg.State(name='ptm_test_state', chains=[chain], energy_terms=[ptm_term1, ptm_term2])
+    ptm_energy = float(ptm_state.get_energy())  # Why is the energy output as an array?
+    assert np.round(ptm_energy, 1) == -3.5  # -0.7 * 2.0 + -0.7 * 3.0
+
+    # Test 7: Test with multiple oracles
     class MockOracleA(bg.oracles.Oracle):
         result_class = str  # Define result class for this mock oracle
 
