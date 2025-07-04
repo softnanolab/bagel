@@ -6,6 +6,9 @@ Protein design library used to find the amino acid sequences that give rise to s
 criteria.
 """
 
+from .utils import get_version_from_pyproject
+__version__ = get_version_from_pyproject()
+
 from .chain import Chain, Residue
 from .state import State
 from .system import System
