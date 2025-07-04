@@ -16,7 +16,7 @@ def main(
     optimization_params: dict = None,
     output_dir: str = 'data/CA4-binder'
 ):
-    
+
     # Check
     print(f'Whether to use modal: {use_modal}')
 
@@ -28,7 +28,7 @@ def main(
 
     # Now define the mutability of the residues, all immutable in this case since this is the target sequence
     mutability = [False for _ in range(len(target_sequence))]
-    
+
     # Now define the chain
     residues_target = [
         bg.Residue(name=aa, chain_ID='EGFR', index=i, mutable=mut)
@@ -67,7 +67,7 @@ def main(
         'glycine_linker': "",
         'position_ids_skip': 512,
     }
-    
+
     esmfold = bg.oracles.ESMFold(
         use_modal=use_modal, config=config
     )
@@ -117,7 +117,7 @@ def main(
     current_dir = os.path.dirname(os.path.abspath(__file__))
 
     print(f'Current directory: {current_dir}')
-    
+
     # Use optimization parameters if provided, otherwise use defaults
     if optimization_params is None:
         optimization_params = {
@@ -129,7 +129,8 @@ def main(
         }
 
     # Note: the result in the paper comes from a parallel tempering implementation in previous version of the codebase
-    # which is not yet implemented, but the simulated tempering below should produce similar results
+    # which is not yet implemented, but the simulated tempering below should produce equivalent results
+    # The difference is only in the optimization; not in the energy terms, i.e. the definition of the System energy
     minimizer = bg.minimizer.SimulatedTempering(
         mutator=mutator,
         high_temperature=optimization_params['high_temperature'],

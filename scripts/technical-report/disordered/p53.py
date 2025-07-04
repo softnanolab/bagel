@@ -16,17 +16,17 @@ def main(
     optimization_params: dict = None,
     output_dir: str = 'data/P53-binder'
 ):
-    
+
     # Check
     print(f'Whether to use modal: {use_modal}')
 
     # PART 1: Define the target protein
     # UniProt P04637
     target_sequence = "PLSSSVPSQKTYQGSYGFRLGFLHSGTAKSVTCTYSPALNKMFCQLAKTCPVQLWVDSTPPPGTRVRAMAIYKQSQHMTEVVRRCPHHERCSDSDGLAPPQHLIRVEGNLRVEYLDDRNTFRHSVVVPYEPPEVGSDCTTIHYNYMCNSSCMGGMNRRPILTIITLEDSSGNLLGRNSFEVRVCACPGRDRRTEEENLRKKGEPHHELPPGSTKRALPNNTHHHHHH"
-    
+
     # Now define the mutability of the residues, all immutable in this case since this is the target sequence
     mutability = [False for _ in range(len(target_sequence))]
-    
+
     # Now define the chain
     residues_target = [
         bg.Residue(name=aa, chain_ID='ASYN', index=i, mutable=mut)
@@ -66,7 +66,7 @@ def main(
         'glycine_linker': "",
         'position_ids_skip': 512,
     }
-    
+
     esmfold = bg.oracles.ESMFold(
         use_modal=use_modal, config=config
     )
@@ -84,7 +84,14 @@ def main(
         bg.energies.PLDDTEnergy(
             oracle=esmfold,
             residues=residues_binder,
-            weight=4.0
+            # TODO: name
+            weight=5.0
+        ),
+        bg.energies.PLDDTEnergy(
+            oracle=esmfold,
+            residues=residues_hotspot,
+            # TODO: name
+            weight=5.0
         ),
         bg.energies.HydrophobicEnergy(
             oracle=esmfold,
@@ -93,19 +100,13 @@ def main(
         bg.energies.PAEEnergy(
             oracle=esmfold,
             residues=[residues_hotspot, residues_binder],
-            weight=4.0,
+            weight=5.0,
         ),
         bg.energies.SeparationEnergy(
             oracle=esmfold,
             residues=[residues_hotspot, residues_binder],
             weight=0.2,
         ),
-        bg.energies.SecondaryStructureEnergy(
-            oracle=esmfold,
-            residues=residues_hotspot,
-            target_secondary_structure='alpha-helix',
-            weight=8.0,
-        )
     ]
 
     state = bg.State(
@@ -126,18 +127,18 @@ def main(
     current_dir = os.path.dirname(os.path.abspath(__file__))
 
     print(f'Current directory: {current_dir}')
-    
+
     # Use optimization parameters if provided, otherwise use defaults
     if optimization_params is None:
         optimization_params = {
-            'high_temperature': 2.0,
-            'low_temperature': 0.3,
-            'n_steps_high': 100,
-            'n_steps_low': 100,
+            'high_temperature': 1.0,
+            'low_temperature': 0.1,
+            'n_steps_high': 200,
+            'n_steps_low': 200,
             'n_cycles': 20,
         }
 
-    
+
     minimizer = bg.minimizer.SimulatedTempering(
         mutator=mutator,
         high_temperature=optimization_params['high_temperature'],

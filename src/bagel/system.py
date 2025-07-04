@@ -6,6 +6,7 @@ MIT License
 Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
 """
 
+from . import __version__ as bagel_version
 from .state import State
 from .chain import Chain, Residue
 from dataclasses import dataclass
@@ -112,6 +113,11 @@ class System:
             The directory in which the config.csv file will be created.
         """
         assert path.exists(), 'Path does not exist. Please create the directory first.'
+        # Write version.txt
+        if bagel_version:
+            with open(path / 'version.txt', mode='w') as vfile:
+                vfile.write(f'{bagel_version}\n')
+        # Write config.csv
         with open(path / 'config.csv', mode='w') as file:
             file.write('state,energy,weight\n')
             for state in self.states:

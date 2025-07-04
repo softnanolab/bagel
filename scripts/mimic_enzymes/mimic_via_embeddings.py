@@ -10,7 +10,7 @@ import modal
 
 def run_generate_mimic() -> Any:
     with modal.enable_output():
-    
+
         # Get the value of an environment variable
         use_modal = True if os.getenv('USE_MODAL', 'True').lower() in ('true', '1', 'yes') else False
 
@@ -19,18 +19,18 @@ def run_generate_mimic() -> Any:
 
         # Define the target enzyme we want to mimic
         # Here it is (just to make a random example):
-        # 7NJC_1|Chain A|Zinc finger (CCCH type) motif-containing protein|Toxoplasma gondii 
+        # 7NJC_1|Chain A|Zinc finger (CCCH type) motif-containing protein|Toxoplasma gondii
         # (strain ATCC 50611 / Me49) (508771)
         # sequence: GDPFGHVASPQSTKRFFIIKSNRMSNIYTSIQHGVWATSKGNSRKLSNAFTSTDHVLLLFSANESGGFQGFGRMMSLPDPQLFPGIWGPVQLRLGSNFRVMWLKQCKIEFEELGKVTNPWNDDLPLRKSRDGTEVPPALGSLLCTWMSQRPSEDLLAGTGIDPATR
         target_sequence = 'GDPFGHVASPQSTKRFFIIKSNRMSNIYTSIQHGVWATSKGNSRKLSNAFTSTDHVLLLFSANESGGFQGFGRMMSLPDPQLFPGIWGPVQLRLGSNFRVMWLKQCKIEFEELGKVTNPWNDDLPLRKSRDGTEVPPALGSLLCTWMSQRPSEDLLAGTGIDPATR'
-    
+
         # Define the mutability of the residues. Here, mutable residues are those NOT binding to RNA,
-        # in the PDB structure, as observed in the PDB structure, all others are immutable. 
+        # in the PDB structure, as observed in the PDB structure, all others are immutable.
         mutable_list = list( range(16) ) + list( range(66, 120) ) + list( range(131,157) )
-        mutability = [ True if i in mutable_list else False for i in range(len(target_sequence)) ] 
+        mutability = [ True if i in mutable_list else False for i in range(len(target_sequence)) ]
         print(f"Length of target sequence: {len(target_sequence)}")
-                  
-    
+
+
         # Define a chain providing a list of residues
         all_residues = [
             bg.Residue(name=aa, chain_ID='zing', index=i, mutable=mut)
@@ -41,12 +41,12 @@ def run_generate_mimic() -> Any:
         # In this case, these are the residues that are not mutable
         conserved_residues = [res for res in all_residues if res.mutable is False]
         print( f"Number of conserved residues: {len(conserved_residues)}" )
-        
+
         # Define the chain object
         chain = bg.Chain(residues=all_residues)
-    
+
         # Extract embeddings for the residues that you want to remain constant and whose environment
-        # you want to maintain 
+        # you want to maintain
         # First define the EmbeddingOracle
         esm2 = bg.oracles.ESM2( use_modal=use_modal, config={ 'model_name': 'esm2_t33_650M_UR50D', } )
         # Embed the chain to get the embeddings for the residues
@@ -76,7 +76,7 @@ def run_generate_mimic() -> Any:
 
         # Define the minimizer
         # In this case, we want to do MC sampling to generate a diverse set of structures,
-        # see Rajendran et al 2025. So we do standard MC with fixed temperature of 0.001. 
+        # see Rajendran et al 2025. So we do standard MC with fixed temperature of 0.001.
         # We are not really minimizing the system, but rather generating a diverse set of structures
         # at a fixed temperature in this way.
         minimizer = bg.minimizer.MonteCarloMinimizer(

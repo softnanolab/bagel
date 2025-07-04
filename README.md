@@ -1,36 +1,90 @@
-# Bagel: Protein Engineering through Optimization
+# BAGEL: Protein Engineering via Exploration of an Energy Landscape
 
 ![Tests](https://img.shields.io/github/actions/workflow/status/softnanolab/bagel-wip/python-modal-tests.yaml?branch=main)
 
-### Installation
+## Installation
 
-1. Clone the repo.
+### From PyPI (Recommended)
 
-        git clone https://github.com/softnanolab/bagel-wip
+The easiest way to install BAGEL is through PyPI:
 
-2. Install `uv`
+```bash
+pip install biobagel
+```
 
-        curl -LsSf https://astral.sh/uv/install.sh | sh
+**Optional Extras:**
 
-3. Set directory to repo.
+- For local protein model execution (requires GPU):
+```bash
+pip install biobagel[local]
+```
 
-        cd bagel
+- For development (testing, linting, documentation):
+```bash
+pip install biobagel[dev]
+```
 
-4. Download the environment.
+### From Source
 
-        uv sync
+If you want to install from source or contribute to development:
 
-6. (Optional) If you want to run all protein models locally.
+1. Clone the repository:
 
-        uv sync --extra local
+```bash
+git clone https://github.com/softnanolab/bagel
+```
 
-### Use
+2. Install `uv` (if not already installed):
 
-Run code within the environment.
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
 
-        uv run python scripts/script.py
+3. Navigate to the repository:
 
-### Oracles
+```bash
+cd bagel
+```
+
+4. Install the environment:
+
+```bash
+uv sync
+```
+
+**Optional Extras:**
+
+- For local protein model execution (requires GPU):
+```bash
+uv sync --extra local
+```
+
+- For development (testing, linting, documentation):
+```bash
+uv sync --extra dev
+```
+
+- For all extras:
+```bash
+uv sync --all-extras
+```
+
+
+## Usage
+
+### With PyPI Installation
+
+```bash
+python scripts/script.py
+```
+
+### With Source Installation
+
+```bash
+uv run python scripts/script.py
+```
+
+## Oracles
 One can either run Oracles locally, or remotely.
 
 - `use_modal=True`: Run Oracles on [Modal](www.modal.com). Using the [boileroom](https://pypi.org/project/boileroom) package, running remotely is made seamless and does not require installing any dependencies. However, you need to have credits to use Modal.
@@ -42,40 +96,9 @@ To use Modal, one needs to create an account and authenticate through:
 
 You also need to set `HF_MODEL_DIR` to an accessible folder, where HuggingFace models will be stored.
 
-### Testing
+## Examples
+[Templates](scripts/) and [example applications from the manuscript](scripts/technical-report/) are included as ready-to-run Python scripts.
 
-To run the tests, you must specify how to handle Oracles, i.e. whether to run remotely or not.
+## Contributing
 
-        uv run pytest --oracles skip
-
-Alternative options for --oracles is "modal" and "local".
-
-## Development Notes
-
-First, you need to install the development dependencies
-
-        uv sync --extra dev
-
-
-
-## Docs
-
-        uv run pydoclint src/bagel/* --style=sphinx
-
-### Commit Checking
-
-On commit, MyPy, Ruff, and PyTest checks are all run to ensure code quality.
-
-If any of these tests fail, this will be displayed on the corresponding GitHub pull request.
-
-We are not currently enforcing all these checks pass, but this behaviour can be enabled.
-
-        uv run pre-commit install
-
-This behaviour can subsequently be disabled aswell.
-
-        uv run pre-commit uninstall
-
-These checks can also be run on demand.
-
-        uv run pre-commit run --all-files
+For development setup, testing, and contribution guidelines, see [Development Guide](docs/development.md).

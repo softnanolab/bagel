@@ -16,23 +16,21 @@ def main(
     optimization_params: dict = None,
     output_dir: str = 'data/CA4-binder'
 ):
-    
-    # Check
-    print(f'Whether to use modal: {use_modal}')
-
     # PART 1: Define the target protein
+    # Carbonic anhydrase 4, CAH4_HUMAN, Gene: CA4
+    # PDB ID: 1ZNC; chain A; UniProt ID: P22748
     target_sequence = "AESHWCYEVQAESSNYPCLVPVKWGGNCQKDRQSPINIVTTKAKVDKKLGRFFFSGYDKKQTWTVQNNGHSVMMLLENKASISGGGLPAPYQAKQLHLHWSDLPYKGSEHSLDGEHFAMEMHIVHEKEKGTSRNVKEAQDPEDEIAVLAFLVEAGTQVNEGFQPLVEALSNIPKPEMSTTMAESSLLDLLPKEEKLRHYFRYLGSLTTPTCDEKVVWTVFREPIQLHREQILAFSQKLYYDKEQTVSMKDNVRPLQQLGQRTVIKS"
-    
-    # Now define the mutability of the residues, all immutable in this case since this is the target sequence
+
+    # Define the mutability of the residues, all immutable in this case since this is the target sequence
     mutability = [False for _ in range(len(target_sequence))]
-    
-    # Now define the chain
+
+    # Define the chain
     residues_target = [
         bg.Residue(name=aa, chain_ID='CA4H', index=i, mutable=mut)
         for i, (aa, mut) in enumerate(zip(target_sequence, mutability))
     ]
 
-    # Now define residues in the hotspot where you want to bind. 
+    # Now define residues in the hotspot where you want to bind.
     residue_ids = [
         [1, 2, 3, 4, 5, 6, 7, 8],
         [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77],
@@ -40,45 +38,45 @@ def main(
         [119, 120, 121, 122, 123, 124],
         [144, 145, 146],
         [205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215],
-        # [249, 250, 251, 252, 253] <- this last was is really deep in the pocket, so will avoid it for now
         ]
     residue_ids = [item for sublist in residue_ids for item in sublist]
 
     residues_hotspot = [residues_target[i] for i in residue_ids]
     target_chain = bg.Chain(residues=residues_target)
 
-    # For the binder, start with a random sequence of amino acids selecting randomly from the 30 amino acids
+    # PART 2: Define the binder
     binder_length = 30
-
-    # Jakub: RESTART!
     if binder_sequence is None:
+        # Start with a random sequence of amino acids selecting randomly from the 30 amino acids
         binder_sequence = ''.join([random.choice(list(bg.constants.aa_dict.keys())) for _ in range(binder_length)])
     else:
+        # or restart from a previously designed sequence
         assert len(binder_sequence) == binder_length, 'Binder sequence must be of length 30'
 
-
-    # Now define the mutability of the residues, all mutable in this case since this is the design sequence
+    # Define the mutability of the residues, all mutable in this case since this is the design sequence
     mutability = [True for _ in range(len(binder_sequence))]
-    # Now define the chain
+    # Define the chain
     residues_binder = [
         bg.Residue(name=aa, chain_ID='BIND', index=i, mutable=mut)
         for i, (aa, mut) in enumerate(zip(binder_sequence, mutability))
     ]
     binder_chain = bg.Chain(residues=residues_binder)
 
-    # Now define the folding algorithm, run locally not on modal
+    # PART 3: Define the Oracles and EnergyTerms
+
+    # Define the ESMFold Oracle
     config = {
         'output_pdb': False,
         'output_cif': False,
         'glycine_linker': 50 * "G",
         'position_ids_skip': 512,
     }
-    
+
     esmfold = bg.oracles.ESMFold(
         use_modal=use_modal, config=config
     )
 
-    # Now define the energy terms to be applied to the chain. In this example, all terms apply to all residues
+    # Define the energy terms to be applied to the chain
     energy_terms = [
         bg.energies.PTMEnergy(
             oracle=esmfold,
@@ -107,33 +105,25 @@ def main(
             residues=[residues_hotspot, residues_binder],
             weight=1.0,
         ),
-        bg.energies.ChemicalPotentialEnergy(
-            oracle=esmfold,
-            weight=0.1,
-            target_size= 30 + len(target_chain.residues),
-        ),
     ]
 
+    # PART 4: Define the State
     state = bg.State(
         chains=[binder_chain, target_chain],
         energy_terms=energy_terms,
         name='state',
     )
 
-    # Now define the system
+    # PART 5: Define the System
     initial_system = bg.System(
         states=[state],
         name='CA4-binder'
     )
 
-    # Now define the minimizer
-    # mutator = bg.mutation.Canonical()
-    mutator = bg.mutation.GrandCanonical()
+    # PART 6: Define the minimizer and run the optimization
+    mutator = bg.mutation.Canonical()
 
-    current_dir = os.path.dirname(os.path.abspath(__file__))
 
-    print(f'Current directory: {current_dir}')
-    
     # Use optimization parameters if provided, otherwise use defaults
     if optimization_params is None:
         optimization_params = {
@@ -144,7 +134,7 @@ def main(
             'n_cycles': 100,
         }
 
-    
+    current_dir = os.path.dirname(os.path.abspath(__file__))
     minimizer = bg.minimizer.SimulatedTempering(
         mutator=mutator,
         high_temperature=optimization_params['high_temperature'],
@@ -157,7 +147,7 @@ def main(
         log_path=pl.Path(os.path.join(current_dir, output_dir)),
     )
 
-    # Run optimization and return the best system
+    # Return the best system
     best_system = minimizer.minimize_system(system=initial_system)
     return best_system
 
