@@ -1,6 +1,7 @@
 import bagel as bg
 import numpy as np
 from biotite.structure import AtomArray
+import pytest
 
 
 def test_state_remove_residue_from_all_energy_terms_removes_correct_residue(mixed_structure_state: bg.State) -> None:
@@ -121,11 +122,8 @@ def test_state_get_energy(fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch)
         name='duplicate_test_state', chains=[chain], energy_terms=[duplicate_term1, duplicate_term2]
     )
 
-    try:
+    with pytest.raises(AssertionError, match='Energy term names must be unique'):
         duplicate_state.get_energy()
-        assert False, 'Expected AssertionError for duplicate energy term names'
-    except AssertionError:
-        pass
 
     # Test 5: Test with duplicate PTM energy term
     ptm_duplicate_term1 = bg.energies.PTMEnergy(
@@ -141,11 +139,8 @@ def test_state_get_energy(fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch)
         name='ptm_duplicate_test_state', chains=[chain], energy_terms=[ptm_duplicate_term1, ptm_duplicate_term2]
     )
 
-    try:
+    with pytest.raises(AssertionError, match='Energy term names must be unique'):
         ptm_duplicate_state.get_energy()
-        assert False, 'Expected AssertionError for duplicate PTM energy term names'
-    except AssertionError:
-        pass
 
     # Test 6: Test with named PTM energy term
     ptm_term1 = bg.energies.PTMEnergy(
