@@ -6,11 +6,11 @@ authors = [
   {name = "Ayham Al-Saffar", email = "ayham.saffar@gmail.com"},
   {name = "Stefano Angioletti-Uberti", email = "sangiole@imperial.ac.uk"},
 ]
-description = "Protein Engineering through Optimization"
+description = "Biomolecular Algorithm for Guidance in Energy Landscapes"
 readme = "README.md"
 license = "MIT"
 license_files = "LICENSE"
-keywords = ["protein", "protein design", "optimisation", "drug", "binder"]
+keywords = ["protein", "protein design", "optimization", "monte carlo", "sampling", "energy landscape"]
 
 requires-python = ">=3.12"
 dependencies = [
