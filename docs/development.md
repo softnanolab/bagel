@@ -1,6 +1,16 @@
 # Development Guide
 
-For development, we suggest one uses `uv`, as detailed in the main README.md
+Thank you for your interest in contributing to `bagel`!
+
+To contribute, please follow these general steps:
+
+1. **Fork** the repository and clone your fork locally.
+2. Create a **feature branch** for your changes.
+3. Use `uv` for dependency and environment management (see below).
+4. Follow the coding style and linting rules (enforced via pre-commit).
+5. Submit a **pull request (PR)** to the main repository for review.
+
+We welcome contributions of all kinds — new features, bug fixes, documentation improvements, and test coverage.
 
 ## Installation
 
