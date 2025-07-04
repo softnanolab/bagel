@@ -6,7 +6,7 @@ authors = [
   {name = "Ayham Al-Saffar", email = "ayham.saffar@gmail.com"},
   {name = "Stefano Angioletti-Uberti", email = "sangiole@imperial.ac.uk"},
 ]
-description = "Biomolecular Algorithm for Guidance in Energy Landscapes"
+description = "Protein Engineering via Exploration of an Energy Landscape"
 readme = "README.md"
 license = "MIT"
 license_files = "LICENSE"
