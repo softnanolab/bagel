@@ -1,5 +1,5 @@
 [project]
-name = "bagel"
+name = "biobagel"
 version = "0.1.0"
 authors = [
   {name = "Jakub Lála", email = "jakublala@gmail.com"},
