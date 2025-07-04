@@ -15,6 +15,9 @@ def test_monomer_folding(esmfold, monomer):
     assert results.ptm is not None, 'Output should not be None'
     assert isinstance(results.ptm, np.ndarray), 'Output should be an np.ndarray'
 
+    # Our codebase assumes 0-indexing for residues, so we need to check that the residue IDs are 0-indexed
+    num_residues = len(np.unique(results.structure.res_id))
+    assert np.all(np.unique(results.structure.res_id) == np.arange(0, num_residues)), 'Residue IDs should be 0-indexed'
 
 def test_dimer_folding(esmfold, dimer):
     results = esmfold.fold(dimer)
