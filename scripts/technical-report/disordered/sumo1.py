@@ -16,17 +16,17 @@ def main(
     optimization_params: dict = None,
     output_dir: str = 'data/SUMO-binder'
 ):
-    
+
     # Check
     print(f'Whether to use modal: {use_modal}')
 
     # PART 1: Define the target protein
     # UniProt P63165
     target_sequence = "GSMSDQEAKPSTEDLGDKKEGEYIKLKVIGQDSSEIHFKVKMTTHLKKLKESYCQRQGVPMNSLRFLFEGQRIADNHTPKELGMEEEDVIEVYQEQTGGHSTV"
-    
+
     # Now define the mutability of the residues, all immutable in this case since this is the target sequence
     mutability = [False for _ in range(len(target_sequence))]
-    
+
     # Now define the chain
     residues_target = [
         bg.Residue(name=aa, chain_ID='SUMO', index=i, mutable=mut)
@@ -66,7 +66,7 @@ def main(
         'glycine_linker': "",
         'position_ids_skip': 512,
     }
-    
+
     esmfold = bg.oracles.ESMFold(
         use_modal=use_modal, config=config
     )
@@ -127,7 +127,7 @@ def main(
     current_dir = os.path.dirname(os.path.abspath(__file__))
 
     print(f'Current directory: {current_dir}')
-    
+
     # Use optimization parameters if provided, otherwise use defaults
     if optimization_params is None:
         optimization_params = {
@@ -138,7 +138,7 @@ def main(
             'n_cycles': 20,
         }
 
-    
+
     minimizer = bg.minimizer.SimulatedTempering(
         mutator=mutator,
         high_temperature=optimization_params['high_temperature'],

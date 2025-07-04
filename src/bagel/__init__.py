@@ -7,6 +7,7 @@ criteria.
 """
 
 from .utils import get_version_from_pyproject
+
 __version__ = get_version_from_pyproject()
 
 from .chain import Chain, Residue

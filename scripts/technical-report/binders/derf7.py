@@ -16,16 +16,16 @@ def main(
     optimization_params: dict = None,
     output_dir: str = 'data/DERF7-binder'
 ):
-    
+
     # Check
     print(f'Whether to use modal: {use_modal}')
 
     # PART 1: Define the target protein
     target_sequence = "DPIHYDKITEEINKAIDDAIAAIEQSETIDPMKVPDHADKFERHVGILDFKGELAMRNIEARGLKQMKRQGDANVKGEEGIVKAHLLIGVHDDIVSMEYDLAYKLGDLHPTTHVISDIQDFVVALSLEISDEGNITMTSFEVRQFANVVNHIGGLSILDPIFGVLSDVLTAIFQDTVRKEMTKVLAPAFKRELEKN"
-    
+
     # Now define the mutability of the residues, all immutable in this case since this is the target sequence
     mutability = [False for _ in range(len(target_sequence))]
-    
+
     # Now define the chain
     residues_target = [
         bg.Residue(name=aa, chain_ID='DRF7', index=i, mutable=mut)
@@ -33,7 +33,7 @@ def main(
     ]
 
     target_chain = bg.Chain(residues=residues_target)
-    
+
     # For the binder, start with a random sequence of amino acids selecting randomly from the 30 amino acids
     binder_length = 30
 
@@ -60,7 +60,7 @@ def main(
         'glycine_linker': 50 * "G",
         'position_ids_skip': 512,
     }
-    
+
     esmfold = bg.oracles.ESMFold(
         use_modal=use_modal, config=config
     )
@@ -109,12 +109,12 @@ def main(
     )
 
     # Now define the minimizer
-    mutator = bg.mutation.Canonical() 
+    mutator = bg.mutation.Canonical()
 
     current_dir = os.path.dirname(os.path.abspath(__file__))
 
     print(f'Current directory: {current_dir}')
-    
+
     # Use optimization parameters if provided, otherwise use defaults
     if optimization_params is None:
         optimization_params = {
@@ -125,7 +125,7 @@ def main(
             'n_cycles': 100,
         }
 
-    
+
     minimizer = bg.minimizer.SimulatedTempering(
         mutator=mutator,
         high_temperature=optimization_params['high_temperature'],

@@ -21,7 +21,7 @@ def run_selective_binder() -> Any:
     target_sequence = 'MERPYACPVESCDRRFSRSDELTRHIRIHTGQKPFQCRICMRNFSRSDHLTTHIRTHTGEKPFACDICGRKFARSDERKRHTKIHLRQKD'
     # >1ZR9_1|Chain A|Zinc finger protein 593|Homo sapiens (9606)
     # GHHHHHHLEKAKRRRPDLDEIHRELRPQGSARPQPDPNAEFDPDLPGGGLHRCLACARYFIDSTNLKTHFRSKDHKKRLKQLSVEPYSQEEAERAAGMGSYVPPRRLAVPTEVSTEVPEMDTST
-    non_target_sequence ='GHHHHHHLEKAKRRRPDLDEIHRELRPQGSARPQPDPNAEFDPDLPGGGLHRCLACARYFIDSTNLKTHFRSKDHKKRLKQLSVEPYSQEEAERAAGMGSYVPPRRLAVPTEVSTEVPEMDTST' 
+    non_target_sequence ='GHHHHHHLEKAKRRRPDLDEIHRELRPQGSARPQPDPNAEFDPDLPGGGLHRCLACARYFIDSTNLKTHFRSKDHKKRLKQLSVEPYSQEEAERAAGMGSYVPPRRLAVPTEVSTEVPEMDTST'
 
     # Define the mutability of the residues, all immutable in this case since these are the potential targets
     mutability_target = [False for _ in range(len(target_sequence))]
@@ -40,7 +40,7 @@ def run_selective_binder() -> Any:
     target_chain = bg.Chain(residues=residues_target)
     non_target_chain = bg.Chain(residues=residues_non_target)
 
-    # Define residues in the hotspot where you want to bind. 
+    # Define residues in the hotspot where you want to bind.
     # Here we choose the last ten of the target sequence
     residues_hotspot = [residues_target[i] for i in range( len( target_sequence ) - 10, len( target_sequence ) )]
 

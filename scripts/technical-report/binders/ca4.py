@@ -30,7 +30,7 @@ def main(
         for i, (aa, mut) in enumerate(zip(target_sequence, mutability))
     ]
 
-    # Now define residues in the hotspot where you want to bind. 
+    # Now define residues in the hotspot where you want to bind.
     residue_ids = [
         [1, 2, 3, 4, 5, 6, 7, 8],
         [64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77],
