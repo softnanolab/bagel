@@ -37,7 +37,7 @@ dev = [
     "pre-commit>=3.6.0",
 ]
 local = [
-    "transformers @ git+https://github.com/jakublala/my_transformers.git"
+    "transformers>=4.49.0",
 ]
 
 [project.urls]
