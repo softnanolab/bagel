@@ -41,7 +41,6 @@ local = [
 ]
 
 [project.urls]
-Documentation = "coming soon"
 Repository = "https://github.com/softnanolab/bagel.git"
 Issues = "https://github.com/softnanolab/bagel/issues"
 
