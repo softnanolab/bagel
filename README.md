@@ -1,6 +1,10 @@
 # BAGEL: Protein Engineering via Exploration of an Energy Landscape
 
-![Tests](https://img.shields.io/github/actions/workflow/status/softnanolab/bagel-wip/python-modal-tests.yaml?branch=main)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![PyPI version](https://img.shields.io/pypi/v/biobagel.svg)](https://pypi.org/project/biobagel/)
+[![GitHub last commit](https://img.shields.io/github/last-commit/softnanolab/bagel.svg)](https://github.com/softnanolab/bagel/commits/main)
+[![GitHub issues](https://img.shields.io/github/issues/softnanolab/bagel.svg)](https://github.com/softnanolab/bagel/issues)
 
 ## Installation
 
@@ -83,6 +87,9 @@ python scripts/script.py
 ```bash
 uv run python scripts/script.py
 ```
+
+To execute templates reliably from the technical report manuscript [citation to be added], follow release v0.1.0, also stored on Zenodo.
+[![DOI](https://zenodo.org/badge/968747892.svg)](https://doi.org/10.5281/zenodo.15808838)
 
 ## Oracles
 One can either run Oracles locally, or remotely.

@@ -1,0 +1,39 @@
+name: Require Version Bump
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v3
+
+      - name: Get version from PR branch
+        id: pr_version
+        run: |
+          VERSION=$(grep -Po '(?<=version = ")[^"]+' pyproject.toml)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Checkout main
+        uses: actions/checkout@v3
+        with:
+          ref: main
+
+      - name: Get version from main
+        id: main_version
+        run: |
+          VERSION=$(grep -Po '(?<=version = ")[^"]+' pyproject.toml)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Compare versions
+        run: |
+          if [ "${{ steps.pr_version.outputs.version }}" == "${{ steps.main_version.outputs.version }}" ]; then
+            echo "❌ Version has not been bumped. Please update the version in pyproject.toml."
+            exit 1
+          else
+            echo "✅ Version bump detected."
+          fi
