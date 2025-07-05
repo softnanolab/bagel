@@ -5,7 +5,6 @@
 [![PyPI version](https://img.shields.io/pypi/v/biobagel.svg)](https://pypi.org/project/biobagel/)
 [![GitHub last commit](https://img.shields.io/github/last-commit/softnanolab/bagel.svg)](https://github.com/softnanolab/bagel/commits/main)
 [![GitHub issues](https://img.shields.io/github/issues/softnanolab/bagel.svg)](https://github.com/softnanolab/bagel/issues)
-![Tests](https://img.shields.io/github/actions/workflow/status/softnanolab/bagel/python-modal-tests.yaml?branch=main)
 
 ## Installation
 
