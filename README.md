@@ -103,6 +103,9 @@ To use Modal, one needs to create an account and authenticate through:
 
 You also need to set `HF_MODEL_DIR` to an accessible folder, where HuggingFace models will be stored.
 
+### Google Colab
+A prototyping, but unscalable alterantive is to run BAGEL in Google Colab, having an access to a T4 processing unit for free. See this [notebook](https://colab.research.google.com/drive/1dtX8j6t5VhSed4iiqSrjM35DyPSFE1yF?usp=sharing), which includes the installation, and the template script for [simple binder](scripts/binders/simple_binder.py).
+
 ## Examples
 [Templates](scripts/) and [example applications from the manuscript](scripts/technical-report/) are included as ready-to-run Python scripts.
 
