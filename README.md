@@ -6,8 +6,21 @@
 [![GitHub last commit](https://img.shields.io/github/last-commit/softnanolab/bagel.svg)](https://github.com/softnanolab/bagel/commits/main)
 [![GitHub issues](https://img.shields.io/github/issues/softnanolab/bagel.svg)](https://github.com/softnanolab/bagel/issues)
 
+BAGEL is a model-agnostic, modular, fully customizable Python framework for programmable protein design.
+
+The package formalizes the protein design task as an optimization (sampling) over an energy landscape.
+
 ADD GIF
 
+
+The BAGEL package is made up of several components that need to be specified to form a protein engineering task:
+
+| Component         | Description | Examples |
+|-------------------|-------------|----------|
+| EnergyTerms       |Define a specific design constraint.| TemplateMatchEnergy, PLDDTEnergy, HydrophobicEnergy|
+| Oracles           |Provide useful information to yield an optimization (sampling) metric (from [boileroom](https://github.com/softnanolab/boileroom)). | ESMFold, ESM-2|
+| Minimizers        | Sample the optimal (or variants) sequences. | Monte Carlo, simulated tempering, simulated annealing|
+| MutationProtocols |Perturb the sequences yielding candidates| Canonical, GrandCanonical|
 
 
 ## Installation
