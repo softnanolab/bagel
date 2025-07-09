@@ -15,13 +15,12 @@ ADD GIF
 
 The BAGEL package is made up of several components that need to be specified to form a protein engineering task:
 
-| Component         | Description | Examples |
-|-------------------|-------------|----------|
-| EnergyTerms       |Define a specific design constraint.| TemplateMatchEnergy, PLDDTEnergy, HydrophobicEnergy|
-| Oracles           |Provide useful information to yield an optimization (sampling) metric (from [boileroom](https://github.com/softnanolab/boileroom)). | ESMFold, ESM-2|
-| Minimizers        | Sample the optimal (or variants) sequences. | Monte Carlo, simulated tempering, simulated annealing|
-| MutationProtocols |Perturb the sequences yielding candidates| Canonical, GrandCanonical|
-
+| **Component**      | **Description**                                                                                      | **Examples**                                         |
+|--------------------|------------------------------------------------------------------------------------------------------|------------------------------------------------------|
+| `EnergyTerms`      | Define specific design constraints as terms in the energy function.                                  | `TemplateMatchEnergy`, `PLDDTEnergy`, `HydrophobicEnergy` |
+| `Oracles`          | Provide information (often via ML models) to compute optimization/sampling metrics.<br>Oracles are typically wrappers around models from [boileroom](https://github.com/softnanolab/boileroom). | `ESMFold`, `ESM-2`                                   |
+| `Minimizers`       | Algorithms that sample or optimize sequences to find optima or diverse variants.                     | Monte Carlo, `SimulatedTempering`, `SimulatedAnnealing` |
+| `MutationProtocols`| Methods for perturbing sequences to generate new candidates.                                         | `Canonical`, `GrandCanonical`                            |
 
 ## Installation
 
@@ -123,7 +122,7 @@ You also need to set `HF_MODEL_DIR` to an accessible folder, where HuggingFace m
 ### Google Colab
 A prototyping, but unscalable alterantive is to run BAGEL in Google Colab, having an access to a T4 processing unit for free. See this [notebook](https://colab.research.google.com/drive/1dtX8j6t5VhSed4iiqSrjM35DyPSFE1yF?usp=sharing), which includes the installation, and the template script for [simple binder](scripts/binders/simple_binder.py).
 
-## Examples
+### Examples
 [Templates](scripts/) and [example applications from the manuscript](scripts/technical-report/) are included as ready-to-run Python scripts.
 
 ## Contributing
@@ -142,3 +141,8 @@ For development setup, testing, and contribution guidelines, see [Development Gu
         note = {Preprint}
 }
 ```
+
+## Acknowledgments
+BAGEL's development was lead by Jakub Lála, Ayham Al-Saffar, and Dr Stefano Angioletti-Uberti at Imperial College London. 
+We thank Shanil Panara, Dr Daniele Visco, Arnav Cheruku, and Harsh Agrawal for helpful discussions.
+We also thank [Hie et. al 2022](https://doi.org/10.1101/2022.12.21.521526), whose work inspired the creation of this package.
