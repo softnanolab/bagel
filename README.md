@@ -6,6 +6,10 @@
 [![GitHub last commit](https://img.shields.io/github/last-commit/softnanolab/bagel.svg)](https://github.com/softnanolab/bagel/commits/main)
 [![GitHub issues](https://img.shields.io/github/issues/softnanolab/bagel.svg)](https://github.com/softnanolab/bagel/issues)
 
+ADD GIF
+
+
+
 ## Installation
 
 ### From PyPI (Recommended)
@@ -88,7 +92,7 @@ python scripts/script.py
 uv run python scripts/script.py
 ```
 
-To execute templates reliably from the technical report manuscript [citation to be added], follow release v0.1.0, also stored on Zenodo.
+To execute templates reliably from the [technical report manuscript](https://www.biorxiv.org/content/10.1101/2025.07.05.663138v1), follow release v0.1.0, also stored on Zenodo.
 [![DOI](https://zenodo.org/badge/968747892.svg)](https://doi.org/10.5281/zenodo.15808838)
 
 ## Oracles
@@ -112,3 +116,16 @@ A prototyping, but unscalable alterantive is to run BAGEL in Google Colab, havin
 ## Contributing
 
 For development setup, testing, and contribution guidelines, see [Development Guide](docs/development.md).
+
+## Citation
+```
+@article{lala2025bagel,
+        author = {L{\'a}la, Jakub and Al-Saffar, Ayham and Angioletti-Uberti, Stefano},
+        title = {BAGEL: Protein Engineering via Exploration of an Energy Landscape},
+        journal = {bioRxiv},
+        year = {2025},
+        doi = {10.1101/2025.07.05.663138},
+        url = {https://www.biorxiv.org/content/early/2025/07/08/2025.07.05.663138},
+        note = {Preprint}
+}
+```
