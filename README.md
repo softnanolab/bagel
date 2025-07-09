@@ -5,13 +5,15 @@
 [![PyPI version](https://img.shields.io/pypi/v/biobagel.svg)](https://pypi.org/project/biobagel/)
 [![GitHub last commit](https://img.shields.io/github/last-commit/softnanolab/bagel.svg)](https://github.com/softnanolab/bagel/commits/main)
 [![GitHub issues](https://img.shields.io/github/issues/softnanolab/bagel.svg)](https://github.com/softnanolab/bagel/issues)
+[![DOI](https://zenodo.org/badge/968747892.svg)](https://doi.org/10.5281/zenodo.15808838)
 
 BAGEL is a model-agnostic, modular, fully customizable Python framework for programmable protein design.
 
 The package formalizes the protein design task as an optimization (sampling) over an energy landscape.
 
-ADD GIF
-
+<p align="center">
+  <img src="https://raw.githubusercontent.com/softnanolab/bagel/main/docs/demo.gif" alt="BAGEL demo" width="600"/>
+</p>
 
 The BAGEL package is made up of several components that need to be specified to form a protein engineering task:
 
@@ -21,6 +23,8 @@ The BAGEL package is made up of several components that need to be specified to 
 | `Oracles`          | Provide information (often via ML models) to compute optimization/sampling metrics.<br>Oracles are typically wrappers around models from [boileroom](https://github.com/softnanolab/boileroom). | `ESMFold`, `ESM-2`                                   |
 | `Minimizers`       | Algorithms that sample or optimize sequences to find optima or diverse variants.                     | Monte Carlo, `SimulatedTempering`, `SimulatedAnnealing` |
 | `MutationProtocols`| Methods for perturbing sequences to generate new candidates.                                         | `Canonical`, `GrandCanonical`                            |
+
+For more details, consult the available [pre-print](https://www.biorxiv.org/content/10.1101/2025.07.05.663138v1).
 
 ## Installation
 
@@ -104,8 +108,7 @@ python scripts/script.py
 uv run python scripts/script.py
 ```
 
-To execute templates reliably from the [technical report manuscript](https://www.biorxiv.org/content/10.1101/2025.07.05.663138v1), follow release v0.1.0, also stored on Zenodo.
-[![DOI](https://zenodo.org/badge/968747892.svg)](https://doi.org/10.5281/zenodo.15808838)
+To execute templates reproducibly from the [technical report manuscript](https://www.biorxiv.org/content/10.1101/2025.07.05.663138v1) (within statistical noise due to the nature of Monte Carlo sampling), follow release v0.1.0, also stored on Zenodo [![DOI](https://zenodo.org/badge/968747892.svg)](https://doi.org/10.5281/zenodo.15812348). Otherwise, use the most recent `biobagel` distribution.
 
 ## Oracles
 One can either run Oracles locally, or remotely.
