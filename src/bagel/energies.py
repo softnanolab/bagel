@@ -238,7 +238,7 @@ class ChemicalPotentialEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: FoldingOracle,
+        oracle: Oracle,
         power: float = 1.0,
         target_size: int = 0,
         chemical_potential: float = 1.0,
@@ -250,7 +250,7 @@ class ChemicalPotentialEnergy(EnergyTerm):
 
         Parameters
         ----------
-        oracle: FoldingOracle
+        oracle: Oracle 
             The oracle to use for the energy term.
         power: float
             The power to raise the number of residues to.
@@ -271,20 +271,20 @@ class ChemicalPotentialEnergy(EnergyTerm):
         self.power = power
         self.target_size = target_size
         self.chemical_potential = chemical_potential
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'structure' in self.oracle.result_class.model_fields, (
-            'ChemicalPotentialEnergy requires oracle to return structure in result_class'
+        assert isinstance(self.oracle, Oracle), 'Input to oracle not an Oracle object'
+        assert 'input_chains' in self.oracle.result_class.model_fields, (
+            'ChemicalPotentialEnergy requires oracle to return input_chains in result_class'
         )
 
     def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
-        structure = oracles_result.get_structure(self.oracle)
+        input_chains = oracles_result.get_input_chains(self.oracle)  # get the input chains from the oracle result
 
-        # Count unique combinations of chain_id and res_id
-        num_residues = len(set(zip(structure.chain_id, structure.res_id)))
+        # Count all residues in all input chains
+        num_residues = sum(chain.length for chain in input_chains) 
         value = self.chemical_potential * (abs(num_residues - self.target_size)) ** self.power
 
         return value, value * self.weight
-
+    
 
 class PLDDTEnergy(EnergyTerm):
     """
