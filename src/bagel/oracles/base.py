@@ -94,5 +94,8 @@ class OraclesResultDict(dict[Oracle, OracleResult]):
         return result.embeddings
 
     def get_input_chains(self, oracle: Oracle) -> list[Chain]:
+        # TODO: if we have multiple oracles, input_chains will be redundant across all of the oracles
+        # it might make sense - at some point - to have a single input_chains for all oracles
+        # which would, however, forbid - for instance - the use of different chains for different oracles
         result = self[oracle]
         return result.input_chains
