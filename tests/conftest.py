@@ -88,6 +88,25 @@ def esm2(request, modal_app_context) -> bg.oracles.embedding.ESM2:
 
 
 @pytest.fixture
+def fake_esm2(request, monkeypatch) -> bg.oracles.embedding.ESM2:
+    """
+    Fixture that returns an ESM2 object that doesn't load any model.
+    Use this primarily for testing functions that require an Oracle input,
+    but also mock the output of the Oracle.
+    """
+
+    # Create a dummy _load method
+    def mock_load(self, config={}):
+        pass
+
+    # Patch the _load method
+    monkeypatch.setattr(bg.oracles.embedding.ESM2, '_load', mock_load)
+
+    # Now create the actual instance - _load will be patched
+    return bg.oracles.embedding.ESM2(use_modal=False)
+
+
+@pytest.fixture
 def fake_esmfold(request, monkeypatch) -> bg.oracles.folding.ESMFold:
     """
     Fixture that returns an ESMFold object that doesn't load any model.

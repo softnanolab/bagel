@@ -393,6 +393,8 @@ def test_RingSymmetryEnergy(
     assert np.isclose(weighted_energy, value * 2), 'weighted energy is incorrect'
 
 
+# --- ChemicalPotentialEnergy ---
+
 def test_ChemicalPotentialEnergy(
     fake_esmfold: bg.oracles.folding.ESMFold,
     square_structure_residues: list[bg.Residue],
@@ -400,6 +402,7 @@ def test_ChemicalPotentialEnergy(
 ) -> None:
     mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
     mock_folding_result.structure = square_structure
+    mock_folding_result.input_chains = [bg.Chain(residues=square_structure_residues)]
     energy = bg.energies.ChemicalPotentialEnergy(
         oracle=fake_esmfold, chemical_potential=-1.0, target_size=8.0, power=0.5, weight=2.0
     )
@@ -410,6 +413,29 @@ def test_ChemicalPotentialEnergy(
     value = -2.0
     assert np.isclose(unweighted_energy, value), 'unweighted energy is incorrect'
     assert np.isclose(weighted_energy, value * 2), 'weighted energy is incorrect'
+
+
+def test_ChemicalPotentialEnergy_with_embedding_oracle(
+    fake_esm2: bg.oracles.embedding.ESM2,
+):
+    # Create a mock embedding oracle and result
+    fake_embedding_result = Mock(bg.oracles.embedding.ESM2Result)
+    # Create a chain with 3 residues
+    residues = [bg.Residue(name='A', chain_ID='X', index=i) for i in range(3)]
+    chain = bg.Chain(residues=residues)
+    fake_embedding_result.input_chains = [chain]
+
+    # Insert into OraclesResultDict
+    oracles_result = OraclesResultDict({fake_esm2: fake_embedding_result})
+
+    # Create ChemicalPotentialEnergy with target_size = 5, power = 2, chemical_potential = 1.5, weight = 2.0
+    energy = bg.energies.ChemicalPotentialEnergy(
+        oracle=fake_esm2, power=2.0, target_size=5, chemical_potential=1.5, weight=2.0
+    )
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
+    # Should be: 1.5 * (abs(3-5))**2 = 1.5 * 4 = 6.0
+    assert np.isclose(unweighted_energy, 6.0), f"unweighted energy is incorrect: {unweighted_energy}"
+    assert np.isclose(weighted_energy, 12.0), f"weighted energy is incorrect: {weighted_energy}"
 
 
 def test_RingSymmetryEnergy_with_direct_neighbours_only(

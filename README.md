@@ -146,6 +146,6 @@ For development setup, testing, and contribution guidelines, see [Development Gu
 ```
 
 ## Acknowledgments
-BAGEL's development was lead by Jakub Lála, Ayham Al-Saffar, and Dr Stefano Angioletti-Uberti at Imperial College London. 
+BAGEL's development was lead by Jakub Lála, Ayham Al-Saffar, and Dr Stefano Angioletti-Uberti at Imperial College London.
 We thank Shanil Panara, Dr Daniele Visco, Arnav Cheruku, and Harsh Agrawal for helpful discussions.
 We also thank [Hie et. al 2022](https://doi.org/10.1101/2022.12.21.521526), whose work inspired the creation of this package.
