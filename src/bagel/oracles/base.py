@@ -92,9 +92,7 @@ class OraclesResultDict(dict[Oracle, OracleResult]):
         result = self[oracle]
         assert isinstance(result, EmbeddingResult), 'Result must be a EmbeddingResult'
         return result.embeddings
-    
+
     def get_input_chains(self, oracle: Oracle) -> list[Chain]:
         result = self[oracle]
         return result.input_chains
-    
-

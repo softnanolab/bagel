@@ -250,7 +250,7 @@ class ChemicalPotentialEnergy(EnergyTerm):
 
         Parameters
         ----------
-        oracle: Oracle 
+        oracle: Oracle
             The oracle to use for the energy term.
         power: float
             The power to raise the number of residues to.
@@ -280,11 +280,11 @@ class ChemicalPotentialEnergy(EnergyTerm):
         input_chains = oracles_result.get_input_chains(self.oracle)  # get the input chains from the oracle result
 
         # Count all residues in all input chains
-        num_residues = sum(chain.length for chain in input_chains) 
+        num_residues = sum(chain.length for chain in input_chains)
         value = self.chemical_potential * (abs(num_residues - self.target_size)) ** self.power
 
         return value, value * self.weight
-    
+
 
 class PLDDTEnergy(EnergyTerm):
     """

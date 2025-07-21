@@ -19,6 +19,7 @@ def test_monomer_folding(esmfold, monomer):
     num_residues = len(np.unique(results.structure.res_id))
     assert np.all(np.unique(results.structure.res_id) == np.arange(0, num_residues)), 'Residue IDs should be 0-indexed'
 
+
 def test_dimer_folding(esmfold, dimer):
     results = esmfold.fold(dimer)
 
