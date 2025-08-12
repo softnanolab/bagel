@@ -457,6 +457,7 @@ class HydrophobicEnergy(EnergyTerm):
         inheritable: bool = True,
         residues: list[Residue] | None = None,
         surface_only: bool = False,
+        core_only: bool = False,
         weight: float = 1.0,
         name: str | None = None,
     ) -> None:
@@ -472,9 +473,16 @@ class HydrophobicEnergy(EnergyTerm):
             residue could then be added to this energy term.
         residues: list[Residue] or None, default=None
             Which residues to include in the calculation. If not set, simply considers **all** residues by default.
-        surface_only: bool
-            Whether to only consider the atoms exposed to water at the surface. If False, interior atoms are included
-            in the calculation. If true, result is scaled by normalised solute accessible surface area values.
+        surface_only: bool, default = False
+            Whether to only consider the atoms exposed to water at the surface. If true, result is scaled by normalised 
+            solute accessible surface area values, otherwise no scaling is applied and all atoms count regardless of their 
+            exposure.
+            Note that only one between surface_only and core_only can be True at the same time.
+        core_only: bool, default = False
+            Whether to only consider the atoms in the core (i.e., NOT exposed to water). If true, result is scaled by 
+            ( 1.0 - normalised solute accessible surface area) values, otherwise no scaling is appplied and all atoms
+            count regardless of their exposure.
+            Note that only one between surface_only and core_only can be True at the same time.
         weight: float = 1.0
             The weight of the energy term.
         name: str | None = None
@@ -488,6 +496,8 @@ class HydrophobicEnergy(EnergyTerm):
         super().__init__(name=name, inheritable=inheritable, oracle=oracle, weight=weight)
         self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
         self.surface_only = surface_only
+        self.core_only = core_only
+        assert not( surface_only and core_only ), 'Only one of surface_only or core_only can be True at the same time.'
         assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
         assert 'structure' in self.oracle.result_class.model_fields, (
             'HydrophobicEnergy requires oracle to return structure in result_class'
@@ -503,8 +513,12 @@ class HydrophobicEnergy(EnergyTerm):
         hydrophobic_mask = np.isin(structure.res_name, hydrophobic_residues)
 
         value = len(structure[relevance_mask & hydrophobic_mask]) / len(structure[relevance_mask])
+
         if self.surface_only:
             normalized_sasa = sasa(structure, probe_radius=probe_radius_water) / max_sasa_values['S']
+            value *= np.mean(normalized_sasa[relevance_mask & hydrophobic_mask])
+        elif self.core_only:
+            normalized_sasa = ( 1.0 - sasa(structure, probe_radius=probe_radius_water) / max_sasa_values['S'] )
             value *= np.mean(normalized_sasa[relevance_mask & hydrophobic_mask])
 
         return value, value * self.weight
