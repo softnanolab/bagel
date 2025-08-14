@@ -817,7 +817,6 @@ class MinimumSeparationEnergy(EnergyTerm):
 
             min_distances.append(min_dist)  # Store the minimum distance for this residue
         
-        print( f"min_distances = {min_distances}" )
         # Calculate the average of these minimum distances
         average_min_distance = np.mean(min_distances)
         value = float(average_min_distance)
