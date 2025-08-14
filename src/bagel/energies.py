@@ -778,6 +778,7 @@ class MinimumSeparationEnergy(EnergyTerm):
         else:
             name = f'min_separation_{name}'
 
+        self.plddt_weighted = plddt_weighted
         if self.plddt_weighted:
             name += '_plddt_weighted'
 
@@ -816,6 +817,7 @@ class MinimumSeparationEnergy(EnergyTerm):
 
             min_distances.append(min_dist)  # Store the minimum distance for this residue
         
+        print( f"min_distances = {min_distances}" )
         # Calculate the average of these minimum distances
         average_min_distance = np.mean(min_distances)
         value = float(average_min_distance)

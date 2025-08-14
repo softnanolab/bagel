@@ -267,6 +267,25 @@ def square_structure() -> AtomArray:  # centroid of backbone atoms of each resid
     ]
     return array(atoms)
 
+@pytest.fixture
+def simplest_dimer() -> AtomArray:  
+    # A 2-residues chain aligned along the x-axis plus an additional single chain residue 
+    # aligned along the 110 direction.
+    atoms = [
+        Atom(coord=[0, 0, 0], chain_id='A', atom_name='CA', res_name='GLY', res_id=0, element='C'),
+        Atom(coord=[1, 0, 0], chain_id='A', atom_name='CA', res_name='GLY', res_id=1, element='C'),
+        Atom(coord=[1, 1, 0], chain_id='B', atom_name='CA', res_name='GLY', res_id=0, element='C'),
+    ]
+    return array(atoms)
+
+@pytest.fixture
+def simplest_dimer_residues() -> list[bg.Residue]:
+    residues = [
+        bg.Residue(name='G', chain_ID='A', index=0),
+        bg.Residue(name='G', chain_ID='A', index=1),
+        bg.Residue(name='G', chain_ID='B', index=0),
+    ]
+    return residues
 
 @pytest.fixture
 def square_structure_residues() -> list[bg.Residue]:
@@ -283,6 +302,47 @@ def square_structure_residues() -> list[bg.Residue]:
 def square_structure_chains(square_structure_residues: list[bg.Residue]) -> list[bg.Chain]:
     return [bg.Chain(residues=square_structure_residues)]
 
+
+@pytest.fixture
+def simplest_dimer_chains(simplest_dimer_residues: list[bg.Residue]) -> list[bg.Chain]:
+    return [bg.Chain(residues=simplest_dimer_residues[:2]), bg.Chain(residues=simplest_dimer_residues[2:])]
+
+@pytest.fixture
+def simplest_dimer_state(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    simplest_dimer_chains: list[bg.Chain],
+    simplest_dimer_residues: list[bg.Residue],
+    simplest_dimer: AtomArray,
+) -> bg.State:
+    energy_terms = [
+        bg.energies.PLDDTEnergy(
+            oracle=fake_esmfold,
+            residues=simplest_dimer_residues,
+            weight=1.0,
+        ),
+        bg.energies.MinimumSeparationEnergy(
+            oracle=fake_esmfold,
+            residues=[simplest_dimer_residues[0:2], [simplest_dimer_residues[2]]],
+            plddt_weighted=True,
+            weight=1.0,
+        ),
+    ]
+    state = bg.State(
+        chains=simplest_dimer_chains,
+        energy_terms=energy_terms,
+        name='simplest_dimer',
+    )
+    folding_result = bg.oracles.folding.ESMFoldResult(
+        input_chains=simplest_dimer_chains,
+        structure=simplest_dimer,
+        local_plddt= 0.5 * np.ones( len(simplest_dimer) )[None, :],
+        ptm=np.array([0.4])[None, :],
+        pae=np.zeros((len(simplest_dimer), len(simplest_dimer)))[None, :, :],
+    )
+    state._energy = 0.0
+    state._oracles_result = bg.oracles.OraclesResultDict()
+    state._oracles_result[state.oracles_list[0]] = folding_result
+    return state
 
 @pytest.fixture
 def mixed_structure_state(
