@@ -956,6 +956,139 @@ class SymmetrizedEvobindEnergy(EnergyTerm):
 
         return value, value * self.weight
 
+class ContactEnergy(EnergyTerm):
+    """
+    Energy that should correlate well to the strength of a binding interface. 
+    The physical reasoning is the following:
+    1) The binding energy is proportional to the number of **atomic** contacts in the interface
+    2) How much should we trust a contact prediction depends on the alignment error between two atoms/residues,
+    hence we should weigh the contribution of each contact by the inverse of its predicted alignment error.
+    At the same time, much below and much above a certain threshold should not matter, neither to define
+    how good a prediction is, nor to define the exact length of the distance on which the contact is evaluated.
+
+    We can take a page from CVs in free-energy simulations and using a sigmoidal function to model the contribution of each contact:
+    f(x) = 1 / (1 + exp(-k * (x - x0)^2) )
+
+    What should not matter: AVERAGES. If a binder is large, there will be a large region of residues that
+    are not only not in contact, but that should not matter at all. These residues should be disregarded
+    completely.
+
+    We thus suggest the following formula, which counts the average number of contacts taking account
+    of the uncertainty in the distance between pair of residues.
+
+    E = sum_(ij) < f1( d_ij* * p(d_ij_R))>_{d_ij_R}, 
+    
+    where i,j is a sum over residue pairs, d_ij is the distance between C-beta atoms (or C-alpha for glycine)
+    in residues i and j, and p( d_ij_R) is the probability that the distance between the centre of mass
+    of residue i and residue j is d_ij, coming from the distogram.
+
+    For f1, we can use as parameters:
+    k1 = 1.0
+    x01 = 7.0 A
+
+    Note:
+    While ESMFold’s exact training parameters follow the same convention as AlphaFold2, here’s the standard:
+	•	Bin width: 0.5 Å
+	•	First bin center: 0.25 Å (covering 0.0–0.5 Å)
+	•	Last explicit bin: 31.75 Å (covering 31.5–∞ Å)
+	•	Number of bins: 64 total
+	•	63 bins for [0.0 Å, 31.5 Å] in 0.5 Å steps
+	•	1 bin for “>31.5 Å”
+
+    For computational purposes, we assume the last bin is not d>31.5 but centred in 32.5. Given the
+    f(x) function, it should not matter since it is zero for large distances.
+
+    Also, notice that the distances are supposed to be between CB-CB carbons (except for Glycine, which does
+    not have a side chain), which already have better information about side-chain conformations. Also, for 
+    the same reason it makes sense to use Cbeta distances only.
+
+    Implementation note:
+    In Object ESMFoldOutput there is an attribute:
+    .distogram_logits: np.ndarray  # (batch_size, residue, residue, 64) ???
+    """
+
+    def __init__(
+        self,
+        oracle: FoldingOracle,
+        residues: list[list[Residue]],
+        inheritable: bool = True,
+        weight: float = 1.0,
+        name: str | None = None,
+    ) -> None:
+        """
+        Initialises the alignment error energy class.
+
+        Parameters
+        ----------
+        oracle: Oracle
+            The oracle to use for the energy term.
+        residues: tuple[list[Residue], list[Residue]]
+            Which residues to include in the first and second group.
+        inheritable: bool, default=True
+            If a new residue is added next to a residue included in this energy term, this dictates whether that new
+            residue could then be added to this energy term.
+        cross_term_only: bool, default=True
+            Whether to only consider the uncertainty in distance between group 1 and group 2 atoms. If set to False,
+            also considers the uncertainty in distances between atoms within the same group.
+        weight: float = 1.0
+            The weight of the energy term.
+        name: str | None = None
+            Optional name to append to the energy term name.
+        """
+        base_name = 'AverageContact'
+
+        if name is None:
+            name = base_name
+        else:
+            name = f'{base_name}_{name}'
+
+        super().__init__(name=name, inheritable=inheritable, oracle=oracle, weight=weight)
+        if len(residues) == 1:
+            self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[0])]
+        else:
+            self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
+        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
+        assert 'distogram_logits' in self.oracle.result_class.model_fields, 'ContactEnergy requires oracle to return pae in result_class'
+
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        folding_result = oracles_result[self.oracle]
+        structure = oracles_result.get_structure(self.oracle)
+        assert hasattr(folding_result, 'distogram_logits'), 'distogram_logit metric not returned by folding algorithm'
+        assert folding_result.shape[0] == 1, 'batch size equal to 1 is required'
+        distogram_logits = folding_result.distogram_logits[0]  # [n_residues, n_residues, 64] pairwise logits for the distogram
+        max_pae = 32.5  # approximate max. Last logit (index=63 is dist > 32.5) 
+
+        group_1_mask = self.get_residue_mask(structure, residue_group_index=0)
+        group_2_mask = self.get_residue_mask(structure, residue_group_index=1)
+        disto_mask = np.full(shape=distogram_logits.shape, fill_value=False)
+
+        disto_mask[group_1_mask[:, np.newaxis] & group_2_mask[np.newaxis, :]] = True
+        # in case distogram symmetry is not enforced
+        disto_mask[group_2_mask[:, np.newaxis] & group_1_mask[np.newaxis, :]] = True
+
+        # Now first construct the mask that will allow to only consider distances between C-beta carbons
+        # and no other pair type.
+        cb_mask = structure.atom_name == "CB"
+        cb_atomarray = structure.get_atom_array(cb_mask)
+
+        # Ok, now a stupid but robust implementation.
+        for i, atom1 in enumerate( cb_atomarray ):
+            for j, atom2 in enumerate( cb_atomarray ):
+
+
+        c_beta_positions = structure.get_c_beta_positions(self.residue_groups)
+
+        distances = np.linalg.norm(c_beta_positions[:, np.newaxis] - c_beta_positions[np.newaxis, :], axis=-1)
+        disto_mask &= (distances < max_disto)
+
+        diagonal_mask = np.eye(len(pae), dtype=bool)
+        pae_mask[diagonal_mask] = False  # should ignore uncertainty in distance between atom and itself
+
+        value = np.mean(pae[pae_mask]) / max_pae
+        return value, value * self.weight
+
+
+
 
 class GlobularEnergy(EnergyTerm):
     """
