@@ -270,11 +270,12 @@ def square_structure() -> AtomArray:  # centroid of backbone atoms of each resid
 @pytest.fixture
 def simplest_dimer() -> AtomArray:  
     # A 2-residues chain aligned along the x-axis plus an additional single chain residue 
-    # aligned along the 110 direction.
+    # aligned along the 100 direction, form a isocele triangle with basis 1 and cross-distances
+    # of sqrt(5)/2.
     atoms = [
         Atom(coord=[0, 0, 0], chain_id='A', atom_name='CA', res_name='GLY', res_id=0, element='C'),
         Atom(coord=[1, 0, 0], chain_id='A', atom_name='CA', res_name='GLY', res_id=1, element='C'),
-        Atom(coord=[1, 1, 0], chain_id='B', atom_name='CA', res_name='GLY', res_id=0, element='C'),
+        Atom(coord=[0.5, 1, 0], chain_id='B', atom_name='CA', res_name='GLY', res_id=0, element='C'),
     ]
     return array(atoms)
 

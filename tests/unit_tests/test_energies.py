@@ -393,10 +393,10 @@ def test_MinimumSeparationEnergy(
     print( f"structure = {oracles_result[fake_esmfold].structure}" )
     unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
     unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
-    # sum of relevant PAEs / (num PAEs * max PAE)
+    
     # PLDDT weight with PLDDT = 0.5 (in denominator) and min_dist = 1.0 (in numerator)
-    assert np.isclose(unweighted_energy, 2.0), f'unweighted energy is incorrect {unweighted_energy}'
-    assert np.isclose(weighted_energy, 4.0 ), f'weighted energy is incorrect {weighted_energy}'
+    assert np.isclose(unweighted_energy, 2.0 * np.sqrt(5) / 2 ), f'unweighted energy is incorrect {unweighted_energy}'
+    assert np.isclose(weighted_energy, 4.0 * np.sqrt(5) / 2 ), f'weighted energy is incorrect {weighted_energy}'
     
     energy = bg.energies.MinimumSeparationEnergy(
         oracle=fake_esmfold,
@@ -407,10 +407,50 @@ def test_MinimumSeparationEnergy(
     oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
     unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
     unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
-    # sum of relevant PAEs / (num PAEs * max PAE)
-    assert np.isclose(unweighted_energy, 1.0), 'unweighted energy is incorrect'
-    assert np.isclose(weighted_energy, 2.0 ), 'weighted energy is incorrect'
     
+    assert np.isclose(unweighted_energy, np.sqrt(5) / 2 ), 'unweighted energy is incorrect'
+    assert np.isclose(weighted_energy, np.sqrt(5) ), 'weighted energy is incorrect'
+
+
+def test_SymmetrizedEvobindEnergy(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    simplest_dimer_state: bg.State,
+) -> None:
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = simplest_dimer_state._oracles_result[fake_esmfold].structure
+    mock_folding_result.local_plddt = simplest_dimer_state._oracles_result[fake_esmfold].local_plddt
+    residues = sum([chain.residues for chain in simplest_dimer_state.chains], start=[])
+    energy = bg.energies.SymmetrizedEvobindEnergy(
+        oracle=fake_esmfold,
+        residues=[[residues[2]],residues[0:2]],
+        plddt_weighted=True,
+        weight=2.0,
+    )
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    # print all attributes of oracles_result
+    
+    print( f"PLDDT = {oracles_result[fake_esmfold].local_plddt}" )
+    print( f"structure = {oracles_result[fake_esmfold].structure}" )
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
+    
+    # PLDDT weight with PLDDT = 0.5 (in denominator) and min_dist = 1.0 (in numerator)
+    assert np.isclose(unweighted_energy, np.sqrt(5.0) ), f'unweighted energy is incorrect {unweighted_energy}'
+    assert np.isclose(weighted_energy, 2.0 * np.sqrt(5.0) ), f'weighted energy is incorrect {weighted_energy}'
+    
+    energy = bg.energies.SymmetrizedEvobindEnergy(
+        oracle=fake_esmfold,
+        residues=[[residues[2]],residues[0:2]],
+        plddt_weighted=False,
+        weight=2.0,
+    )
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
+    
+    assert np.isclose(unweighted_energy, np.sqrt(5.0) / 2.0 ), 'no-plddt and unweighted energy is incorrect'
+    assert np.isclose(weighted_energy, np.sqrt(5.0) ), 'no-plddt and weighted energy is incorrect'
+ 
 
 def test_RingSymmetryEnergy(
     fake_esmfold: bg.oracles.folding.ESMFold,
