@@ -976,10 +976,10 @@ class ContactEnergy(EnergyTerm):
     We thus suggest the following formula, which counts the average number of contacts taking account
     of the uncertainty in the distance between pair of residues.
 
-    E = sum_(ij) < f1( d_ij* * p(d_ij_R))>_{d_ij_R}, 
+    E = sum_(ij) sum_{d_ij_R} f1( d_ij ) p(d_ij_R), 
     
     where i,j is a sum over residue pairs, d_ij is the distance between C-beta atoms (or C-alpha for glycine)
-    in residues i and j, and p( d_ij_R) is the probability that the distance between the centre of mass
+    in residues i and j, and p( d_ij_R ) is the probability that the distance between the centre of mass
     of residue i and residue j is d_ij, coming from the distogram.
 
     For f1, we can use as parameters:
@@ -998,9 +998,9 @@ class ContactEnergy(EnergyTerm):
     For computational purposes, we assume the last bin is not d>31.5 but centred in 32.5. Given the
     f(x) function, it should not matter since it is zero for large distances.
 
-    Also, notice that the distances are supposed to be between CB-CB carbons (except for Glycine, which does
-    not have a side chain), which already have better information about side-chain conformations. Also, for 
-    the same reason it makes sense to use Cbeta distances only.
+    Also, notice that the distances are supposed to be between CB-CB carbons, which already have better 
+    information about side-chain conformations. For this reason, we never consider Glycines as part of 
+    contacts (C-beta missing).
 
     Implementation note:
     In Object ESMFoldOutput there is an attribute:
@@ -1014,6 +1014,9 @@ class ContactEnergy(EnergyTerm):
         inheritable: bool = True,
         weight: float = 1.0,
         name: str | None = None,
+        k: float = 1.0,
+        n: int = 1
+        x0: float = 5.0
     ) -> None:
         """
         Initialises the alignment error energy class.
@@ -1049,6 +1052,35 @@ class ContactEnergy(EnergyTerm):
             self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
         assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
         assert 'distogram_logits' in self.oracle.result_class.model_fields, 'ContactEnergy requires oracle to return pae in result_class'
+        # Values necessary for definition of sigmoidal function that transform distance into bonds.
+        self.k = k
+        self.n = n
+        self.x0 = x0
+
+    def distrogram_bin( self, res_id1, res_id2, distance ):
+        # Bin the distance into the distrogram
+        bin_width = 1.0
+        bin_index = int(distance / bin_width)
+        return bin_index
+
+    def distance_probability( self, distogram, res_id1, res_id2, bin_index ):
+        # Compute the logits for the distrogram
+        return np.exp( distogram[ res_id1, res_id2, bin_index ] )
+
+    def sigmoidal_contact( self, x ):
+        k = self.k
+        n = self.n
+        x0 = self.x0
+        return 1.0 / ( 1.0 + np.exp( k * ( x - x0 ) )**( 2*n + 1) )
+
+    def calculate_contact( self, atom_0, atom_1, distogram_logits ):
+        # Calculate the contact potential between two atoms
+        distance = np.linalg.norm(atom_0.position - atom_1.position)
+        bin_index = self.distrogram_bin( atom_0.res_id, atom_1.res_id, distance )
+        assert bin_index <= 63, f"Bin index {bin_index} out of range"
+        probability = self.distance_probability( distogram_logits, atom_0.res_id, atom_1.res_id, bin_index )
+        val = self.sigmoidal_contact( distance ) * probability
+        return val
 
     def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
         folding_result = oracles_result[self.oracle]
@@ -1056,38 +1088,40 @@ class ContactEnergy(EnergyTerm):
         assert hasattr(folding_result, 'distogram_logits'), 'distogram_logit metric not returned by folding algorithm'
         assert folding_result.shape[0] == 1, 'batch size equal to 1 is required'
         distogram_logits = folding_result.distogram_logits[0]  # [n_residues, n_residues, 64] pairwise logits for the distogram
-        max_pae = 32.5  # approximate max. Last logit (index=63 is dist > 32.5) 
+        max_dist = 32.5  # approximate max. Last logit ( [,,63] = probability for dist >= 32.5) 
 
-        group_1_mask = self.get_residue_mask(structure, residue_group_index=0)
-        group_2_mask = self.get_residue_mask(structure, residue_group_index=1)
+        group_0_mask = self.get_residue_mask(structure, residue_group_index=0)
+        group_1_mask = self.get_residue_mask(structure, residue_group_index=1)
         disto_mask = np.full(shape=distogram_logits.shape, fill_value=False)
 
-        disto_mask[group_1_mask[:, np.newaxis] & group_2_mask[np.newaxis, :]] = True
+        disto_mask[group_0_mask[:, np.newaxis] & group_2_mask[np.newaxis, :]] = True
         # in case distogram symmetry is not enforced
-        disto_mask[group_2_mask[:, np.newaxis] & group_1_mask[np.newaxis, :]] = True
+        disto_mask[group_1_mask[:, np.newaxis] & group_1_mask[np.newaxis, :]] = True
 
         # Now first construct the mask that will allow to only consider distances between C-beta carbons
         # and no other pair type.
         cb_mask = structure.atom_name == "CB"
-        cb_atomarray = structure.get_atom_array(cb_mask)
+        cb_atomarray_0 = structure.get_atom_array(cb_mask)
+        cb_atomarray_1 = structure.get_atom_array(cb_mask)
 
+        # Now take only those belonging to binder or hotspot 
+        cb_atomarray_0 = cb_atomarray_0[ cb_atomarray_0.res_id in self.residue_group[0][1]]
+        cb_atomarray_1 = cb_atomarray_1[ cb_atomarray_1.res_id in self.residue_group[1][1]]
+
+        value = 0.0
         # Ok, now a stupid but robust implementation.
-        for i, atom1 in enumerate( cb_atomarray ):
-            for j, atom2 in enumerate( cb_atomarray ):
+        for i, atom_0 in enumerate( cb_atomarray_0 ):
+            for j, atom_1 in enumerate( cb_atomarray_1 ):
+                # Calculate minimum distance between an atom from atom_0 and any in cb_atomarray_1
+                value += self.calculate_contact( atom_0, atom_1 )
+                # Ok, now a stupid but robust implementation.
+        for i, atom_1 in enumerate( cb_atomarray_1 ):
+            for j, atom_0 in enumerate( cb_atomarray_0 ):
+                # Calculate minimum distance between an atom from atom_0 and any in cb_atomarray_1
+                value += self.calculate_contact( atom_1, atom_0 )
+        value /= 2.0
 
-
-        c_beta_positions = structure.get_c_beta_positions(self.residue_groups)
-
-        distances = np.linalg.norm(c_beta_positions[:, np.newaxis] - c_beta_positions[np.newaxis, :], axis=-1)
-        disto_mask &= (distances < max_disto)
-
-        diagonal_mask = np.eye(len(pae), dtype=bool)
-        pae_mask[diagonal_mask] = False  # should ignore uncertainty in distance between atom and itself
-
-        value = np.mean(pae[pae_mask]) / max_pae
         return value, value * self.weight
-
-
 
 
 class GlobularEnergy(EnergyTerm):
