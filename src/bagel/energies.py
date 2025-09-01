@@ -631,7 +631,7 @@ class LISEnergy(EnergyTerm):
         name: str | None = None
             Optional name to append to the energy term name.
         """
-        base_name = f'PAE'
+        base_name = f'LIS'
 
         if name is None:
             name = base_name
@@ -666,12 +666,18 @@ class LISEnergy(EnergyTerm):
         pae_mask[diagonal_mask] = False  # should ignore uncertainty in distance between atom and itself
         selected_pae = pae[pae_mask]
 
-        # With this, you end up only selecting the correct residue pairs. Now use it to calculate the LIS
+        # selected_pae only contains the correct pairs now, use it to calculate the LIS score.
+
         # Step 1: take only values where pae < 12.0
         threshold_mask = selected_pae < 12.0
-        # Step 2: For those values that remain, the LIS score is 12 - pae[i,j] / 12
-        lis_scores = ( 12.0 - selected_pae[threshold_mask] ) / 12.0
-        value = np.mean( lis_scores )
+        selected_pae = selected_pae[threshold_mask]
+
+        if len(selected_pae) == 0:
+            value = 0.0
+        else:
+            # Step 2: For those values that remain, the LIS score is given by:
+            lis_scores = ( 12.0 - selected_pae ) / 12.0
+            value = -np.mean( lis_scores ) # Negative because you want to be interpreted as an energy
         
         return value, value * self.weight
 
