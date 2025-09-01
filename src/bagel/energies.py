@@ -652,7 +652,6 @@ class LISEnergy(EnergyTerm):
         assert hasattr(folding_result, 'pae'), 'pae metric not returned by folding algorithm'
         assert folding_result.pae.shape[0] == 1, 'batch size equal to 1 is required'
         pae = folding_result.pae[0]  # [n_residues, n_residues] pairwise predicted alignment error matrix
-        max_pae = 30  # approximate max. Sometimes pae can be higher
 
         group_1_mask = self.get_residue_mask(structure, residue_group_index=0)
         group_2_mask = self.get_residue_mask(structure, residue_group_index=1)
