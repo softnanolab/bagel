@@ -889,9 +889,9 @@ class FlexEvoBindEnergy(EnergyTerm):
             Optional name to append to the energy term name.
         """
         if name is None:
-            name = 'evobind2'
+            name = 'flex_evo'
         else:
-            name = f'evobind2_{name}'
+            name = f'flex_evo_{name}'
 
 
         super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight)
@@ -901,7 +901,7 @@ class FlexEvoBindEnergy(EnergyTerm):
         self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
         assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
         assert 'structure' in self.oracle.result_class.model_fields, (
-            'SymmetrizedEvoBinEnergy requires oracle to return structure in result_class'
+            'FlexEvoBindEnergy requires oracle to return structure in result_class'
         )
 
     def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
