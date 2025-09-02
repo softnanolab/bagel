@@ -764,6 +764,7 @@ class SeparationEnergy(EnergyTerm):
         self,
         oracle: FoldingOracle,
         residues: tuple[list[Residue], list[Residue]],
+        function: dict | None = None,
         inheritable: bool = True,
         weight: float = 1.0,
         name: str | None = None,
@@ -777,6 +778,8 @@ class SeparationEnergy(EnergyTerm):
             The oracle to use for the energy term.
         residues: tuple[list[Residue],list[Residue]]
             A tuple containing two lists of residues, those to include in the first [0] and second [1] group.
+        function: dict | None
+            A dictionary defining the non-linear function to use for the energy term.
         inheritable: bool, default=True
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
@@ -790,8 +793,15 @@ class SeparationEnergy(EnergyTerm):
         else:
             name = f'separation_{name}'
 
+
         super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight)
         self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
+        self.function = function
+        if self.function is not None:
+            assert 'type' in self.function, 'Function parameter type must be specified'
+            assert self.function['type'] in ['harmonic', 'sigmoidal'], 'Function parameter type must be either "harmonic" or "sigmoidal"'
+            assert 'x0' in self.function, 'Function parameter x0 (distance cutoff) must be specified'
+            assert 'k' in self.function, 'Function parameter k (steepness) must be specified'
         assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
         assert 'structure' in self.oracle.result_class.model_fields, (
             'SeparationEnergy requires oracle to return structure in result_class'
@@ -808,11 +818,25 @@ class SeparationEnergy(EnergyTerm):
         group_1_centroid = np.mean(group_1_atoms.coord, axis=0)
         group_2_centroid = np.mean(group_2_atoms.coord, axis=0)
         distance = np.linalg.norm(group_1_centroid - group_2_centroid)
-
+        
         value = float(distance)
+
+        # If the function is non-linear, make the correct transformation accordingly
+        # to the definition in self.function
+        if self.function is not None:
+            x0 = self.function['x0']
+            k = self.function['k']
+            if self.function['type'] == 'harmonic':
+                if distance < x0:
+                    value = 0.0
+                else:
+                    value = 0.5 * k * ( distance - x0 )**2 
+            elif self.function['type'] == 'sigmoidal':
+                value = 1.0 / ( 1.0 + np.exp(-k * (distance - x0)))
+
         return value, value * self.weight
     
-class MinimumSeparationEnergy(EnergyTerm):
+class EvoBindEnergy(EnergyTerm):
     """
     Energy that minimizes the 'average minimum distance' between two groups of residues. 
     In practice, for each residue in the first group, it finds the closest residue in the second group and
@@ -854,19 +878,17 @@ class MinimumSeparationEnergy(EnergyTerm):
             Optional name to append to the energy term name.
         """
         if name is None:
-            name = 'min_separation'
+            name = 'evobind'
         else:
-            name = f'min_separation_{name}'
+            name = f'evobind_{name}'
 
         self.plddt_weighted = plddt_weighted
-        if self.plddt_weighted:
-            name += '_plddt_weighted'
 
         super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight)
         self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
         assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
         assert 'structure' in self.oracle.result_class.model_fields, (
-            'SeparationEnergy requires oracle to return structure in result_class'
+            'EvoBindEnergy requires oracle to return structure in result_class'
         )
 
     def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
@@ -916,7 +938,7 @@ class MinimumSeparationEnergy(EnergyTerm):
         return value, value * self.weight
 
 
-class SymmetrizedEvobindEnergy(EnergyTerm):
+class SymmetrizedEvoBindEnergy(EnergyTerm):
     """
     Energy that minimizes the 'average minimum distance' between two groups of residues. 
     In practice, for each residue in the first group, it finds the closest residue in the second group and
@@ -965,15 +987,13 @@ class SymmetrizedEvobindEnergy(EnergyTerm):
             name = f'sym_evobind_{name}'
 
         self.plddt_weighted = plddt_weighted
-        if self.plddt_weighted:
-            name += '_plddt_weighted'
 
         super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight)
         self.residues = residues
         self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
         assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
         assert 'structure' in self.oracle.result_class.model_fields, (
-            'SeparationEnergy requires oracle to return structure in result_class'
+            'SymmetrizedEvoBinEnergy requires oracle to return structure in result_class'
         )
 
     def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
