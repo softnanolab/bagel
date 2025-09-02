@@ -321,16 +321,23 @@ def simplest_dimer_state(
             residues=simplest_dimer_residues,
             weight=1.0,
         ),
-        bg.energies.EvoBindEnergy(
+        # bg.energies.EvoBindEnergy(
+        #     oracle=fake_esmfold,
+        #     residues=[simplest_dimer_residues[0:2], [simplest_dimer_residues[2]]],
+        #     plddt_weighted=True,
+        #     weight=1.0,
+        # ),
+        # bg.energies.SymmetrizedEvoBindEnergy(
+        #     oracle=fake_esmfold,
+        #     residues=[simplest_dimer_residues[0:2], [simplest_dimer_residues[2]]],
+        #     plddt_weighted=True,
+        #     weight=1.0,
+        # ),
+        bg.energies.FlexEvoBindEnergy(
             oracle=fake_esmfold,
             residues=[simplest_dimer_residues[0:2], [simplest_dimer_residues[2]]],
             plddt_weighted=True,
-            weight=1.0,
-        ),
-        bg.energies.SymmetrizedEvoBindEnergy(
-            oracle=fake_esmfold,
-            residues=[simplest_dimer_residues[0:2], [simplest_dimer_residues[2]]],
-            plddt_weighted=True,
+            symmetrized=True,
             weight=1.0,
         ),
     ]

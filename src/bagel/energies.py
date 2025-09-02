@@ -836,109 +836,8 @@ class SeparationEnergy(EnergyTerm):
 
         return value, value * self.weight
     
-class EvoBindEnergy(EnergyTerm):
-    """
-    Energy that minimizes the 'average minimum distance' between two groups of residues. 
-    In practice, for each residue in the first group, it finds the closest residue in the second group and
-    calculates the minimum distance between them. The minimum is over all possible pairs of atoms that
-    make up the two residues. The average is over all the residues in the first group.
 
-    This energy is similar to the minimum separation component of the loss used to design peptide binders in: 
-    'Li, Q., Vlachos, E.N. & Bryant, P. Design of linear and cyclic peptide binders from protein sequence information. Commun Chem 8, 211 (2025)'
-    DOI https://doi.org/10.1038/s42004-025-01601-3
-
-    Note in this reference the explanation of Eq.1 is misleading. Here, the average of the minimum distance 
-    is over all the the residues in the first group.
-    """
-
-    def __init__(
-        self,
-        oracle: FoldingOracle,
-        residues: tuple[list[Residue], list[Residue]],
-        plddt_weighted: bool = False,
-        inheritable: bool = True,
-        weight: float = 1.0,
-        name: str | None = None,
-    ) -> None:
-        """
-        Initialises separation energy class.
-
-        Parameters
-        ----------
-        oracle: FoldingOracle
-            The oracle to use for the energy term.
-        residues: tuple[list[Residue],list[Residue]]
-            A tuple containing two lists of residues, those to include in the first [0] and second [1] group.
-        inheritable: bool, default=True
-            If a new residue is added next to a residue included in this energy term, this dictates whether that new
-            residue could then be added to this energy term.
-        weight: float = 1.0
-            The weight of the energy term.
-        name: str | None = None
-            Optional name to append to the energy term name.
-        """
-        if name is None:
-            name = 'evobind'
-        else:
-            name = f'evobind_{name}'
-
-        self.plddt_weighted = plddt_weighted
-
-        super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight)
-        self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'structure' in self.oracle.result_class.model_fields, (
-            'EvoBindEnergy requires oracle to return structure in result_class'
-        )
-
-    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
-        structure = oracles_result.get_structure(self.oracle)
-
-        # Get the mask for all the atoms belonging to any residue in group 2
-        group_2_mask = self.get_atom_mask(structure, residue_group_index=1)
-        group_2_atoms = structure[group_2_mask]
-
-        # Get the chain_ids and res_ids for the residues in the first group
-        chain_ids, res_ids = self.residue_groups[0]
-
-        min_distances = []  # List to store the minimum distances for each residue in group 1
-
-        # Now iterate over each residue in the first group
-        for chain_id, res_id in zip(chain_ids, res_ids):
-            # Extract from the structure the atoms corresponding to the residues with current chain_id and res_id
-            curr_residue_mask = (structure.chain_id == chain_id) & (structure.res_id == res_id)
-            # Get the atoms corresponding to the current residue
-            curr_residue_atoms = structure[curr_residue_mask]
-            # Calculate the minimum distance over any pair of atoms in the current residue and all atoms in group 2
-            min_dist = np.inf
-            for atom in curr_residue_atoms:
-                # Calculate the distance from the current atom to all atoms in group 2
-                all_distances = np.linalg.norm(group_2_atoms.coord - atom.coord, axis=1)
-                # Find the minimum distance for this atom to any atom in group 2
-                min_dist = min( min_dist, np.min(all_distances))
-
-            min_distances.append(min_dist)  # Store the minimum distance for this residue
-        
-        # Calculate the average of these minimum distances
-        average_min_distance = np.mean(min_distances)
-        value = float(average_min_distance)
-
-        # If plddt_weighted is True, divide by the average pLDDT of the residues in group 1
-        # In this case, this energy term is *exactly* the EvoBind loss function mentioned above.
-        if self.plddt_weighted:
-            folding_result = oracles_result[self.oracle]
-            assert hasattr(folding_result, 'local_plddt'), 'local_plddt metric not returned by folding algorithm'
-            assert folding_result.local_plddt.shape[0] == 1, 'batch size equal to 1 is required'
-            plddt = folding_result.local_plddt[0]
-            assert hasattr(folding_result, 'structure'), 'structure not returned by folding algorithm'
-            group_1_mask = self.get_residue_mask(structure, residue_group_index=0)
-            average_plddt = np.mean(plddt[group_1_mask])
-            value /= average_plddt
-
-        return value, value * self.weight
-
-
-class SymmetrizedEvoBindEnergy(EnergyTerm):
+class FlexEvoBindEnergy(EnergyTerm):
     """
     Energy that minimizes the 'average minimum distance' between two groups of residues. 
     In practice, for each residue in the first group, it finds the closest residue in the second group and
@@ -960,6 +859,7 @@ class SymmetrizedEvoBindEnergy(EnergyTerm):
         oracle: FoldingOracle,
         residues: tuple[list[Residue], list[Residue]],
         plddt_weighted: bool = False,
+        symmetrized: bool = True,
         inheritable: bool = True,
         weight: float = 1.0,
         name: str | None = None,
@@ -973,6 +873,13 @@ class SymmetrizedEvoBindEnergy(EnergyTerm):
             The oracle to use for the energy term.
         residues: tuple[list[Residue],list[Residue]]
             A tuple containing two lists of residues, those to include in the first [0] and second [1] group.
+        plddt_weighted: bool
+            A bool indicating whether the result need to be weighted by the plddt of the residues considered.
+            If True, this definition is closer to the EvoBind energy in the reference below
+        symmetrized: bool
+            A bool indicating whether or not the calculation of the minimum distances need to be symmetrized between residues in 
+            residued[0] and those in residues[1]. Otherwise the minimum distances are those between any atom in residues from
+            residues[0] and those in residues in residues[1], but not vice versa.
         inheritable: bool, default=True
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
@@ -982,14 +889,15 @@ class SymmetrizedEvoBindEnergy(EnergyTerm):
             Optional name to append to the energy term name.
         """
         if name is None:
-            name = 'sym_evobind'
+            name = 'evobind2'
         else:
-            name = f'sym_evobind_{name}'
+            name = f'evobind2_{name}'
 
-        self.plddt_weighted = plddt_weighted
 
         super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight)
         self.residues = residues
+        self.symmetrized = symmetrized
+        self.plddt_weighted = plddt_weighted
         self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
         assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
         assert 'structure' in self.oracle.result_class.model_fields, (
@@ -999,8 +907,14 @@ class SymmetrizedEvoBindEnergy(EnergyTerm):
     def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
         structure = oracles_result.get_structure(self.oracle)
 
+        if self.symmetrized:
+            indices = [0,1]
+        else:
+            indices = [0]
+
         values_list = []
-        for main in [0,1]:
+
+        for main in indices:
             # Get the mask for all the atoms belonging to any residue in group 2
             partner = 1 if main == 0 else 0
             partner_mask = self.get_atom_mask(structure, residue_group_index=partner)
@@ -1052,7 +966,10 @@ class SymmetrizedEvoBindEnergy(EnergyTerm):
             values_list.append(value)
         
         # calculate the (weighted) average over saved values
-        value = np.sum(values_list) / ( len( self.residues[0] ) + len( self.residues[1] ) )
+        if self.symmetrized:
+            value = np.sum(values_list) / ( len( self.residues[0] ) + len( self.residues[1] ) )
+        else:
+            value = np.sum(values_list) / len( self.residues[0] ) 
 
         return value, value * self.weight
 
