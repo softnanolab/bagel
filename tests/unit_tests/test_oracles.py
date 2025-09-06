@@ -2,13 +2,17 @@ import pytest
 from bagel.oracles.base import OraclesResultDict, Oracle, OracleResult
 from bagel.chain import Chain, Residue
 
+
 class DummyOracle(Oracle):
     result_class = OracleResult
+
     def predict(self, chains):
         pass
 
+
 class DummyResult(OracleResult):
     input_chains: list[Chain]
+
     def save_attributes(self, filepath):
         pass
 
