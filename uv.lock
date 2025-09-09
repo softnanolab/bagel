@@ -197,7 +197,7 @@ local = [
 [package.metadata]
 requires-dist = [
     { name = "biotite", specifier = ">=1.0.1" },
-    { name = "boileroom", specifier = "==0.1.2" },
+    { name = "boileroom", specifier = "==0.1.3" },
     { name = "ipykernel", marker = "extra == 'dev'", specifier = ">=6.29.5" },
     { name = "matplotlib", specifier = ">=3.10.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.14.1" },
@@ -270,7 +270,7 @@ wheels = [
 
 [[package]]
 name = "boileroom"
-version = "0.1.2"
+version = "0.1.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "biotite" },
@@ -279,9 +279,9 @@ dependencies = [
     { name = "numpy" },
     { name = "torch" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/34/1e/6a2028ad1301c59a39bf9d545edca55519c6b947176df05ecc8d5b0e859d/boileroom-0.1.2.tar.gz", hash = "sha256:4d533788ef2462e547ff4392919429dec969c0df017724b8624c5c28fb62ad06", size = 300170 }
+sdist = { url = "https://files.pythonhosted.org/packages/4e/32/e2ebb42cf849a2571cc16188c425e90ef7aa97b11696aaa32d5ac541683c/boileroom-0.1.3.tar.gz", hash = "sha256:2cd4f739ba00822d0fa160e5ad6a65b9fc617f80fe8c0e3aeb0211496747d7bf", size = 300620 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/11/a4/ba6606a387ad48ecab6199c2d41e72be6a79e71e30b9d385b275fe4bb59d/boileroom-0.1.2-py3-none-any.whl", hash = "sha256:0088cf88f57eefaeb4808e385556c4d048d50c5d6999e4f82a793f122c88cad3", size = 20979 },
+    { url = "https://files.pythonhosted.org/packages/ae/60/3ae3607bd7c5da83ae6720100c8aab108c60674f95b97cd28858275e3d4d/boileroom-0.1.3-py3-none-any.whl", hash = "sha256:47721068e7f04524437d59e0c8dfd5f37aef6219da3de48a70c44e03ecd39cc4", size = 21394 },
 ]
 
 [[package]]
