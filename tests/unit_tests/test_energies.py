@@ -395,6 +395,7 @@ def test_RingSymmetryEnergy(
 
 # --- ChemicalPotentialEnergy ---
 
+
 def test_ChemicalPotentialEnergy(
     fake_esmfold: bg.oracles.folding.ESMFold,
     square_structure_residues: list[bg.Residue],
@@ -434,8 +435,8 @@ def test_ChemicalPotentialEnergy_with_embedding_oracle(
     )
     unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
     # Should be: 1.5 * (abs(3-5))**2 = 1.5 * 4 = 6.0
-    assert np.isclose(unweighted_energy, 6.0), f"unweighted energy is incorrect: {unweighted_energy}"
-    assert np.isclose(weighted_energy, 12.0), f"weighted energy is incorrect: {weighted_energy}"
+    assert np.isclose(unweighted_energy, 6.0), f'unweighted energy is incorrect: {unweighted_energy}'
+    assert np.isclose(weighted_energy, 12.0), f'weighted energy is incorrect: {weighted_energy}'
 
 
 def test_RingSymmetryEnergy_with_direct_neighbours_only(
