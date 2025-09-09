@@ -598,6 +598,21 @@ def test_TemplateMatchEnergy_is_correct_with_simple_structure_using_distogram_me
     assert np.isclose(weighted_energy, value * 2), 'weighted energy is incorrect'
 
 
+def test_TemplateMatchEnergy_is_correct_with_different_atom_order(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+) -> None:
+    import biotite.structure.io as bsio
+    import os
+
+    # Load the PDB file using biotite
+    pdb_path = os.path.join(
+        os.path.dirname(__file__), "examples", "4qq8.pdb"
+    )
+    structure = bsio.load_structure(pdb_path)
+    import pdb; pdb.set_trace()
+
+
+    # This test only loads the PDB using biotite as requested
 def test_secondary_structure_elements_function_gives_expected_return_array(small_structure: AtomArray) -> None:
     sse_labels = annotate_sse(small_structure)
     assert len(sse_labels) == get_residue_count(small_structure), 'sse does not return one number for each residue'
