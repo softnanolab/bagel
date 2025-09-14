@@ -610,6 +610,8 @@ class LISEnergy(EnergyTerm):
         self,
         oracle: FoldingOracle,
         residues: list[list[Residue]],
+        pae_cutoff: float = 12.0,
+        intensive: bool = True,
         inheritable: bool = True,
         weight: float = 1.0,
         name: str | None = None,
@@ -623,6 +625,10 @@ class LISEnergy(EnergyTerm):
             The oracle to use for the energy term.
         residues: tuple[list[Residue], list[Residue]]
             Which residues to include in the first and second group.
+        pae_cutoff: float = 12.0
+            The cutoff value for the PAE, in Angstroms, below which the interaction is considered "local".
+        intensive: bool, default=True
+            If True, the LIS is averaged over the number of residue pairs, otherwise it's an extensive sum.
         inheritable: bool, default=True
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
@@ -637,6 +643,9 @@ class LISEnergy(EnergyTerm):
             name = base_name
         else:
             name = f'{base_name}_{name}'
+
+        self.pae_cutoff = pae_cutoff
+        self.intensive = intensive # if True, LIS is an average otherwise scales with number of residue pairs bonded
 
         super().__init__(name=name, inheritable=inheritable, oracle=oracle, weight=weight)
         if len(residues) == 1:
@@ -667,16 +676,20 @@ class LISEnergy(EnergyTerm):
 
         # selected_pae only contains the correct pairs now, use it to calculate the LIS score.
 
-        # Step 1: take only values where pae < 12.0
-        threshold_mask = selected_pae < 12.0
+        # Step 1: take only values where pae < pae_cutoff
+        cutoff = self.pae_cutoff
+        threshold_mask = selected_pae < cutoff
         selected_pae = selected_pae[threshold_mask]
 
         if len(selected_pae) == 0:
             value = 0.0
         else:
             # Step 2: For those values that remain, the LIS score is given by:
-            lis_scores = ( 12.0 - selected_pae ) / 12.0
-            value = -np.mean( lis_scores ) # Negative because you want to be interpreted as an energy
+            lis_scores = ( cutoff - selected_pae ) / cutoff
+            if self.intensive:
+                value = -np.mean( lis_scores ) # Negative because you want to be interpreted as an energy
+            else:
+                value = -np.sum( lis_scores ) # Negative because you want to be interpreted as an energy
         
         return value, value * self.weight
 
