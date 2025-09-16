@@ -1,6 +1,8 @@
+import os
 import bagel as bg
 from bagel.oracles import OraclesResultDict
 from biotite.structure import AtomArray, sasa, annotate_sse, get_residue_count, concatenate, Atom, array
+from biotite.structure.io import load_structure
 import numpy as np
 from unittest.mock import Mock, patch
 import copy
@@ -601,19 +603,28 @@ def test_TemplateMatchEnergy_is_correct_with_simple_structure_using_distogram_me
 
 def test_TemplateMatchEnergy_is_correct_with_different_atom_order(
     fake_esmfold: bg.oracles.folding.ESMFold,
+    formolase_ordered_residues: list[bg.Residue],
+    formolase_ordered_structure: AtomArray,
+    formolase_structure: AtomArray,
 ) -> None:
-    import biotite.structure.io as bsio
-    import os
+    template_atoms = formolase_structure
 
-    # Load the PDB file using biotite
-    pdb_path = os.path.join(
-        os.path.dirname(__file__), "examples", "4qq8.pdb"
+    energy = bg.energies.TemplateMatchEnergy(
+        oracle=fake_esmfold,
+        template_atoms=template_atoms,
+        residues=formolase_ordered_residues,
+        backbone_only=False,
+        weight=2.0,
     )
-    structure = bsio.load_structure(pdb_path)
-    import pdb; pdb.set_trace()
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = formolase_ordered_structure
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
+    value = 0.0
+    assert np.isclose(unweighted_energy, value, atol=1e-5), 'unweighted energy is incorrect'
+    assert np.isclose(weighted_energy, value * 2, atol=1e-5), 'weighted energy is incorrect'
 
 
-    # This test only loads the PDB using biotite as requested
 def test_secondary_structure_elements_function_gives_expected_return_array(small_structure: AtomArray) -> None:
     sse_labels = annotate_sse(small_structure)
     assert len(sse_labels) == get_residue_count(small_structure), 'sse does not return one number for each residue'
