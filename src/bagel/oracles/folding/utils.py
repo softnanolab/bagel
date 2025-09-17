@@ -74,6 +74,15 @@ def reorder_atoms_in_template(atom_array: AtomArray) -> AtomArray:
         indices = np.where((atom_array.res_id == res_id) & (atom_array.chain_id == chain_id))[0]
         atoms = atom_array[indices]
 
+        # Skip non–amino-acid residues (e.g., HOH, ligands)
+        res_name = atoms.res_name[0]
+        if res_name not in aa_dict_3to1:
+            logger.warning(
+                f"Skipping non-amino-acid residue {res_name} "
+                f"(res_id={res_id}, chain_id={chain_id})."
+            )
+            continue
+
         # Filter and report atoms not in atom_order
         protein_mask = np.array([name in atom_order for name in atoms.atom_name])
         for name in atoms.atom_name[~protein_mask]:
