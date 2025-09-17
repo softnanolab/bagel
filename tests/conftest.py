@@ -1,11 +1,13 @@
 """Module used to configure pytest behaviour."""
 
+import os
 import pytest
 import shutil
 import numpy as np
 import pathlib as pl
 from unittest.mock import Mock
 from biotite.structure import AtomArray, Atom, array, concatenate
+from biotite.structure.io import load_structure
 import bagel as bg
 
 
@@ -149,7 +151,7 @@ def short_chain() -> bg.Chain:
 @pytest.fixture
 def pdb_path() -> str:
     """Location of protein data bank file of real human protein."""
-    return str(pl.Path(__file__).resolve().parent / 'example_protein.pdb')
+    return str(pl.Path(__file__).resolve().parent / 'structures' / 'example_protein.pdb')
 
 
 @pytest.fixture
@@ -282,6 +284,31 @@ def square_structure_residues() -> list[bg.Residue]:
 @pytest.fixture
 def square_structure_chains(square_structure_residues: list[bg.Residue]) -> list[bg.Chain]:
     return [bg.Chain(residues=square_structure_residues)]
+
+
+@pytest.fixture
+def formolase_ordered_structure() -> AtomArray:
+    pdb_path = os.path.join(os.path.dirname(__file__), 'structures', '4qq8_ordered.pdb')
+    structure = load_structure(pdb_path)
+    return structure
+
+
+@pytest.fixture
+def formolase_ordered_residues(formolase_ordered_structure: AtomArray) -> list[bg.Residue]:
+    all_residues = []
+    for chain_id in np.unique(formolase_ordered_structure.chain_id):
+        chain_mask = formolase_ordered_structure.chain_id == chain_id
+        sequence = bg.oracles.folding.utils.sequence_from_atomarray(formolase_ordered_structure[chain_mask])
+        residues = [bg.Residue(name=aa, chain_ID=chain_id, index=i) for i, aa in enumerate(sequence)]
+        all_residues.extend(residues)
+    return all_residues
+
+
+@pytest.fixture
+def formolase_structure() -> AtomArray:
+    pdb_path = os.path.join(os.path.dirname(__file__), 'structures', '4qq8_protein_only.pdb')
+    structure = load_structure(pdb_path)
+    return structure
 
 
 @pytest.fixture

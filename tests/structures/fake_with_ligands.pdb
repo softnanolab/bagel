@@ -1,0 +1,20 @@
+HEADER    TEST PDB WITH LIGANDS AND WATER
+TITLE     Minimal protein with HOH and LIG residues
+MODEL        1
+ATOM      1  N   ALA A   1      11.104  13.207   9.114  1.00 20.00           N
+ATOM      2  CA  ALA A   1      12.560  13.312   9.335  1.00 20.00           C
+ATOM      3  C   ALA A   1      13.089  14.728   9.041  1.00 20.00           C
+ATOM      4  O   ALA A   1      12.414  15.696   9.349  1.00 20.00           O
+ATOM      5  CB  ALA A   1      13.141  12.357  10.394  1.00 20.00           C
+ATOM      6  N   GLY A   2      14.296  14.843   8.461  1.00 20.00           N
+ATOM      7  CA  GLY A   2      14.945  16.134   8.120  1.00 20.00           C
+ATOM      8  C   GLY A   2      14.222  16.862   6.959  1.00 20.00           C
+ATOM      9  O   GLY A   2      14.423  18.054   6.723  1.00 20.00           O
+HETATM   10  O   HOH A   3      16.500  12.000   9.500  1.00 20.00           O
+HETATM   11  O   HOH A   3      17.200  12.500   9.900  1.00 20.00           O
+HETATM   12  C1  LIG A   4      10.000  10.000  10.000  1.00 20.00           C
+HETATM   13  C2  LIG A   4      10.500  10.500  10.800  1.00 20.00           C
+HETATM   14  N1  LIG A   4      11.000  11.200  11.300  1.00 20.00           N
+TER      15      GLY A   2
+ENDMDL
+END
