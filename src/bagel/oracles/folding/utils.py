@@ -53,12 +53,12 @@ def reindex_chains(atomarray: AtomArray, custom_chain_idx: List[str]) -> AtomArr
         atoms.chain_id[i] = new_id
     return atoms
 
-
 def get_unique_residues(atom_array: AtomArray):
-    residues = []
+    residues, seen = [], set()
     for i in range(len(atom_array)):
         res_key = (atom_array.res_id[i], atom_array.chain_id[i])
-        if res_key not in residues:
+        if res_key not in seen:
+            seen.add(res_key)
             residues.append(res_key)
     return residues
 
