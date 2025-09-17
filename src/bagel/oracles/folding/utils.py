@@ -1,12 +1,16 @@
 import os
+import logging
 from typing import Union, List
 from io import StringIO
-from biotite.structure import AtomArray
-from biotite.structure.io.pdb import PDBFile
-from bagel.constants import atom_order, aa_dict
 
 import pandas as pd  # This is necessary because its "unique" method does not sort elements and leaves them as they are
 import numpy as np
+from biotite.structure import AtomArray
+from biotite.structure.io.pdb import PDBFile
+
+from bagel.constants import atom_order, aa_dict
+
+logger = logging.getLogger(__name__)
 
 aa_dict_3to1 = {v: k for k, v in aa_dict.items()}
 
@@ -73,7 +77,7 @@ def reorder_atoms_in_template(atom_array: AtomArray) -> AtomArray:
         # Filter and report atoms not in atom_order
         protein_mask = np.array([name in atom_order for name in atoms.atom_name])
         for name in atoms.atom_name[~protein_mask]:
-            print(
+            logger.warning(
                 f"Removed non-protein atom '{name}' from residue {atoms.res_name[0]} "
                 f'(res_id={res_id}, chain_id={chain_id}).'
             )
