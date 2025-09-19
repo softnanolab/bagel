@@ -86,11 +86,11 @@ class MutationProtocol(ABC):
         current_aa = chain.residues[index].name
         aa_keys = list(self.mutation_bias.keys())
         probs = np.array([self.mutation_bias[a] for a in aa_keys], dtype=float)
-        if self.exclude_self: # exclude the current amino acid from the probability distribution
+        if self.exclude_self:  # exclude the current amino acid from the probability distribution
             mask = np.array([a != current_aa for a in aa_keys], dtype=bool)
             probs = probs * mask
             probs = probs / probs.sum()
-        amino_acid = np.random.choice(aa_keys, p=probs.tolist())
+        amino_acid = np.random.choice(aa_keys, p=probs)
         chain.mutate_residue(index=index, amino_acid=amino_acid)
 
     def reset_system(self, system: System) -> System:
@@ -129,7 +129,7 @@ class Canonical(MutationProtocol):
         system: System,
         old_system: System,
     ) -> tuple[System, float]:
-        for i in range(self.n_mutations):
+        for _ in range(self.n_mutations):
             chain = self.choose_chain(system)
             self.mutate_random_residue(chain=chain)
         self.reset_system(system=system)  # Reset the system so it knows it must recalculate fold and energy
@@ -212,7 +212,7 @@ class GrandCanonical(MutationProtocol):
         system: System,
         old_system: System,
     ) -> tuple[System, float]:
-        for i in range(self.n_mutations):
+        for _ in range(self.n_mutations):
             chain = self.choose_chain(system)
             # Now pick a move to make among removal, addition, or mutation
             assert self.move_probabilities.keys() == {'substitution', 'addition', 'removal'}, (

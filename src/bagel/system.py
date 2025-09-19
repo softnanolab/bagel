@@ -50,7 +50,7 @@ class System:
         - a FASTA file for all sequences named '\<state.name\>.fasta'. Each header is the sequence's step and each
         sequence is a string of amino acid letters with : seperating each chain.
         - a FASTA file of per-residue mutability masks named '\<state.name\>.mask.fasta'. Each header is the
-          sequence's step and each sequence is a string with 'M' for mutable and 'I' for immutable residues (default), 
+          sequence's step and each sequence is a string with 'M' for mutable and 'I' for immutable residues (default),
           with : separating chains in the same order as the sequence FASTA.
         - a further directory named 'structures' containing all CIF files. Files are named '\<state.name>_\<step>.cif'
           for all states.

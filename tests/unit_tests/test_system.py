@@ -75,9 +75,7 @@ def test_system_dump_logs_folder_is_correct(mixed_system: bg.System) -> None:
 
     masks = {
         header: mask
-        for header, mask in FastaFile.read_iter(
-            file=experiment_folder / f'{mixed_system.states[1].name}.mask.fasta'
-        )
+        for header, mask in FastaFile.read_iter(file=experiment_folder / f'{mixed_system.states[1].name}.mask.fasta')
     }
     assert masks == {'0': 'M:MM:MIIM'}, 'incorrect mutability mask information saved'
 
