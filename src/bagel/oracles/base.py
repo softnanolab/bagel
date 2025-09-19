@@ -3,7 +3,7 @@ Oracles are algorithms that, given a State as input, can return a prediction.
 
 MIT License
 
-Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
+Copyright (c) 2025 Jakub Lála, Ayham Al-Saffar, Stefano Angioletti-Uberti
 """
 
 from abc import ABC, abstractmethod

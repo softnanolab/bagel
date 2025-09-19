@@ -274,8 +274,8 @@ def square_structure() -> AtomArray:  # centroid of backbone atoms of each resid
 def square_structure_residues() -> list[bg.Residue]:
     residues = [
         bg.Residue(name='G', chain_ID='E', index=0),
-        bg.Residue(name='V', chain_ID='E', index=1),
-        bg.Residue(name='V', chain_ID='E', index=2),
+        bg.Residue(name='V', chain_ID='E', index=1, mutable=False),
+        bg.Residue(name='V', chain_ID='E', index=2, mutable=False),
         bg.Residue(name='V', chain_ID='E', index=3),
     ]
     return residues

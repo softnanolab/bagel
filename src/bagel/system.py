@@ -3,7 +3,7 @@ Top-level object defining the overall protein design task, including all the Sta
 
 MIT License
 
-Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
+Copyright (c) 2025 Jakub Lála, Ayham Al-Saffar, Stefano Angioletti-Uberti
 """
 
 from . import __version__ as bagel_version
@@ -48,7 +48,10 @@ class System:
           '\<state.name\>_energy' and 'system_energy'. Note the final
           column is the sum of the mean weighted energies of each state.
         - a FASTA file for all sequences named '\<state.name\>.fasta'. Each header is the sequence's step and each
-          sequence is a string of amino acid letters with : seperating each chain.
+        sequence is a string of amino acid letters with : seperating each chain.
+        - a FASTA file of per-residue mutability masks named '\<state.name\>.mask.fasta'. Each header is the
+          sequence's step and each sequence is a string with 'M' for mutable and 'I' for immutable residues (default),
+          with : separating chains in the same order as the sequence FASTA.
         - a further directory named 'structures' containing all CIF files. Files are named '\<state.name>_\<step>.cif'
           for all states.
 
@@ -82,6 +85,13 @@ class System:
             with open(path / f'{state.name}.fasta', mode='a') as file:
                 file.write(f'>{step}\n')
                 file.write(f'{":".join(state.total_sequence)}\n')
+
+            mask_per_chain = [
+                ''.join(['M' if residue.mutable else 'I' for residue in chain.residues]) for chain in state.chains
+            ]
+            with open(path / f'{state.name}.mask.fasta', mode='a') as mask_file:
+                mask_file.write(f'>{step}\n')
+                mask_file.write(f'{":".join(mask_per_chain)}\n')
 
             if save_structure:
                 for oracle, oracle_result in state._oracles_result.items():

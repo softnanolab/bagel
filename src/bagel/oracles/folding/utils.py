@@ -57,6 +57,7 @@ def reindex_chains(atomarray: AtomArray, custom_chain_idx: List[str]) -> AtomArr
         atoms.chain_id[i] = new_id
     return atoms
 
+
 def get_unique_residues(atom_array: AtomArray):
     residues, seen = [], set()
     for i in range(len(atom_array)):
@@ -77,10 +78,7 @@ def reorder_atoms_in_template(atom_array: AtomArray) -> AtomArray:
         # Skip non–amino-acid residues (e.g., HOH, ligands)
         res_name = atoms.res_name[0]
         if res_name not in aa_dict_3to1:
-            logger.warning(
-                f"Skipping non-amino-acid residue {res_name} "
-                f"(res_id={res_id}, chain_id={chain_id})."
-            )
+            logger.warning(f'Skipping non-amino-acid residue {res_name} (res_id={res_id}, chain_id={chain_id}).')
             continue
 
         # Filter and report atoms not in atom_order

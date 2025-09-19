@@ -5,12 +5,13 @@ import pytest
 
 
 def test_state_remove_residue_from_all_energy_terms_removes_correct_residue(mixed_structure_state: bg.State) -> None:
-    mixed_structure_state.chains[2].remove_residue(index=2)
-    mixed_structure_state.remove_residue_from_all_energy_terms(chain_ID='E', residue_index=2)
+    # Remove a mutable residue in chain E (index 3 is mutable; index 2 is immutable in this fixture)
+    mixed_structure_state.chains[2].remove_residue(index=3)
+    mixed_structure_state.remove_residue_from_all_energy_terms(chain_ID='E', residue_index=3)
 
     chain_ids, res_ids = mixed_structure_state.energy_terms[0].residue_groups[0]
-    # started at ['C', 'D', 'D', 'E', 'E', 'E', 'E'], [0, 0, 1, 0, 1, 2, 3], remove index 2 at chain E
-    # removing index 2 E residue means the rest shift down and the max index tracked should be 2
+    # started at ['C', 'D', 'D', 'E', 'E', 'E', 'E'], [0, 0, 1, 0, 1, 2, 3], remove index 3 at chain E
+    # removing index 3 E residue leaves the remaining E indices [0, 1, 2]
     assert np.all(chain_ids == ['C', 'D', 'D', 'E', 'E', 'E']) and np.all(res_ids == [0, 0, 1, 0, 1, 2])
 
     chain_ids, res_ids = mixed_structure_state.energy_terms[1].residue_groups[0]
@@ -18,8 +19,8 @@ def test_state_remove_residue_from_all_energy_terms_removes_correct_residue(mixe
     assert np.all(chain_ids == ['C', 'D', 'D']) and np.all(res_ids == [0, 0, 1])
 
     chain_ids, res_ids = mixed_structure_state.energy_terms[1].residue_groups[1]
-    # started at ['E', 'E', 'E', 'E'], [0, 1, 2, 3], remove index 2 at chain E
-    # removing index 2 E residue means the rest shift down and the max index tracked should be 2
+    # started at ['E', 'E', 'E', 'E'], [0, 1, 2, 3], remove index 3 at chain E
+    # removing index 3 E residue leaves the remaining E indices [0, 1, 2]
     assert np.all(chain_ids == ['E', 'E', 'E']) and np.all(res_ids == [0, 1, 2])
 
 
