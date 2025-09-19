@@ -6,6 +6,14 @@ import pytest
 
 def test_state_remove_residue_from_all_energy_terms_removes_correct_residue(mixed_structure_state: bg.State) -> None:
     # Remove a mutable residue in chain E (index 3 is mutable; index 2 is immutable in this fixture)
+    """
+    Verify removing a mutable residue from chain 'E' updates all energy-term residue group mappings correctly.
+    
+    Removes the residue at index 3 from chain 'E' in the provided mixed_structure_state fixture, calls remove_residue_from_all_energy_terms, and asserts that:
+    - energy_terms[0].residue_groups[0] reflects the removed 'E' (chain_ids ['C','D','D','E','E','E'] with res_ids [0,0,1,0,1,2]),
+    - energy_terms[1].residue_groups[0] is unchanged (chain_ids ['C','D','D'] with res_ids [0,0,1]),
+    - energy_terms[1].residue_groups[1] reflects the removed 'E' (chain_ids ['E','E','E'] with res_ids [0,1,2]).
+    """
     mixed_structure_state.chains[2].remove_residue(index=3)
     mixed_structure_state.remove_residue_from_all_energy_terms(chain_ID='E', residue_index=3)
 

@@ -34,23 +34,15 @@ class MutationProtocol(ABC):
         old_system: System,
     ) -> tuple[System, float]:
         """
-        Abstract method for performing a single mutation step.
-
-        Parameters
-        ----------
-        system : System
-            The system to be mutated
-        old_system : System
-            The original system before mutation, used for comparison
-
-        Returns
-        -------
-        System
-            The mutated system
-        float
-            The energy difference between the mutated and original system
-        float
-            The difference in chemical potential contribution (related to size) between the mutated and original system
+        Perform a single mutation step on `system` and return the mutated system and its energy change.
+        
+        Parameters:
+            system (System): System instance to mutate in place.
+            old_system (System): Reference system prior to mutation used to compute the energy difference.
+        
+        Returns:
+            tuple[System, float]: A tuple containing the mutated `system` and the change in total energy
+            calculated as mutated_system.get_total_energy() - old_system.get_total_energy().
         """
         pass
 
@@ -81,6 +73,14 @@ class MutationProtocol(ABC):
 
     def mutate_random_residue(self, chain: Chain) -> None:
         # Choose a residue to mutate
+        """
+        Mutate a single random mutable residue in the given chain in place.
+        
+        Selects one index uniformly from chain.mutable_residue_indexes, samples a replacement
+        amino acid according to self.mutation_bias, and applies the change via chain.mutate_residue.
+        If self.exclude_self is True, the current residue's amino acid is removed from the
+        sampling distribution and the remaining probabilities are renormalized before sampling.
+        """
         index = np.random.choice(chain.mutable_residue_indexes)
         # Choose a new aminoacid
         current_aa = chain.residues[index].name
@@ -94,6 +94,13 @@ class MutationProtocol(ABC):
         chain.mutate_residue(index=index, amino_acid=amino_acid)
 
     def reset_system(self, system: System) -> System:
+        """
+        Reset cached energy and oracle results on the given System.
+        
+        Clears the System.total_energy cache and, for each state in system.states, empties
+        the state's energy-term cache and replaces its oracle results with a fresh OraclesResultDict.
+        Returns the same System instance (modified in place).
+        """
         system.total_energy = None
         for state in system.states:
             state._energy_terms_value = {}
@@ -120,6 +127,14 @@ class Canonical(MutationProtocol):
         mutation_bias: Dict[str, float] = mutation_bias_no_cystein,
         exclude_self: bool = True,
     ):
+        """
+        Initialize a Canonical mutation protocol.
+        
+        Parameters:
+            n_mutations (int): Number of mutation operations to perform per step (default 1).
+            mutation_bias (Dict[str, float]): Probability distribution over amino-acid substitutions; used to sample new residues when mutating. Keys are amino-acid single-letter codes and values are non-negative weights (default: mutation_bias_no_cystein).
+            exclude_self (bool): If True, the current residue's amino acid is excluded from the sampling distribution when performing a substitution (default True).
+        """
         self.n_mutations = n_mutations
         self.mutation_bias = mutation_bias
         self.exclude_self = exclude_self
@@ -129,6 +144,18 @@ class Canonical(MutationProtocol):
         system: System,
         old_system: System,
     ) -> tuple[System, float]:
+        """
+        Perform a single mutation step by applying n_mutations random substitutions and return the mutated system with the energy change.
+        
+        This mutates `system` in-place by performing self.n_mutations substitutions (each selects a chain via choose_chain and mutates one mutable residue). After mutations, cached energy/fold data are invalidated so total energy is recalculated. The returned delta_energy is computed as system.get_total_energy() - old_system.get_total_energy().
+        
+        Parameters:
+            system (System): The system to mutate (modified in place).
+            old_system (System): The reference system used to compute the energy difference.
+        
+        Returns:
+            tuple[System, float]: The (mutated) system and the change in total energy relative to old_system.
+        """
         for _ in range(self.n_mutations):
             chain = self.choose_chain(system)
             self.mutate_random_residue(chain=chain)
@@ -163,6 +190,19 @@ class GrandCanonical(MutationProtocol):
         },
         exclude_self: bool = True,
     ):
+        """
+        Initialize a GrandCanonical mutation protocol instance.
+        
+        Parameters:
+            n_mutations (int): Number of mutation moves to perform per step.
+            mutation_bias (Dict[str, float]): Probability distribution over amino acids used for substitution/addition sampling.
+            move_probabilities (dict[str, float]): Relative probabilities for each move type; keys must include 'substitution', 'addition', and 'removal'.
+            exclude_self (bool): If True, exclude a residue's current amino acid from substitution choices.
+        
+        Behavior:
+            - Raises ValueError if any provided move probability is negative.
+            - If the move probabilities do not sum to 1.0, they are renormalized to sum to 1 and the adjusted distribution is logged.
+        """
         self.n_mutations = n_mutations
         self.mutation_bias = mutation_bias
         self.move_probabilities = move_probabilities
@@ -212,6 +252,23 @@ class GrandCanonical(MutationProtocol):
         system: System,
         old_system: System,
     ) -> tuple[System, float]:
+        """
+        Perform a single grand-canonical mutation step on `system`.
+        
+        Performs `n_mutations` moves; for each move a chain is sampled (probability ∝ number of mutable residues)
+        and one of three operations is chosen according to `move_probabilities`: 'substitution', 'addition',
+        or 'removal'. The chosen operation is applied in-place to `system`. After all moves the system's
+        energy caches are reset and the change in total energy relative to `old_system` is returned.
+        
+        Notes:
+        - The method mutates `system` in-place (residues may be substituted, inserted, or removed) and
+          resets energy-related caches so energy will be recomputed.
+        - `move_probabilities` must contain exactly the keys {'substitution', 'addition', 'removal'}; otherwise
+          an AssertionError is raised.
+        
+        Returns:
+            tuple[System, float]: The (mutated) system and the energy difference: system.get_total_energy() - old_system.get_total_energy().
+        """
         for _ in range(self.n_mutations):
             chain = self.choose_chain(system)
             # Now pick a move to make among removal, addition, or mutation

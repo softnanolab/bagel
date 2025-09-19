@@ -33,9 +33,21 @@ def pdb_string_to_atomarray(pdb_string: str) -> AtomArray:
 
 def reindex_chains(atomarray: AtomArray, custom_chain_idx: List[str]) -> AtomArray:
     """
-    Reindex the chains of an AtomArray based on a chain index map.
-    This is necessary because ESMFold uses a different chain indexing than the
-    flexible one use in desprot.
+    Reindex chain identifiers of a single-structure AtomArray to a provided list of chain IDs.
+    
+    Takes a one-element list containing an AtomArray and remaps its atom-level chain_id values so the set of unique chain IDs
+    (in their order of first appearance) is replaced by the values from custom_chain_idx. The function operates on and
+    returns a shallow copy of the contained AtomArray; the original AtomArray in the input list is not modified.
+    
+    Parameters:
+        atomarray (List[AtomArray]): A list containing exactly one AtomArray.
+        custom_chain_idx (List[str]): New chain identifiers; its length must equal the number of unique chain IDs in the AtomArray.
+    
+    Returns:
+        AtomArray: A copy of the input AtomArray with chain_id values replaced according to custom_chain_idx.
+    
+    Raises:
+        AssertionError: If input types/lengths are invalid or the number of unique chain IDs does not match custom_chain_idx.
     """
     assert isinstance(atomarray, list), 'atomarray must be a list'
     assert len(atomarray) == 1, (
@@ -59,6 +71,15 @@ def reindex_chains(atomarray: AtomArray, custom_chain_idx: List[str]) -> AtomArr
 
 
 def get_unique_residues(atom_array: AtomArray):
+    """
+    Return the list of unique residues found in the atom array as (res_id, chain_id) pairs, preserving the order of first encounter.
+    
+    Parameters:
+        atom_array (AtomArray): AtomArray-like object with indexable attributes `res_id` and `chain_id` per atom.
+    
+    Returns:
+        list[tuple]: Ordered list of unique (res_id, chain_id) tuples representing residues.
+    """
     residues, seen = [], set()
     for i in range(len(atom_array)):
         res_key = (atom_array.res_id[i], atom_array.chain_id[i])
@@ -70,6 +91,17 @@ def get_unique_residues(atom_array: AtomArray):
 
 ### Reordering atoms to match ESMFold output ###
 def reorder_atoms_in_template(atom_array: AtomArray) -> AtomArray:
+    """
+    Reorder atoms in an AtomArray to match the canonical atom ordering used by the template.
+    
+    This function walks residues in encounter order and, for each residue that is a recognized amino acid, selects only the protein atom names present in the global `atom_order`, sorts those atoms according to `atom_order`, and builds a new AtomArray containing atoms in that template order. Non-amino-acid residues (e.g., water or ligands) are skipped; atom names not present in `atom_order` are removed from their residue. Warnings are emitted for skipped residues and removed atoms via the module logger.
+    
+    Parameters:
+        atom_array (AtomArray): The input structure; must support boolean indexing and attributes `res_id`, `chain_id`, `res_name`, and `atom_name`.
+    
+    Returns:
+        AtomArray: A new AtomArray containing the subset of atoms reordered to the template/expected atom order.
+    """
     reordered_indices = []
     for res_id, chain_id in get_unique_residues(atom_array):
         indices = np.where((atom_array.res_id == res_id) & (atom_array.chain_id == chain_id))[0]

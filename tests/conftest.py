@@ -272,6 +272,12 @@ def square_structure() -> AtomArray:  # centroid of backbone atoms of each resid
 
 @pytest.fixture
 def square_structure_residues() -> list[bg.Residue]:
+    """
+    Create a list of four test Residue objects representing the "square" test motif.
+    
+    Returns:
+        list[bg.Residue]: Four residues in chain 'E' with indices 0..3. Residues at indices 1 and 2 are explicitly immutable (mutable=False); indices 0 and 3 use default mutability.
+    """
     residues = [
         bg.Residue(name='G', chain_ID='E', index=0),
         bg.Residue(name='V', chain_ID='E', index=1, mutable=False),

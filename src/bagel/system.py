@@ -41,30 +41,23 @@ class System:
         return self.total_energy
 
     def dump_logs(self, step: int, path: pl.Path, save_structure: bool = True) -> None:
-        r"""
-        Saves logging information for the system under the given directory path. This folder contains:
-
-        - a CSV file named 'energies.csv'. Columns include 'step', '\<state.name\>_\<energy.name\>' for all energies,
-          '\<state.name\>_energy' and 'system_energy'. Note the final
-          column is the sum of the mean weighted energies of each state.
-        - a FASTA file for all sequences named '\<state.name\>.fasta'. Each header is the sequence's step and each
-        sequence is a string of amino acid letters with : seperating each chain.
-        - a FASTA file of per-residue mutability masks named '\<state.name\>.mask.fasta'. Each header is the
-          sequence's step and each sequence is a string with 'M' for mutable and 'I' for immutable residues (default),
-          with : separating chains in the same order as the sequence FASTA.
-        - a further directory named 'structures' containing all CIF files. Files are named '\<state.name>_\<step>.cif'
-          for all states.
-
-        Expects the energies of the system to already be calculated.
-
-        Parameters
-        ----------
-        step : int
-            The index of the current optimisation step.
-        path: pl.Path
-            The directory in which the log files will be saved into.
-        save_structure: bool, default=True
-            Whether to save the CIF file of each state.
+        """
+        Save per-step logs for the system (energies, sequences, mutability masks, and optional structures) to the given directory.
+        
+        This writes:
+        - energies.csv: a row for this step with columns 'step', '<state.name>:<energy_name>' for each energy term, '<state.name>:state_energy' for each state, and 'system_energy' (the stored total_energy).
+        - <state.name>.fasta: appended FASTA entry with header = step and sequence = chains joined by ':' using amino-acid single-letter codes.
+        - <state.name>.mask.fasta: appended FASTA entry with header = step and a per-chain mutability mask using 'M' for mutable and 'I' for immutable residues, chains joined by ':' in the same order as the sequence FASTA.
+        - structures/ (optional): per-state CIF files named '<state.name>_<OracleName>_<step>.cif' for FoldingOracle results, plus saved oracle attributes.
+        
+        Preconditions:
+        - self.total_energy must be set (call get_total_energy() beforehand).
+        - path and path/'structures' must exist (the function creates the structures directory when step == 0).
+        
+        Parameters:
+            step (int): The current optimization step index used as the FASTA header and energies row identifier.
+            path (pl.Path): Directory where log files and optional structures/ subdirectory are written.
+            save_structure (bool): If True (default), export CIFs and oracle attributes for FoldingOracle results.
         """
         assert self.total_energy is not None, 'System energy not calculated. Call get_total_energy() first.'
 
