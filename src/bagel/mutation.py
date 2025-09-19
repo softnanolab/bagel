@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 class MutationProtocol(ABC):
     mutation_bias: Dict[str, float] = field(default_factory=lambda: mutation_bias_no_cystein)
     n_mutations: int = 1
+    exclude_self: bool = True
 
     @abstractmethod
     def one_step(
@@ -82,7 +83,14 @@ class MutationProtocol(ABC):
         # Choose a residue to mutate
         index = np.random.choice(chain.mutable_residue_indexes)
         # Choose a new aminoacid
-        amino_acid = np.random.choice(list(self.mutation_bias.keys()), p=list(self.mutation_bias.values()))
+        current_aa = chain.residues[index].name
+        aa_keys = list(self.mutation_bias.keys())
+        probs = np.array([self.mutation_bias[a] for a in aa_keys], dtype=float)
+        if self.exclude_self: # exclude the current amino acid from the probability distribution
+            mask = np.array([a != current_aa for a in aa_keys], dtype=bool)
+            probs = probs * mask
+            probs = probs / probs.sum()
+        amino_acid = np.random.choice(aa_keys, p=probs.tolist())
         chain.mutate_residue(index=index, amino_acid=amino_acid)
 
     def reset_system(self, system: System) -> System:
@@ -110,9 +118,11 @@ class Canonical(MutationProtocol):
         self,
         n_mutations: int = 1,
         mutation_bias: Dict[str, float] = mutation_bias_no_cystein,
+        exclude_self: bool = True,
     ):
         self.n_mutations = n_mutations
         self.mutation_bias = mutation_bias
+        self.exclude_self = exclude_self
 
     def one_step(
         self,
@@ -151,10 +161,12 @@ class GrandCanonical(MutationProtocol):
             'addition': 0.25,
             'removal': 0.25,
         },
+        exclude_self: bool = True,
     ):
         self.n_mutations = n_mutations
         self.mutation_bias = mutation_bias
         self.move_probabilities = move_probabilities
+        self.exclude_self = exclude_self
         # Check that no probabilities are negative
         if any([prob < 0 for prob in self.move_probabilities.values()]):
             raise ValueError('Probabilities must be positive')
