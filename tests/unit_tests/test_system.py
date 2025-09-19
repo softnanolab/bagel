@@ -73,6 +73,14 @@ def test_system_dump_logs_folder_is_correct(mixed_system: bg.System) -> None:
     }
     assert sequences == {'0': 'G:VV:GVVV'}, 'incorrect sequence information saved'
 
+    masks = {
+        header: mask
+        for header, mask in FastaFile.read_iter(
+            file=experiment_folder / f'{mixed_system.states[1].name}.mask.fasta'
+        )
+    }
+    assert masks == {'0': 'M:MM:MIIM'}, 'incorrect mutability mask information saved'
+
     oracle = mixed_system.states[0].oracles_list[0]
     oracle_name = type(oracle).__name__
     assert oracle_name == 'ESMFold', 'incorrect oracle information saved'
