@@ -3,7 +3,7 @@ Objects defining the different protocols for mutating the Chains.
 
 MIT License
 
-Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
+Copyright (c) 2025 Jakub Lála, Ayham Al-Saffar, Stefano Angioletti-Uberti
 """
 
 import numpy as np

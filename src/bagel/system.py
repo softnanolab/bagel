@@ -3,7 +3,7 @@ Top-level object defining the overall protein design task, including all the Sta
 
 MIT License
 
-Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
+Copyright (c) 2025 Jakub Lála, Ayham Al-Saffar, Stefano Angioletti-Uberti
 """
 
 from . import __version__ as bagel_version
