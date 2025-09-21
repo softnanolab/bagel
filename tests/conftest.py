@@ -58,6 +58,7 @@ def esmfold(request, modal_app_context) -> bg.oracles.folding.ESMFold:
     if flag == 'skip':
         pytest.skip(reason='--oracles flag of the origional pytest call set to skip')
     elif flag == 'local':
+        os.environ.setdefault('HF_MODEL_DIR', os.path.expanduser('~/hugging_face/'))
         model = bg.oracles.folding.ESMFold(use_modal=False)
         yield model
         del model
@@ -77,6 +78,7 @@ def esm2(request, modal_app_context) -> bg.oracles.embedding.ESM2:
     if flag == 'skip':
         pytest.skip(reason='--oracles flag of the origional pytest call set to skip')
     elif flag == 'local':
+        os.environ.setdefault('HF_MODEL_DIR', os.path.expanduser('~/hugging_face/'))
         model = bg.oracles.embedding.ESM2(use_modal=False)
         yield model
         del model
@@ -353,6 +355,7 @@ def simplest_dimer_state(
     return state
 
 
+@pytest.fixture
 def formolase_ordered_structure() -> AtomArray:
     pdb_path = os.path.join(os.path.dirname(__file__), 'structures', '4qq8_ordered.pdb')
     structure = load_structure(pdb_path)

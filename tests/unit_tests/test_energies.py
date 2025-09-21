@@ -302,7 +302,7 @@ def test_HydrophobicEnergy(
 ) -> None:
     mock_sasa.return_value = np.array([22, 22, 22, 22, 0])  # atoms of first 2 residues are given max sasa
     energy = bg.energies.HydrophobicEnergy(
-        oracle=fake_esmfold, residues=small_structure_residues[:2], surface_only=True, weight=2.0
+        oracle=fake_esmfold, residues=small_structure_residues[:2], mode='surface', weight=2.0
     )
     mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
     mock_folding_result.structure = small_structure
@@ -565,6 +565,15 @@ def test_SeparationEnergy(
     assert np.isclose(weighted_energy, value * 2), 'weighted energy is incorrect'
 
 
+def make_harmonic_function(cutoff: float, stiffness: float):
+    def harmonic_distance_to_energy(distance: float) -> float:
+        if distance < cutoff:
+            return 0.0
+        return 0.5 * stiffness * (distance - cutoff) ** 2
+
+    return harmonic_distance_to_energy
+
+
 def test_SeparationEnergyNonLinear(
     fake_esmfold: bg.oracles.folding.ESMFold,
     square_structure_residues: list[bg.Residue],
@@ -579,7 +588,7 @@ def test_SeparationEnergyNonLinear(
     energy = bg.energies.SeparationEnergy(
         oracle=fake_esmfold,
         residues=[square_structure_residues[:2], square_structure_residues[2:]],
-        function={'type': 'harmonic', 'x0': 1.01, 'k': 1.0},
+        function=lambda x, x0=1.01, k=1.0: 0.0 if x < x0 else 0.5 * k * (x - x0) ** 2,
         weight=2.0,
     )
     unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
@@ -594,7 +603,7 @@ def test_SeparationEnergyNonLinear(
     energy = bg.energies.SeparationEnergy(
         oracle=fake_esmfold,
         residues=[square_structure_residues[:2], square_structure_residues[2:]],
-        function={'type': 'harmonic', 'x0': 0.5, 'k': 1.0},
+        function=make_harmonic_function(0.5, 1.0),
         weight=2.0,
     )
     unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
@@ -609,7 +618,7 @@ def test_SeparationEnergyNonLinear(
     energy = bg.energies.SeparationEnergy(
         oracle=fake_esmfold,
         residues=[square_structure_residues[:2], square_structure_residues[2:]],
-        function={'type': 'sigmoidal', 'x0': 1.0, 'k': 10.0},
+        function=lambda x, x0=1.0, k=10.0: 1.0 / (1.0 + np.exp(-k * (x - x0))),
         weight=2.0,
     )
     unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
@@ -625,7 +634,7 @@ def test_SeparationEnergyNonLinear(
     energy = bg.energies.SeparationEnergy(
         oracle=fake_esmfold,
         residues=[square_structure_residues[:2], square_structure_residues[2:]],
-        function={'type': 'sigmoidal', 'x0': 0.0, 'k': kk},
+        function=lambda x, x0=0.0, k=kk: 1.0 / (1.0 + np.exp(-k * (x - x0))),
         weight=2.0,
     )
     unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
