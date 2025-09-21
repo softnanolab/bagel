@@ -89,7 +89,13 @@ class MutationProtocol(ABC):
         if self.exclude_self:  # exclude the current amino acid from the probability distribution
             mask = np.array([a != current_aa for a in aa_keys], dtype=bool)
             probs = probs * mask
-            probs = probs / probs.sum()
+            total = probs.sum()
+            if total <= 0:
+                raise ValueError(
+                    f'No valid mutation targets after excluding current AA={current_aa}. '
+                    'Check mutation_bias provides non-zero probability to at least one alternative.'
+                )
+            probs = probs / total
         amino_acid = np.random.choice(aa_keys, p=probs)
         chain.mutate_residue(index=index, amino_acid=amino_acid)
 
