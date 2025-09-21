@@ -3,7 +3,7 @@ Standard template and objects for calculating structural or propery losses.
 
 MIT License
 
-Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
+Copyright (c) 2025 Jakub Lála, Ayham Al-Saffar, Stefano Angioletti-Uberti
 """
 
 from abc import ABC, abstractmethod
@@ -18,6 +18,7 @@ from .oracles import Oracle, OracleResult, OraclesResultDict
 from .oracles.folding import FoldingResult, FoldingOracle
 from .oracles.embedding import EmbeddingResult, EmbeddingOracle
 import copy
+from .oracles.folding.utils import reorder_atoms_in_template
 
 
 # first row is chain_ids and second row is corresponding residue indices.
@@ -1106,7 +1107,7 @@ class TemplateMatchEnergy(EnergyTerm):
     def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
         structure = oracles_result.get_structure(self.oracle)
         structure_atoms = structure[self.get_atom_mask(structure, residue_group_index=0)]
-        template_atoms = self.template_atoms
+        template_atoms = reorder_atoms_in_template(self.template_atoms)
         if self.backbone_only:
             structure_atoms = structure_atoms[np.isin(structure_atoms.atom_name, backbone_atoms)]
             template_atoms = template_atoms[np.isin(template_atoms.atom_name, backbone_atoms)]

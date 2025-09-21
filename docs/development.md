@@ -12,6 +12,8 @@ To contribute, please follow these general steps:
 
 We welcome contributions of all kinds — new features, bug fixes, documentation improvements, and test coverage.
 
+For more detailed guidelines consult these [Notion Docs](https://jakublala.notion.site/Development-Guide-24f22c74126780898c2bec333c7963ec?source=copy_link).
+
 ## Installation
 
 First, you need to install the development dependencies:

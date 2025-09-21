@@ -1,6 +1,8 @@
+import os
 import bagel as bg
 from bagel.oracles import OraclesResultDict
 from biotite.structure import AtomArray, sasa, annotate_sse, get_residue_count, concatenate, Atom, array
+from biotite.structure.io import load_structure
 import numpy as np
 from unittest.mock import Mock, patch
 import copy
@@ -476,6 +478,7 @@ def test_RingSymmetryEnergy(
 
 # --- ChemicalPotentialEnergy ---
 
+
 def test_ChemicalPotentialEnergy(
     fake_esmfold: bg.oracles.folding.ESMFold,
     square_structure_residues: list[bg.Residue],
@@ -515,8 +518,8 @@ def test_ChemicalPotentialEnergy_with_embedding_oracle(
     )
     unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
     # Should be: 1.5 * (abs(3-5))**2 = 1.5 * 4 = 6.0
-    assert np.isclose(unweighted_energy, 6.0), f"unweighted energy is incorrect: {unweighted_energy}"
-    assert np.isclose(weighted_energy, 12.0), f"weighted energy is incorrect: {weighted_energy}"
+    assert np.isclose(unweighted_energy, 6.0), f'unweighted energy is incorrect: {unweighted_energy}'
+    assert np.isclose(weighted_energy, 12.0), f'weighted energy is incorrect: {weighted_energy}'
 
 
 def test_RingSymmetryEnergy_with_direct_neighbours_only(
@@ -735,6 +738,30 @@ def test_TemplateMatchEnergy_is_correct_with_simple_structure_using_distogram_me
     value = np.mean(unique_distogram_distances_squared) ** 0.5
     assert np.isclose(unweighted_energy, value), 'unweighted energy is incorrect'
     assert np.isclose(weighted_energy, value * 2), 'weighted energy is incorrect'
+
+
+def test_TemplateMatchEnergy_is_correct_with_different_atom_order(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    formolase_ordered_residues: list[bg.Residue],
+    formolase_ordered_structure: AtomArray,
+    formolase_structure: AtomArray,
+) -> None:
+    template_atoms = formolase_structure
+
+    energy = bg.energies.TemplateMatchEnergy(
+        oracle=fake_esmfold,
+        template_atoms=template_atoms,
+        residues=formolase_ordered_residues,
+        backbone_only=False,
+        weight=2.0,
+    )
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = formolase_ordered_structure
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
+    value = 0.0
+    assert np.isclose(unweighted_energy, value, atol=1e-5), 'unweighted energy is incorrect'
+    assert np.isclose(weighted_energy, value * 2, atol=1e-5), 'weighted energy is incorrect'
 
 
 def test_secondary_structure_elements_function_gives_expected_return_array(small_structure: AtomArray) -> None:

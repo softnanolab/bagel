@@ -9,7 +9,9 @@ def add_chemical_potential_energy(state):
         if hasattr(term, 'oracle'):
             folding_oracle = term.oracle
             break
-    if folding_oracle is not None and not any(isinstance(term, bg.energies.ChemicalPotentialEnergy) for term in state.energy_terms):
+    if folding_oracle is not None and not any(
+        isinstance(term, bg.energies.ChemicalPotentialEnergy) for term in state.energy_terms
+    ):
         state.energy_terms.append(
             bg.energies.ChemicalPotentialEnergy(
                 oracle=folding_oracle, target_size=3, chemical_potential=1.0, weight=1.0

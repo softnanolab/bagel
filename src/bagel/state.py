@@ -3,7 +3,7 @@ Standard object to encode the tertiary structure, losses, and folding logic for 
 
 MIT License
 
-Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
+Copyright (c) 2025 Jakub Lála, Ayham Al-Saffar, Stefano Angioletti-Uberti
 """
 
 from .chain import Chain
