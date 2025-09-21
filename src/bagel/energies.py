@@ -7,6 +7,7 @@ Copyright (c) 2025 Jakub Lála, Ayham Al-Saffar, Stefano Angioletti-Uberti
 """
 
 from abc import ABC, abstractmethod
+import warnings
 
 import numpy as np
 import numpy.typing as npt
@@ -477,18 +478,16 @@ class HydrophobicEnergy(EnergyTerm):
             residue could then be added to this energy term.
         residues: list[Residue] or None, default=None
             Which residues to include in the calculation. If not set, simply considers **all** residues by default.
-        mode: Literal['surface', 'core', 'all'] = 'all',
-            Whether to only consider the atoms exposed to water at the surface, in the core, or all atoms.
-        surface_only: bool, default = False
-            Whether to only consider the atoms exposed to water at the surface. If true, result is scaled by normalised
-            solute accessible surface area values, otherwise no scaling is applied and all atoms count regardless of their
-            exposure.
-            Note that only one between surface_only and core_only can be True at the same time.
-        core_only: bool, default = False
-            Whether to only consider the atoms in the core (i.e., NOT exposed to water). If true, result is scaled by
-            ( 1.0 - normalised solute accessible surface area) values, otherwise no scaling is appplied and all atoms
-            count regardless of their exposure.
-            Note that only one between surface_only and core_only can be True at the same time.
+        mode: Literal['surface', 'core', 'all'] = 'all'
+            Selection of which atoms contribute to the hydrophobicity score:
+            - 'surface': counts hydrophobic residues at the surface, weighted by normalised SASA
+            - 'core': counts hydrophobic residues in the core, weighted by 1 - normalised SASA
+            - 'all': counts all hydrophobic residues, no SASA weighting
+            Normalisation uses `max_sasa_values['S']` and the probe radius `probe_radius_water`.
+        surface_only: bool, default=False
+            Deprecated. Use `mode='surface'` instead.
+        core_only: bool, default=False
+            Deprecated. Use `mode='core'` instead.
         weight: float = 1.0
             The weight of the energy term.
         name: str | None = None
@@ -501,9 +500,21 @@ class HydrophobicEnergy(EnergyTerm):
 
         super().__init__(name=name, inheritable=inheritable, oracle=oracle, weight=weight)
         self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
+
+        # Backwards compatibility for deprecated flags
         self.surface_only = surface_only
         self.core_only = core_only
-        assert not (surface_only and core_only), 'Only one of surface_only or core_only can be True at the same time.'
+        if surface_only and core_only:
+            raise ValueError('Only one of surface_only or core_only can be True at the same time.')
+        if surface_only or core_only:
+            warnings.warn(
+                "Parameters 'surface_only' and 'core_only' are deprecated and will be removed in v0.2.0. "
+                "Use 'mode' instead (e.g., mode='surface' or mode='core').",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            mode = 'surface' if surface_only else 'core'
+        self.mode: Literal['surface', 'core', 'all'] = mode
         assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
         assert 'structure' in self.oracle.result_class.model_fields, (
             'HydrophobicEnergy requires oracle to return structure in result_class'
@@ -520,10 +531,10 @@ class HydrophobicEnergy(EnergyTerm):
 
         value = len(structure[relevance_mask & hydrophobic_mask]) / len(structure[relevance_mask])
 
-        if self.surface_only:
+        if self.mode == 'surface':
             normalized_sasa = sasa(structure, probe_radius=probe_radius_water) / max_sasa_values['S']
             value *= np.mean(normalized_sasa[relevance_mask & hydrophobic_mask])
-        elif self.core_only:
+        elif self.mode == 'core':
             normalized_sasa = 1.0 - sasa(structure, probe_radius=probe_radius_water) / max_sasa_values['S']
             value *= np.mean(normalized_sasa[relevance_mask & hydrophobic_mask])
 
