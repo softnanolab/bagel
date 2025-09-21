@@ -269,9 +269,10 @@ def square_structure() -> AtomArray:  # centroid of backbone atoms of each resid
     ]
     return array(atoms)
 
+
 @pytest.fixture
-def simplest_dimer() -> AtomArray:  
-    # A 2-residues chain aligned along the x-axis plus an additional single chain residue 
+def simplest_dimer() -> AtomArray:
+    # A 2-residues chain aligned along the x-axis plus an additional single chain residue
     # aligned along the 100 direction, form a isocele triangle with basis 1 and cross-distances
     # of sqrt(5)/2.
     atoms = [
@@ -281,6 +282,7 @@ def simplest_dimer() -> AtomArray:
     ]
     return array(atoms)
 
+
 @pytest.fixture
 def simplest_dimer_residues() -> list[bg.Residue]:
     residues = [
@@ -289,6 +291,7 @@ def simplest_dimer_residues() -> list[bg.Residue]:
         bg.Residue(name='G', chain_ID='B', index=0),
     ]
     return residues
+
 
 @pytest.fixture
 def square_structure_residues() -> list[bg.Residue]:
@@ -307,9 +310,9 @@ def square_structure_chains(square_structure_residues: list[bg.Residue]) -> list
 
 
 @pytest.fixture
-
 def simplest_dimer_chains(simplest_dimer_residues: list[bg.Residue]) -> list[bg.Chain]:
     return [bg.Chain(residues=simplest_dimer_residues[:2]), bg.Chain(residues=simplest_dimer_residues[2:])]
+
 
 @pytest.fixture
 def simplest_dimer_state(
@@ -340,7 +343,7 @@ def simplest_dimer_state(
     folding_result = bg.oracles.folding.ESMFoldResult(
         input_chains=simplest_dimer_chains,
         structure=simplest_dimer,
-        local_plddt= 0.5 * np.ones( len(simplest_dimer) )[None, :],
+        local_plddt=0.5 * np.ones(len(simplest_dimer))[None, :],
         ptm=np.array([0.4])[None, :],
         pae=np.zeros((len(simplest_dimer), len(simplest_dimer)))[None, :, :],
     )
@@ -348,6 +351,7 @@ def simplest_dimer_state(
     state._oracles_result = bg.oracles.OraclesResultDict()
     state._oracles_result[state.oracles_list[0]] = folding_result
     return state
+
 
 def formolase_ordered_structure() -> AtomArray:
     pdb_path = os.path.join(os.path.dirname(__file__), 'structures', '4qq8_ordered.pdb')

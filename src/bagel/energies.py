@@ -7,17 +7,18 @@ Copyright (c) 2025 Jakub Lála, Ayham Al-Saffar, Stefano Angioletti-Uberti
 """
 
 from abc import ABC, abstractmethod
-from biotite.structure import AtomArray, sasa, annotate_sse, superimpose
+
 import numpy as np
 import numpy.typing as npt
+import pandas as pd
+from typing import Literal
+from biotite.structure import AtomArray, sasa, annotate_sse, superimpose
+
 from .constants import hydrophobic_residues, max_sasa_values, probe_radius_water, backbone_atoms
 from .chain import Residue, Chain
-import warnings
-import pandas as pd
 from .oracles import Oracle, OracleResult, OraclesResultDict
 from .oracles.folding import FoldingResult, FoldingOracle
 from .oracles.embedding import EmbeddingResult, EmbeddingOracle
-import copy
 from .oracles.folding.utils import reorder_atoms_in_template
 
 
@@ -458,6 +459,7 @@ class HydrophobicEnergy(EnergyTerm):
         oracle: FoldingOracle,
         inheritable: bool = True,
         residues: list[Residue] | None = None,
+        mode: Literal['surface', 'core', 'all'] = 'all',
         surface_only: bool = False,
         core_only: bool = False,
         weight: float = 1.0,
@@ -475,13 +477,15 @@ class HydrophobicEnergy(EnergyTerm):
             residue could then be added to this energy term.
         residues: list[Residue] or None, default=None
             Which residues to include in the calculation. If not set, simply considers **all** residues by default.
+        mode: Literal['surface', 'core', 'all'] = 'all',
+            Whether to only consider the atoms exposed to water at the surface, in the core, or all atoms.
         surface_only: bool, default = False
-            Whether to only consider the atoms exposed to water at the surface. If true, result is scaled by normalised 
-            solute accessible surface area values, otherwise no scaling is applied and all atoms count regardless of their 
+            Whether to only consider the atoms exposed to water at the surface. If true, result is scaled by normalised
+            solute accessible surface area values, otherwise no scaling is applied and all atoms count regardless of their
             exposure.
             Note that only one between surface_only and core_only can be True at the same time.
         core_only: bool, default = False
-            Whether to only consider the atoms in the core (i.e., NOT exposed to water). If true, result is scaled by 
+            Whether to only consider the atoms in the core (i.e., NOT exposed to water). If true, result is scaled by
             ( 1.0 - normalised solute accessible surface area) values, otherwise no scaling is appplied and all atoms
             count regardless of their exposure.
             Note that only one between surface_only and core_only can be True at the same time.
@@ -499,7 +503,7 @@ class HydrophobicEnergy(EnergyTerm):
         self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
         self.surface_only = surface_only
         self.core_only = core_only
-        assert not( surface_only and core_only ), 'Only one of surface_only or core_only can be True at the same time.'
+        assert not (surface_only and core_only), 'Only one of surface_only or core_only can be True at the same time.'
         assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
         assert 'structure' in self.oracle.result_class.model_fields, (
             'HydrophobicEnergy requires oracle to return structure in result_class'
@@ -520,7 +524,7 @@ class HydrophobicEnergy(EnergyTerm):
             normalized_sasa = sasa(structure, probe_radius=probe_radius_water) / max_sasa_values['S']
             value *= np.mean(normalized_sasa[relevance_mask & hydrophobic_mask])
         elif self.core_only:
-            normalized_sasa = ( 1.0 - sasa(structure, probe_radius=probe_radius_water) / max_sasa_values['S'] )
+            normalized_sasa = 1.0 - sasa(structure, probe_radius=probe_radius_water) / max_sasa_values['S']
             value *= np.mean(normalized_sasa[relevance_mask & hydrophobic_mask])
 
         return value, value * self.weight
@@ -602,9 +606,10 @@ class PAEEnergy(EnergyTerm):
         value = np.mean(pae[pae_mask]) / max_pae
         return value, value * self.weight
 
+
 class LISEnergy(EnergyTerm):
     """
-    Energy representing the Local Interaction Score [], a function of the PAE matrix. 
+    Energy representing the Local Interaction Score [], a function of the PAE matrix.
     """
 
     def __init__(
@@ -646,7 +651,7 @@ class LISEnergy(EnergyTerm):
             name = f'{base_name}_{name}'
 
         self.pae_cutoff = pae_cutoff
-        self.intensive = intensive # if True, LIS is an average otherwise scales with number of residue pairs bonded
+        self.intensive = intensive  # if True, LIS is an average otherwise scales with number of residue pairs bonded
 
         super().__init__(name=name, inheritable=inheritable, oracle=oracle, weight=weight)
         if len(residues) == 1:
@@ -686,12 +691,12 @@ class LISEnergy(EnergyTerm):
             value = 0.0
         else:
             # Step 2: For those values that remain, the LIS score is given by:
-            lis_scores = ( cutoff - selected_pae ) / cutoff
+            lis_scores = (cutoff - selected_pae) / cutoff
             if self.intensive:
-                value = -np.mean( lis_scores ) # Negative because you want to be interpreted as an energy
+                value = -np.mean(lis_scores)  # Negative because you want to be interpreted as an energy
             else:
-                value = -np.sum( lis_scores ) # Negative because you want to be interpreted as an energy
-        
+                value = -np.sum(lis_scores)  # Negative because you want to be interpreted as an energy
+
         return value, value * self.weight
 
 
@@ -807,13 +812,14 @@ class SeparationEnergy(EnergyTerm):
         else:
             name = f'separation_{name}'
 
-
         super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight)
         self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
         self.function = function
         if self.function is not None:
             assert 'type' in self.function, 'Function parameter type must be specified'
-            assert self.function['type'] in ['harmonic', 'sigmoidal'], 'Function parameter type must be either "harmonic" or "sigmoidal"'
+            assert self.function['type'] in ['harmonic', 'sigmoidal'], (
+                'Function parameter type must be either "harmonic" or "sigmoidal"'
+            )
             assert 'x0' in self.function, 'Function parameter x0 (distance cutoff) must be specified'
             assert 'k' in self.function, 'Function parameter k (steepness) must be specified'
         assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
@@ -832,7 +838,7 @@ class SeparationEnergy(EnergyTerm):
         group_1_centroid = np.mean(group_1_atoms.coord, axis=0)
         group_2_centroid = np.mean(group_2_atoms.coord, axis=0)
         distance = np.linalg.norm(group_1_centroid - group_2_centroid)
-        
+
         value = float(distance)
 
         # If the function is non-linear, make the correct transformation accordingly
@@ -844,27 +850,27 @@ class SeparationEnergy(EnergyTerm):
                 if distance < x0:
                     value = 0.0
                 else:
-                    value = 0.5 * k * ( distance - x0 )**2 
+                    value = 0.5 * k * (distance - x0) ** 2
             elif self.function['type'] == 'sigmoidal':
-                value = 1.0 / ( 1.0 + np.exp(-k * (distance - x0)))
+                value = 1.0 / (1.0 + np.exp(-k * (distance - x0)))
 
         return value, value * self.weight
-    
+
 
 class FlexEvoBindEnergy(EnergyTerm):
     """
-    Energy that minimizes the 'average minimum distance' between two groups of residues. 
+    Energy that minimizes the 'average minimum distance' between two groups of residues.
     In practice, for each residue in the first group, it finds the closest residue in the second group and
     calculates the minimum distance between them. The minimum is over all possible pairs of atoms that
     make up the two residues. The average is over all the residues in the first group.
-    Symmetrise this operation by doing the same but looking at residues from group 2 and 
+    Symmetrise this operation by doing the same but looking at residues from group 2 and
     what is their minimum distance when looking at residues to group one.
 
-    This energy is a symmetrised version of the minimum separation component of the loss used to design peptide binders in: 
+    This energy is a symmetrised version of the minimum separation component of the loss used to design peptide binders in:
     'Li, Q., Vlachos, E.N. & Bryant, P. Design of linear and cyclic peptide binders from protein sequence information. Commun Chem 8, 211 (2025)'
     DOI https://doi.org/10.1038/s42004-025-01601-3
 
-    Note in this reference the explanation of Eq.1 is misleading. Here, the average of the minimum distance 
+    Note in this reference the explanation of Eq.1 is misleading. Here, the average of the minimum distance
     is over all the the residues in the first group.
     """
 
@@ -891,7 +897,7 @@ class FlexEvoBindEnergy(EnergyTerm):
             A bool indicating whether the result need to be weighted by the plddt of the residues considered.
             If True, this definition is closer to the EvoBind energy in the reference below
         symmetrized: bool
-            A bool indicating whether or not the calculation of the minimum distances need to be symmetrized between residues in 
+            A bool indicating whether or not the calculation of the minimum distances need to be symmetrized between residues in
             residued[0] and those in residues[1]. Otherwise the minimum distances are those between any atom in residues from
             residues[0] and those in residues in residues[1], but not vice versa.
         inheritable: bool, default=True
@@ -907,7 +913,6 @@ class FlexEvoBindEnergy(EnergyTerm):
         else:
             name = f'flex_evo_{name}'
 
-
         super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight)
         self.residues = residues
         self.symmetrized = symmetrized
@@ -922,7 +927,7 @@ class FlexEvoBindEnergy(EnergyTerm):
         structure = oracles_result.get_structure(self.oracle)
 
         if self.symmetrized:
-            indices = [0,1]
+            indices = [0, 1]
         else:
             indices = [0]
 
@@ -951,13 +956,13 @@ class FlexEvoBindEnergy(EnergyTerm):
                     # Calculate the distance from the current atom to all atoms in group 2
                     all_distances = np.linalg.norm(partner_atoms.coord - atom.coord, axis=1)
                     # Find the minimum distance for this atom to any atom in group 2
-                    min_dist = min( min_dist, np.min(all_distances))
+                    min_dist = min(min_dist, np.min(all_distances))
 
                 min_distances.append(min_dist)  # Store the minimum distance for this residue
-        
+
             # Calculate the average of these minimum distances
             average_min_distance = np.mean(min_distances)
-            value = float(average_min_distance) 
+            value = float(average_min_distance)
 
             # If plddt_weighted is True, divide by the average pLDDT of the residues in the group
             # In this case, this energy term is the EvoBind loss function mentioned above, but symmetrized.
@@ -970,20 +975,20 @@ class FlexEvoBindEnergy(EnergyTerm):
                 assert hasattr(folding_result, 'structure'), 'structure not returned by folding algorithm'
                 main_mask = self.get_residue_mask(structure, residue_group_index=main)
                 average_plddt = np.mean(plddt[main_mask])
-                value/= average_plddt
+                value /= average_plddt
 
-            # Scale value by the number of residues in the group, so that eventually you can 
+            # Scale value by the number of residues in the group, so that eventually you can
             # calculate a weighted average between residues in the binder and hotspot
             value *= len(self.residues[main])
 
-            #save calculated value
+            # save calculated value
             values_list.append(value)
-        
+
         # calculate the (weighted) average over saved values
         if self.symmetrized:
-            value = np.sum(values_list) / ( len( self.residues[0] ) + len( self.residues[1] ) )
+            value = np.sum(values_list) / (len(self.residues[0]) + len(self.residues[1]))
         else:
-            value = np.sum(values_list) / len( self.residues[0] ) 
+            value = np.sum(values_list) / len(self.residues[0])
 
         return value, value * self.weight
 
@@ -1293,9 +1298,10 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
 
         return global_index_list
 
-#class ContactEnergy(EnergyTerm):
+
+# class ContactEnergy(EnergyTerm):
 #    """
-#    Energy that should correlate well to the strength of a binding interface. 
+#    Energy that should correlate well to the strength of a binding interface.
 #    The physical reasoning is the following:
 #    1) The binding energy is proportional to the number of **atomic** contacts in the interface
 #    2) How much should we trust a contact prediction depends on the alignment error between two atoms/residues,
@@ -1313,8 +1319,8 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
 #    We thus suggest the following formula, which counts the average number of contacts taking account
 #    of the uncertainty in the distance between pair of residues.
 #
-#    E = sum_(ij) sum_{d_ij_R} f1( d_ij ) p(d_ij_R), 
-#    
+#    E = sum_(ij) sum_{d_ij_R} f1( d_ij ) p(d_ij_R),
+#
 #    where i,j is a sum over residue pairs, d_ij is the distance between C-beta atoms (or C-alpha for glycine)
 #    in residues i and j, and p( d_ij_R ) is the probability that the distance between the centre of mass
 #    of residue i and residue j is d_ij, coming from the distogram.
@@ -1325,18 +1331,18 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
 #
 #    Note:
 #    While ESMFold’s exact training parameters follow the same convention as AlphaFold2, here’s the standard:
-#	•	Bin width: 0.5 Å
-#	•	First bin center: 0.25 Å (covering 0.0–0.5 Å)
-#	•	Last explicit bin: 31.75 Å (covering 31.5–∞ Å)
-#	•	Number of bins: 64 total
-#	•	63 bins for [0.0 Å, 31.5 Å] in 0.5 Å steps
-#	•	1 bin for “>31.5 Å”
+# •	Bin width: 0.5 Å
+# •	First bin center: 0.25 Å (covering 0.0–0.5 Å)
+# •	Last explicit bin: 31.75 Å (covering 31.5–∞ Å)
+# •	Number of bins: 64 total
+# •	63 bins for [0.0 Å, 31.5 Å] in 0.5 Å steps
+# •	1 bin for “>31.5 Å”
 #
 #    For computational purposes, we assume the last bin is not d>31.5 but centred in 32.5. Given the
 #    f(x) function, it should not matter since it is zero for large distances.
 #
-#    Also, notice that the distances are supposed to be between CB-CB carbons, which already have better 
-#    information about side-chain conformations. For this reason, we never consider Glycines as part of 
+#    Also, notice that the distances are supposed to be between CB-CB carbons, which already have better
+#    information about side-chain conformations. For this reason, we never consider Glycines as part of
 #    contacts (C-beta missing).
 #
 #    Implementation note:
@@ -1425,7 +1431,7 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
 #        assert hasattr(folding_result, 'distogram_logits'), 'distogram_logit metric not returned by folding algorithm'
 #        assert folding_result.shape[0] == 1, 'batch size equal to 1 is required'
 #        distogram_logits = folding_result.distogram_logits[0]  # [n_residues, n_residues, 64] pairwise logits for the distogram
-#        max_dist = 32.5  # approximate max. Last logit ( [,,63] = probability for dist >= 32.5) 
+#        max_dist = 32.5  # approximate max. Last logit ( [,,63] = probability for dist >= 32.5)
 #
 #        group_0_mask = self.get_residue_mask(structure, residue_group_index=0)
 #        group_1_mask = self.get_residue_mask(structure, residue_group_index=1)
@@ -1439,7 +1445,7 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
 #        cb_atomarray_0 = structure.get_atom_array(cb_mask)
 #        cb_atomarray_1 = structure.get_atom_array(cb_mask)
 #
-#        # Now take only those belonging to binder or hotspot 
+#        # Now take only those belonging to binder or hotspot
 #        cb_atomarray_0 = cb_atomarray_0[ cb_atomarray_0.res_id in self.residue_group[0][1]]
 #        cb_atomarray_1 = cb_atomarray_1[ cb_atomarray_1.res_id in self.residue_group[1][1]]
 #
