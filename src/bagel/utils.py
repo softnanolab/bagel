@@ -53,18 +53,15 @@ def get_atomarray_in_residue_range(
     AtomArray
         The subset of atoms within the requested residue index range and chain.
     """
+    slice_atoms = atoms[atoms.chain_id == chain] if chain is not None else atoms
+
     if start is None:
-        start = int(atoms.res_id.min())
-
+        start = int(slice_atoms.res_id.min())
     if end is None:
-        end = int(atoms.res_id.max())
+        end = int(slice_atoms.res_id.max())
 
-    if chain is not None:
-        chain_atoms = copy.deepcopy(atoms[atoms.chain_id == chain])
-    else:
-        chain_atoms = copy.deepcopy(atoms)
-
-    return chain_atoms[np.logical_and(chain_atoms.res_id >= start, chain_atoms.res_id <= end)]
+    sel = (slice_atoms.res_id >= start) & (slice_atoms.res_id <= end)
+    return slice_atoms[sel]
 
 
 def sequence_from_atomarray(atoms: AtomArray) -> str:
