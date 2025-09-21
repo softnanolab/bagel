@@ -396,7 +396,6 @@ def test_FlexEvoBindEnergy_Unsymmetrized(
     print(f'PLDDT = {oracles_result[fake_esmfold].local_plddt}')
     print(f'structure = {oracles_result[fake_esmfold].structure}')
     unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
-    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
 
     # PLDDT weight with PLDDT = 0.5 (in denominator) and min_dist = 1.0 (in numerator)
     assert np.isclose(unweighted_energy, 2.0 * np.sqrt(5) / 2), f'unweighted energy is incorrect {unweighted_energy}'
@@ -410,7 +409,6 @@ def test_FlexEvoBindEnergy_Unsymmetrized(
         weight=2.0,
     )
     oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
-    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
     unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
 
     assert np.isclose(unweighted_energy, np.sqrt(5) / 2), 'unweighted energy is incorrect'
@@ -438,7 +436,6 @@ def test_FlexEvobindEnergy_Symmetrized(
     print(f'PLDDT = {oracles_result[fake_esmfold].local_plddt}')
     print(f'structure = {oracles_result[fake_esmfold].structure}')
     unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
-    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
 
     # PLDDT weight with PLDDT = 0.5 (in denominator) and min_dist = 1.0 (in numerator)
     assert np.isclose(unweighted_energy, np.sqrt(5.0)), f'unweighted energy is incorrect {unweighted_energy}'
@@ -452,7 +449,6 @@ def test_FlexEvobindEnergy_Symmetrized(
         weight=2.0,
     )
     oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
-    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
     unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
 
     assert np.isclose(unweighted_energy, np.sqrt(5.0) / 2.0), 'no-plddt and unweighted energy is incorrect'
