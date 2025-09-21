@@ -3,7 +3,7 @@ Key amino acid constants
 
 MIT License
 
-Copyright (c) 2025 Jakub Lála, Ayham Saffar, Stefano Angioletti-Uberti
+Copyright (c) 2025 Jakub Lála, Ayham Al-Saffar, Stefano Angioletti-Uberti
 """
 
 # {1-letter: 3-letter} aminoacid names
