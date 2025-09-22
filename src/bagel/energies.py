@@ -706,7 +706,9 @@ class LISEnergy(EnergyTerm):
             if self.intensive:
                 value = -np.mean(lis_scores)  # Negative because you want to be interpreted as an energy
             else:
-                value = -np.sum(lis_scores)  # Negative because you want to be interpreted as an energy
+                # 0.5 is to avoid double-counting of LIS pairs, which you would if PAE(ij) is asymmetric due 
+                # to masking above
+                value = - 0.5 * np.sum(lis_scores)  # Negative because you want to be interpreted as an energy
 
         return value, value * self.weight
 
