@@ -12,7 +12,7 @@ state = bg.State(
     energy_terms=[
         bg.energies.PTMEnergy(oracle=esmfold, weight=1.0),
         bg.energies.OverallPLDDTEnergy(oracle=esmfold, weight=1.0),
-        bg.energies.HydrophobicEnergy(oracle=esmfold, weight=3.0, surface_only=True),
+        bg.energies.HydrophobicEnergy(oracle=esmfold, weight=3.0, mode='surface'),
         bg.energies.RingSymmetryEnergy(oracle=esmfold, weight=1.0, groups=[residues[i*50 : (i*50)+40] for i in range(4)]),
         # 5 residues on either side of each symmetry group unconstrained to allow for chain flexibility
         bg.energies.SecondaryStructureEnergy(oracle=esmfold, weight=1.0, groups=[residues[(i*50)+5 : (i*50)+35] for i in range(4)], structure_type='beta-sheet'),
