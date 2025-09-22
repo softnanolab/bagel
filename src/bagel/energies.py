@@ -930,38 +930,44 @@ class FlexEvoBindEnergy(EnergyTerm):
             indices = [0]
 
         values_list = []
+        counts_list = []
 
         for main in indices:
             # Get the mask for all the atoms belonging to any residue in group 2
             partner = 1 if main == 0 else 0
             partner_mask = self.get_atom_mask(structure, residue_group_index=partner)
             partner_atoms = structure[partner_mask]
+            if len(partner_atoms) == 0:
+                # Nothing to compare against for this direction
+                continue
 
             # Get the chain_ids and res_ids for the residues in the first group
             chain_ids, res_ids = self.residue_groups[main]
-
-            min_distances = []  # List to store the minimum distances for each residue in group 1
+            
+            min_distances = []  # List to store the minimum distances for each residue in the main group
 
             # Now iterate over each residue in the first group
             for chain_id, res_id in zip(chain_ids, res_ids):
                 # Extract from the structure the atoms corresponding to the residues with current chain_id and res_id
                 curr_residue_mask = (structure.chain_id == chain_id) & (structure.res_id == res_id)
-                # Get the atoms corresponding to the current residue
-                curr_residue_atoms = structure[curr_residue_mask]
-                # Calculate the minimum distance over any pair of atoms in the current residue and all atoms in group 2
-                min_dist = np.inf
-                for atom in curr_residue_atoms:
-                    # Calculate the distance from the current atom to all atoms in group 2
-                    all_distances = np.linalg.norm(partner_atoms.coord - atom.coord, axis=1)
-                    # Find the minimum distance for this atom to any atom in group 2
-                    min_dist = min(min_dist, np.min(all_distances))
 
-                min_distances.append(min_dist)  # Store the minimum distance for this residue
+                # Get the atoms corresponding to the current residue            
+                curr_residue_atoms = structure[curr_residue_mask]
+                if len(curr_residue_atoms) == 0:
+                    continue
+                # Vectorized min distance between atoms of current residue and all partner atoms
+                diff = partner_atoms.coord[np.newaxis, :, :] - curr_residue_atoms.coord[:, np.newaxis, :]
+                dist_mat = np.linalg.norm(diff, axis=2)
+                min_dist = float(np.min(dist_mat))
+                min_distances.append(min_dist) # Store the minimum distance for this residue
 
             # Calculate the average of these minimum distances
-            average_min_distance = np.mean(min_distances)
-            value = float(average_min_distance)
-
+            if len(min_distances) == 0:
+                # No valid atoms for any residue in this direction; skip contribution
+                continue
+            average_min_distance = float(np.mean(min_distances))
+            value = average_min_distance
+            
             # If plddt_weighted is True, divide by the average pLDDT of the residues in the group
             # In this case, this energy term is the EvoBind loss function mentioned above, but symmetrized.
             # in the sense that what is the binder and what is the hotspot does not matter.
@@ -972,22 +978,26 @@ class FlexEvoBindEnergy(EnergyTerm):
                 plddt = folding_result.local_plddt[0]
                 assert hasattr(folding_result, 'structure'), 'structure not returned by folding algorithm'
                 main_mask = self.get_residue_mask(structure, residue_group_index=main)
-                average_plddt = np.mean(plddt[main_mask])
-                value /= average_plddt
+
+                mask_count = int(np.count_nonzero(main_mask))
+                if mask_count > 0:
+                    average_plddt = float(np.mean(plddt[main_mask]))
+                    denom = average_plddt if average_plddt > 0.0 else np.finfo(float).eps
+                    value /= denom      
 
             # Scale value by the number of residues in the group, so that eventually you can
             # calculate a weighted average between residues in the binder and hotspot
-            value *= len(self.residues[main])
+            valid_count = len(min_distances)
+            value *= valid_count
 
             # save calculated value
             values_list.append(value)
+            counts_list.append(valid_count)
 
         # calculate the (weighted) average over saved values
-        if self.symmetrized:
-            value = np.sum(values_list) / (len(self.residues[0]) + len(self.residues[1]))
-        else:
-            value = np.sum(values_list) / len(self.residues[0])
-
+        total_count = sum(counts_list)
+        value = float(np.sum(values_list) / total_count) if total_count > 0 else 0.0
+            
         return value, value * self.weight
 
 
