@@ -1,6 +1,8 @@
 import re
 import pathlib
 import os
+import tempfile
+import logging
 import numpy as np
 from typing import Optional
 
@@ -9,6 +11,8 @@ from biotite.structure import AtomArray
 from .constants import aa_dict
 
 aa_dict_3to1 = {v: k for k, v in aa_dict.items()}
+
+logger = logging.getLogger(__name__)
 
 
 def get_version_from_pyproject(pyproject_path: Optional[str] = None) -> Optional[str]:
@@ -103,16 +107,27 @@ def resolve_and_set_model_dir() -> pathlib.Path:
     pathlib.Path
         Absolute path to the resolved model directory.
     """
-    if os.environ.get("MODEL_DIR"):
-        resolved = pathlib.Path(os.environ["MODEL_DIR"]).expanduser().resolve()
-    else:
-        xdg_cache_home = os.getenv("XDG_CACHE_HOME")
-        if xdg_cache_home:
-            base_cache_dir = pathlib.Path(xdg_cache_home).expanduser().resolve()
+    try:
+        if os.environ.get("MODEL_DIR"):
+            resolved = pathlib.Path(os.environ["MODEL_DIR"]).expanduser().resolve()
         else:
-            base_cache_dir = pathlib.Path.home() / ".cache"
-        resolved = (base_cache_dir / "bagel" / "models").resolve()
+            xdg_cache_home = os.getenv("XDG_CACHE_HOME")
+            if xdg_cache_home:
+                base_cache_dir = pathlib.Path(xdg_cache_home).expanduser().resolve()
+            else:
+                base_cache_dir = pathlib.Path.home() / ".cache"
+            resolved = (base_cache_dir / "bagel" / "models").resolve()
 
-    resolved.mkdir(parents=True, exist_ok=True)
-    os.environ["MODEL_DIR"] = str(resolved)
-    return resolved
+        resolved.mkdir(parents=True, exist_ok=True)
+        os.environ["MODEL_DIR"] = str(resolved)
+        return resolved
+    except (OSError, PermissionError) as exc:
+        logger.warning(f"Falling back to a temporary model cache due to filesystem error: {str(exc)}")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"Falling back to a temporary model cache due to unexpected error: {str(exc)}")
+
+    # Fallback to a user-writable temporary directory; ensure directory exists
+    fallback_base = pathlib.Path(tempfile.gettempdir()) / "bagel" / "models"
+    fallback_base.mkdir(parents=True, exist_ok=True)
+    os.environ["MODEL_DIR"] = str(fallback_base)
+    return fallback_base
