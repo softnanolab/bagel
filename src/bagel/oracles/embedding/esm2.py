@@ -10,8 +10,8 @@ from ...chain import Chain
 from .base import EmbeddingResult, EmbeddingOracle
 from typing import List, Any
 from boileroom import app  # type: ignore
-from boileroom.esm2 import ESM2Output  # type: ignore
-from boileroom.esm2 import ESM2 as ESM2Boiler
+from boileroom.models.esm.esm2 import ESM2Output  # type: ignore
+from boileroom.models.esm.esm2 import ESM2 as ESM2Boiler
 from modal import App
 import logging
 
@@ -93,7 +93,7 @@ class ESM2(EmbeddingOracle):
             return self._post_process(self._remote_embed(processed_chains))
         else:
             logger.debug('Given that use_modal is False, trying to embed with ESM-2 locally...')
-            assert os.environ.get('HF_MODEL_DIR'), 'HF_MODEL_DIR must be set when using ESM-2 locally'
+            assert os.environ.get('MODEL_DIR'), 'MODEL_DIR must be set when using ESM-2 locally'
             return self._post_process(self._local_embed(processed_chains))
 
     def _remote_embed(self, sequence: List[str]) -> ESM2Output:

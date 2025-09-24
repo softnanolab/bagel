@@ -120,7 +120,11 @@ To use Modal, one needs to create an account and authenticate through:
 
         modal token new
 
-You also need to set `HF_MODEL_DIR` to an accessible folder, where HuggingFace models will be stored.
+You also need to set `MODEL_DIR` to an accessible folder, where deep learning models will be stored (i.e. cached).
+
+Note on cache location and persistence:
+- By default, examples may resolve `MODEL_DIR` to an XDG-compliant cache directory such as `~/.cache/bagel/models` (or the path in `$XDG_CACHE_HOME`). This directory is user-writable and persists across runs.
+- The cache is not automatically cleaned by the application. If you wish to reclaim disk space, remove models manually (e.g., `rm -rf ~/.cache/bagel/models`) or configure your own housekeeping policy. Advanced users on Linux can use `systemd-tmpfiles` rules per their environment.
 
 ### Google Colab
 A prototyping, but unscalable alterantive is to run BAGEL in Google Colab, having an access to a T4 processing unit for free. See this [notebook](https://colab.research.google.com/drive/1dtX8j6t5VhSed4iiqSrjM35DyPSFE1yF?usp=sharing), which includes the installation, and the template script for [simple binder](scripts/binders/simple_binder.py).

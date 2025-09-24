@@ -5,7 +5,6 @@ import pytest
 import shutil
 import numpy as np
 import pathlib as pl
-from unittest.mock import Mock
 from biotite.structure import AtomArray, Atom, array, concatenate
 from biotite.structure.io import load_structure
 import bagel as bg
@@ -32,8 +31,8 @@ to bugs. The below fixture for example would create a new ESMFolder for each mod
 This was leading to test breaking exceptions.
 """
 
-from boileroom import app
 import modal
+from boileroom import app
 
 
 @pytest.fixture(scope='session')
@@ -47,7 +46,6 @@ def modal_app_context(request) -> modal.App:
     else:
         yield None
 
-
 @pytest.fixture(scope='session')  # ensures only 1 Modal App is requested per process
 def esmfold(request, modal_app_context) -> bg.oracles.folding.ESMFold:
     """
@@ -58,7 +56,6 @@ def esmfold(request, modal_app_context) -> bg.oracles.folding.ESMFold:
     if flag == 'skip':
         pytest.skip(reason='--oracles flag of the origional pytest call set to skip')
     elif flag == 'local':
-        os.environ.setdefault('HF_MODEL_DIR', os.path.expanduser('~/hugging_face/'))
         model = bg.oracles.folding.ESMFold(use_modal=False)
         yield model
         del model
@@ -78,7 +75,6 @@ def esm2(request, modal_app_context) -> bg.oracles.embedding.ESM2:
     if flag == 'skip':
         pytest.skip(reason='--oracles flag of the origional pytest call set to skip')
     elif flag == 'local':
-        os.environ.setdefault('HF_MODEL_DIR', os.path.expanduser('~/hugging_face/'))
         model = bg.oracles.embedding.ESM2(use_modal=False)
         yield model
         del model

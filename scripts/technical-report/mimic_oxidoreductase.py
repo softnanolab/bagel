@@ -11,7 +11,6 @@ import modal
 def run_generate_mimic() -> Any:
 
     # Get the value of an environment variable
-    os.environ["HF_MODEL_DIR"] = os.path.expanduser("~/hugging_face/")
     use_modal = False
 
     # Check

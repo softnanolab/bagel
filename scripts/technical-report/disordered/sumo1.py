@@ -8,8 +8,6 @@ import pathlib as pl
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
-os.environ["HF_MODEL_DIR"] = os.path.expanduser("~/hugging_face/")
-
 def main(
     use_modal: bool = False,
     binder_sequence: str = None,

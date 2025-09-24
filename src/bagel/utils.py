@@ -1,6 +1,6 @@
 import re
 import pathlib
-import copy
+import os
 import numpy as np
 from typing import Optional
 
@@ -86,3 +86,33 @@ def sequence_from_atomarray(atoms: AtomArray) -> str:
     protein_atoms = atoms[protein_mask]
     ca_mask = protein_atoms.atom_name == 'CA'
     return ''.join([aa_dict_3to1[res_name] for res_name in protein_atoms[ca_mask].res_name])
+
+
+def resolve_and_set_model_dir() -> pathlib.Path:
+    """
+    Resolve and set the MODEL_DIR environment variable to a user-writable cache
+    location following XDG conventions.
+
+    Precedence:
+    1) Respect existing MODEL_DIR if set.
+    2) Use XDG_CACHE_HOME if defined; otherwise default to ~/.cache.
+    3) Append "bagel/models" and create the directory if it does not exist.
+
+    Returns
+    -------
+    pathlib.Path
+        Absolute path to the resolved model directory.
+    """
+    if os.environ.get("MODEL_DIR"):
+        resolved = pathlib.Path(os.environ["MODEL_DIR"]).expanduser().resolve()
+    else:
+        xdg_cache_home = os.getenv("XDG_CACHE_HOME")
+        if xdg_cache_home:
+            base_cache_dir = pathlib.Path(xdg_cache_home).expanduser().resolve()
+        else:
+            base_cache_dir = pathlib.Path.home() / ".cache"
+        resolved = (base_cache_dir / "bagel" / "models").resolve()
+
+    resolved.mkdir(parents=True, exist_ok=True)
+    os.environ["MODEL_DIR"] = str(resolved)
+    return resolved

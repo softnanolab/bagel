@@ -27,3 +27,4 @@ docs/_build
 # Project specific
 data
 logs_step_*
+.model_cache
