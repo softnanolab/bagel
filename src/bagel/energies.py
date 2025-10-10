@@ -10,6 +10,7 @@ from abc import ABC, abstractmethod
 import warnings
 
 import numpy as np
+import math
 import numpy.typing as npt
 import pandas as pd
 from typing import Literal, Callable
@@ -30,6 +31,7 @@ ResidueGroup = tuple[npt.NDArray[np.str_], npt.NDArray[np.int_]]
 def residue_list_to_group(residues: list[Residue]) -> ResidueGroup:
     """Converts list of residue objects to ResidueGroup required by energy term objects"""
     return (np.array([res.chain_ID for res in residues]), np.array([res.index for res in residues]))
+
 
 
 class EnergyTerm(ABC):
@@ -78,6 +80,10 @@ class EnergyTerm(ABC):
         self.weight = weight
         self.inheritable = inheritable
         self.residue_groups: list[ResidueGroup] = []
+        self._operation = None
+        self._left = None
+        self._right = None
+
 
     def __post_init__(self) -> None:
         """Checks required attributes have been set after class is initialised"""
@@ -91,27 +97,76 @@ class EnergyTerm(ABC):
         assert self.oracle is not None, 'oracle attribute must be set in class initialiser'
         assert isinstance(self.oracle, Oracle), 'oracle attribute must be an instance of Oracle'
 
-    @abstractmethod
+    # @abstractmethod
+    # def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+    #     """
+    #     Calculates the EnergyTerm's energy given information about the folded structure.
+    #     The result is returned and stored as an internal attribute (.value).
+
+    #     Parameters
+    #     ----------
+    #     oracles_result: OraclesResultDict
+    #         Dictionary mapping oracles to their results. This is used to get the relevant
+    #         information for the energy term.
+
+    #     Returns
+    #     -------
+    #     (unweighted_energy, weighted_energy) : tuple[float, float]
+    #         unweighted_energy : float
+    #             How well the structure satisfies the given criteria. Where possible, this number should be between 0 and 1.
+    #         weighted_energy : float
+    #     The unweighted energy multiplied by the energy term's weight.
+    #     """
+    #     pass
+
     def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
         """
-        Calculates the EnergyTerm's energy given information about the folded structure.
-        The result is returned and stored as an internal attribute (.value).
+        Calculates the EnergyTerm's energy, either as a single (leaf) term or as a 
+        composite operation built from other energy terms.
+
+        If this instance represents a basic energy term (e.g. pTM, PAE, SASA),
+        the method retrieves the corresponding folding or structural metrics 
+        from the oracle results and computes the unweighted and weighted energies.
+
+        If this instance represents a composite term created via arithmetic 
+        operations (e.g. A + B, (A * B) / C), the method recursively evaluates 
+        the underlying child energy terms and combines their values according 
+        to the stored operation.
 
         Parameters
         ----------
-        oracles_result: OraclesResultDict
-            Dictionary mapping oracles to their results. This is used to get the relevant
-            information for the energy term.
+        oracles_result : OraclesResultDict
+            Dictionary mapping oracles to their results. This is used to obtain 
+            the relevant information for the energy term and any of its sub-terms.
 
         Returns
         -------
         (unweighted_energy, weighted_energy) : tuple[float, float]
             unweighted_energy : float
-                How well the structure satisfies the given criteria. Where possible, this number should be between 0 and 1.
+                The computed energy value before weighting. 
+                For composite terms, this is the combined value of the child energies.
             weighted_energy : float
-        The unweighted energy multiplied by the energy term's weight.
+                The unweighted energy multiplied by the energy term's weight.
         """
-        pass
+
+        if getattr(self, "_operation", None) is not None:
+            left_val, _ = self._evaluate_operand(self._left, oracles_result)
+            right_val, _ = self._evaluate_operand(self._right, oracles_result) if self._right is not None else (None, None)
+
+            match self._operation:
+                case '+': val = left_val + right_val
+                case '-': val = left_val - right_val
+                case '*': val = left_val * right_val
+                case '/': val = left_val / right_val
+                case 'neg': val = -left_val
+                case _: raise ValueError(f"Unknown operation {self._operation}")
+
+            return val, val * self.weight
+
+        raise NotImplementedError(
+            f"{self.__class__.__name__}.compute() must implement energy evaluation logic."
+        )
+
 
     def shift_residues_indices_after_removal(self, chain_id: str, res_index: int) -> None:
         """
@@ -186,6 +241,82 @@ class EnergyTerm(ABC):
             atom_mask[chain_mask] = np.isin(chain_res_ids, chain_res_ids_in_group)
         return atom_mask
 
+    # Dunder methods
+    
+    def _combine(self, operation, other):
+        new_term = EnergyTerm.__new__(EnergyTerm)
+        new_term.__dict__ = self.__dict__.copy()
+        new_term._operation = operation
+        new_term._left = self
+        new_term._right = other
+        return new_term
+    
+    def __add__(self, other):
+        return self._combine('+', other)
+
+    def __sub__(self, other):
+        return self._combine('-', other)
+
+    def __mul__(self, other):
+        return self._combine('*', other)
+
+    def __truediv__(self, other):
+        return self._combine('/', other)
+
+    def __neg__(self):
+        return self._combine('neg', None)
+
+    def __radd__(self, other):
+        return self._combine('+', other)
+
+    def __rsub__(self, other):
+        return self._combine('-', other)
+
+    def __rmul__(self, other):
+        return self._combine('*', other)
+
+    def __rtruediv__(self, other):
+        return self._combine('/', other)
+
+    def __neg__(self):
+        return self._combine('neg', None)
+    
+
+    def _evaluate_operand(self, operand, oracles_result):
+        """
+        Helper: safely compute an operand (either another EnergyTerm or a float)
+        """
+        if isinstance(operand, EnergyTerm):
+            return operand.compute(oracles_result)
+        elif isinstance(operand, float):
+            return operand, operand
+        else:
+            raise TypeError(f"Invalid operand type: {type(operand)}")
+            
+
+def exp(energy: EnergyTerm) -> EnergyTerm:
+    new_term = energy._combine('exp', None)
+
+    def _compute_exp(self, oracles_result):
+        val, _ = self._evaluate_operand(self._left, oracles_result)
+        val = math.exp(val)
+        return val, val * self.weight
+
+    new_term.compute = _compute_exp.__get__(new_term, EnergyTerm)
+    return new_term
+
+
+def log(energy: EnergyTerm) -> EnergyTerm:
+    new_term = energy._combine('log', None)
+
+    def _compute_log(self, oracles_result):
+        val, _ = self._evaluate_operand(self._left, oracles_result)
+        val = math.log(val)
+        return val, val * self.weight
+
+    new_term.compute = _compute_log.__get__(new_term, EnergyTerm)
+    return new_term
+
 
 class PTMEnergy(EnergyTerm):
     """
@@ -220,6 +351,10 @@ class PTMEnergy(EnergyTerm):
         assert 'ptm' in self.oracle.result_class.model_fields, 'PTMEnergy requires oracle to return ptm in result_class'
 
     def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+
+        if self._operation is not None:
+            return super().compute(oracles_result)
+
         folding_result = oracles_result[self.oracle]
         assert hasattr(folding_result, 'ptm'), 'PTM metric not returned by folding algorithm'
         value = -folding_result.ptm
