@@ -106,3 +106,71 @@ def get_sequence_from_fasta( pdb_id : str, sequence_index: int = 0 ) -> str:
     assert sequence_index < len(output_sequences), f"Requested sequence index {sequence_index} but only {len(output_sequences)} sequences found."
 
     return output_sequences[sequence_index]
+
+def get_reconciled_sequence( atoms: AtomArray, fasta_sequence: str) -> None:
+    """
+    Take a sequence from an AtomArray object. If there are missing residues in the AtomArray, 
+    use the provided fasta_sequence to fill in the gaps.
+    Note that if the AtomArray and FASTA sequence have mismatches, AtomArray sequence is preferred
+    but a warning is raised.
+
+    Parameters
+    ----------
+    atoms: AtomArray
+        AtomArray containing all atoms.
+    faata_sequence: str | None
+        Amino acid sequence in 1-letter convention. If None, no reconciliation is performed 
+        and a random residue is chosen for missing residues.
+
+    Returns
+    -------
+    list of str
+        Reconciled amino acid sequence in 1-letter convention.
+    bool
+        Whether any residues were added to fill in gaps.
+
+    Raises
+    ------
+    Warning 
+        If there is a mismatch between the sequence derived from `atoms` and the provided `sequence`.
+    """
+    offset = 1  # Because residue IDs in PDB files start from 1
+
+    all_res_ids_from_chain = atoms.res_id.tolist()
+    # Remove duplicates while preserving order
+    seen = set()
+    all_res_ids_from_chain = [x for x in all_res_ids_from_chain if not (x in seen or seen.add(x))]
+
+    max_res_id = max(all_res_ids_from_chain)
+
+    reconciled_sequence = []
+
+    added = False
+
+    for res_id in range(1, max_res_id + 1):
+        try: 
+            aa_pdb = atoms.res_name[atoms.res_id == res_id][0]
+            aa_pdb = aa_dict_3to1[aa_pdb]
+            reconciled_sequence.append(aa_pdb)
+        except IndexError:
+            # Missing residue in the AtomArray
+            if fasta_sequence is None:
+                # If no fasta sequence is provided, choose a random amino acid
+                aa_pdb = np.random.choice(list(aa_dict.keys()))
+                reconciled_sequence.append(aa_pdb)
+            else:
+                aa_seq = fasta_sequence[res_id - offset]
+                reconciled_sequence.append(aa_seq)
+            added = True
+            continue
+
+        if fasta_sequence is not None:
+            try:
+                # This is because the FASTA sequence can be shorter than the PDB sequence because of discrepancies
+                aa_seq = fasta_sequence[res_id - offset]
+                if aa_pdb != aa_seq:
+                    print( f'Non-critical WARNING: Mismatch between PDB and sequence at residue {res_id}: PDB = {aa_pdb} vs FASTA = {aa_seq}')
+            except IndexError:
+                pass
+
+    return ''.join(reconciled_sequence), added
