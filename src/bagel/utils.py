@@ -5,8 +5,11 @@ import numpy as np
 from typing import Optional
 
 from biotite.structure import AtomArray
-
 from .constants import aa_dict
+
+import biotite.database.rcsb as rcsb
+import biotite.sequence.io.fasta as fasta
+import biotite.sequence as seq
 
 aa_dict_3to1 = {v: k for k, v in aa_dict.items()}
 
@@ -86,3 +89,20 @@ def sequence_from_atomarray(atoms: AtomArray) -> str:
     protein_atoms = atoms[protein_mask]
     ca_mask = protein_atoms.atom_name == 'CA'
     return ''.join([aa_dict_3to1[res_name] for res_name in protein_atoms[ca_mask].res_name])
+
+
+
+def get_sequence_from_fasta( pdb_id : str, sequence_index: int = 0 ) -> str:
+    # 1) Download the FASTA file from the RCSB for a given PDB ID
+    fasta_file_path = rcsb.fetch(pdb_id, format="fasta", target_path=None, overwrite=True)
+    # 2) Read the FASTA file into a Biotite FastaFile object
+    fasta_file = fasta.FastaFile.read(fasta_file_path)
+
+    sequences = fasta.get_sequences(fasta_file)
+    output_sequences = []
+    for seq_obj in sequences.values():
+        output_sequences.append(str(seq_obj))
+
+    assert sequence_index < len(output_sequences), f"Requested sequence index {sequence_index} but only {len(output_sequences)} sequences found."
+
+    return output_sequences[sequence_index]
