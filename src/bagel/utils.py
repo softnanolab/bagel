@@ -95,19 +95,34 @@ def sequence_from_atomarray(atoms: AtomArray) -> str:
     return ''.join([aa_dict_3to1[res_name] for res_name in protein_atoms[ca_mask].res_name])
 
 
-def get_sequence_from_fasta(pdb_id: str, sequence_index: int = 0) -> str:
-    """Download sequence from the FASTA file using the pdb ID. This sequence is
-    complete unlike that extracted from the PDB AtomArray object that only contains
-    residues for which coordinates have been determined.
-    Input:
-    pdb_id : str, PDB id
-    sequence_index: int = 0, Index of the chain to extract (in case of multimers)
-    Output:
-    sequence : str, sequence of the protein
+def get_sequence_from_pdb_id(pdb_id: str, sequence_index: int = 0) -> str:
     """
-    # 1) Download the FASTA file from the RCSB for a given PDB ID
+    Download a complete amino acid sequence from the RCSB FASTA service.
+    This sequence is complete unlike that extracted from the PDB AtomArray object that only contains
+    residues for which coordinates have been determined.
+
+    Parameters
+    ----------
+    pdb_id : str
+        Four-character Protein Data Bank identifier used to fetch the FASTA entry.
+    sequence_index : int, default=0
+        Index of the sequence to extract from the downloaded FASTA file. Use this to
+        select a specific chain when a PDB entry contains multiple sequences.
+
+    Returns
+    -------
+    str
+        Amino acid sequence in one-letter convention corresponding to the requested
+        PDB identifier and sequence index.
+
+    Raises
+    ------
+    AssertionError
+        If `sequence_index` is not within the number of sequences present in the
+        fetched FASTA file.
+    """
+
     fasta_file_path = rcsb.fetch(pdb_id, format='fasta', target_path=None, overwrite=True)
-    # 2) Read the FASTA file into a Biotite FastaFile object
     fasta_file = fasta.FastaFile.read(fasta_file_path)
 
     sequences = fasta.get_sequences(fasta_file)
@@ -163,7 +178,7 @@ def resolve_and_set_model_dir() -> pathlib.Path:
     return fallback_base
 
 
-def get_reconciled_sequence(atoms: AtomArray, fasta_sequence: str) -> tuple[str, bool]:
+def get_reconciled_sequence(atoms: AtomArray, fasta_sequence: str | None) -> tuple[str, bool]:
     """
     Take a sequence from an AtomArray object. If there are missing residues in the AtomArray,
     use the provided fasta_sequence to fill in the gaps.
@@ -174,13 +189,13 @@ def get_reconciled_sequence(atoms: AtomArray, fasta_sequence: str) -> tuple[str,
     ----------
     atoms: AtomArray
         AtomArray containing all atoms.
-    faata_sequence: str | None
+    fasta_sequence: str | None
         Amino acid sequence in 1-letter convention. If None, no reconciliation is performed
         and a random residue is chosen for missing residues.
 
     Returns
     -------
-    list of str
+    str
         Reconciled amino acid sequence in 1-letter convention.
     bool
         Whether any residues were added to fill in gaps.
@@ -190,8 +205,6 @@ def get_reconciled_sequence(atoms: AtomArray, fasta_sequence: str) -> tuple[str,
     Warning
         If there is a mismatch between the sequence derived from `atoms` and the provided `sequence`.
     """
-    offset = 1  # Because residue IDs in PDB files start from 1
-
     all_res_ids_from_chain = atoms.res_id.tolist()
     # Remove duplicates while preserving order
     seen: set[int] = set()
@@ -201,15 +214,20 @@ def get_reconciled_sequence(atoms: AtomArray, fasta_sequence: str) -> tuple[str,
             seen.add(res_id)
             unique_res_ids.append(res_id)
 
+    if not unique_res_ids:
+        return '', False
+
     all_res_ids_from_chain = unique_res_ids
 
+    min_res_id = min(all_res_ids_from_chain)
     max_res_id = max(all_res_ids_from_chain)
+    offset = min_res_id
 
     reconciled_sequence = []
 
     added = False
 
-    for res_id in range(1, max_res_id + 1):
+    for res_id in range(min_res_id, max_res_id + 1):
         try:
             aa_pdb = atoms.res_name[atoms.res_id == res_id][0]
             aa_pdb = aa_dict_3to1[aa_pdb]
@@ -221,7 +239,14 @@ def get_reconciled_sequence(atoms: AtomArray, fasta_sequence: str) -> tuple[str,
                 aa_pdb = np.random.choice(list(aa_dict.keys()))
                 reconciled_sequence.append(aa_pdb)
             else:
-                aa_seq = fasta_sequence[res_id - offset]
+                fasta_index = res_id - offset
+                if 0 <= fasta_index < len(fasta_sequence):
+                    aa_seq = fasta_sequence[fasta_index]
+                else:
+                    logger.warning(
+                        f'Skipping missing residue {res_id} because it is outside the FASTA sequence length.'
+                    )
+                    continue
                 reconciled_sequence.append(aa_seq)
             added = True
             continue
@@ -229,10 +254,12 @@ def get_reconciled_sequence(atoms: AtomArray, fasta_sequence: str) -> tuple[str,
         if fasta_sequence is not None:
             try:
                 # This is because the FASTA sequence can be shorter than the PDB sequence because of discrepancies
-                aa_seq = fasta_sequence[res_id - offset]
+                fasta_index = res_id - offset
+                aa_seq = fasta_sequence[fasta_index]
                 if aa_pdb != aa_seq:
-                    print(
-                        f'Non-critical WARNING: Mismatch between PDB and sequence at residue {res_id}: PDB = {aa_pdb} vs FASTA = {aa_seq}'
+                    logger.warning(
+                        f'Non-critical WARNING: Mismatch between PDB and sequence at residue {res_id}: '
+                        f'PDB = {aa_pdb} vs FASTA = {aa_seq}'
                     )
             except IndexError:
                 pass

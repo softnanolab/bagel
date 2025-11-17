@@ -1124,16 +1124,12 @@ class TemplateMatchEnergy(EnergyTerm):
         if self.backbone_only:
             structure_atoms = structure_atoms[np.isin(structure_atoms.atom_name, backbone_atoms)]
             template_atoms = template_atoms[np.isin(template_atoms.atom_name, backbone_atoms)]
-        try:
-            assert len(structure_atoms) == len(template_atoms), (
-                'Different number of atoms in template and given residues'
+        if len(structure_atoms) != len(template_atoms):
+            raise ValueError(
+                'Different number of atoms in template and given residues: '
+                f'template_atoms={len(template_atoms)}, structure_atoms={len(structure_atoms)}, '
+                f'template={template_atoms}, structure={structure_atoms}'
             )
-        except AssertionError:
-            print(f'Number of atoms in template: {len(template_atoms)}')
-            print(f'Number of atoms in structure: {len(structure_atoms)}')
-            print(f'Template atoms: {template_atoms}')
-            print(f'Structure atoms: {structure_atoms}')
-            raise AssertionError('Different number of atoms in template and given residues')
         template_atoms = superimpose(fixed=structure_atoms, mobile=template_atoms)[0]  # tranlsation and rotation fit
 
         if not self.distogram_separation:
