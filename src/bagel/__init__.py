@@ -7,6 +7,7 @@ criteria.
 """
 
 from .utils import get_version_from_pyproject, resolve_and_set_model_dir
+
 resolve_and_set_model_dir()
 
 __version__ = get_version_from_pyproject()

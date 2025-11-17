@@ -706,9 +706,9 @@ class LISEnergy(EnergyTerm):
             if self.intensive:
                 value = -np.mean(lis_scores)  # Negative because you want to be interpreted as an energy
             else:
-                # 0.5 is to avoid double-counting of LIS pairs, which you would if PAE(ij) is asymmetric due 
+                # 0.5 is to avoid double-counting of LIS pairs, which you would if PAE(ij) is asymmetric due
                 # to masking above
-                value = - 0.5 * np.sum(lis_scores)  # Negative because you want to be interpreted as an energy
+                value = -0.5 * np.sum(lis_scores)  # Negative because you want to be interpreted as an energy
 
         return value, value * self.weight
 
@@ -943,7 +943,7 @@ class FlexEvoBindEnergy(EnergyTerm):
 
             # Get the chain_ids and res_ids for the residues in the first group
             chain_ids, res_ids = self.residue_groups[main]
-            
+
             min_distances = []  # List to store the minimum distances for each residue in the main group
 
             # Now iterate over each residue in the first group
@@ -951,7 +951,7 @@ class FlexEvoBindEnergy(EnergyTerm):
                 # Extract from the structure the atoms corresponding to the residues with current chain_id and res_id
                 curr_residue_mask = (structure.chain_id == chain_id) & (structure.res_id == res_id)
 
-                # Get the atoms corresponding to the current residue            
+                # Get the atoms corresponding to the current residue
                 curr_residue_atoms = structure[curr_residue_mask]
                 if len(curr_residue_atoms) == 0:
                     continue
@@ -959,7 +959,7 @@ class FlexEvoBindEnergy(EnergyTerm):
                 diff = partner_atoms.coord[np.newaxis, :, :] - curr_residue_atoms.coord[:, np.newaxis, :]
                 dist_mat = np.linalg.norm(diff, axis=2)
                 min_dist = float(np.min(dist_mat))
-                min_distances.append(min_dist) # Store the minimum distance for this residue
+                min_distances.append(min_dist)  # Store the minimum distance for this residue
 
             # Calculate the average of these minimum distances
             if len(min_distances) == 0:
@@ -967,7 +967,7 @@ class FlexEvoBindEnergy(EnergyTerm):
                 continue
             average_min_distance = float(np.mean(min_distances))
             value = average_min_distance
-            
+
             # If plddt_weighted is True, divide by the average pLDDT of the residues in the group
             # In this case, this energy term is the EvoBind loss function mentioned above, but symmetrized.
             # in the sense that what is the binder and what is the hotspot does not matter.
@@ -983,7 +983,7 @@ class FlexEvoBindEnergy(EnergyTerm):
                 if mask_count > 0:
                     average_plddt = float(np.mean(plddt[main_mask]))
                     denom = average_plddt if average_plddt > 0.0 else np.finfo(float).eps
-                    value /= denom      
+                    value /= denom
 
             # Scale value by the number of residues in the group, so that eventually you can
             # calculate a weighted average between residues in the binder and hotspot
@@ -997,7 +997,7 @@ class FlexEvoBindEnergy(EnergyTerm):
         # calculate the (weighted) average over saved values
         total_count = sum(counts_list)
         value = float(np.sum(values_list) / total_count) if total_count > 0 else 0.0
-            
+
         return value, value * self.weight
 
 
@@ -1124,7 +1124,12 @@ class TemplateMatchEnergy(EnergyTerm):
         if self.backbone_only:
             structure_atoms = structure_atoms[np.isin(structure_atoms.atom_name, backbone_atoms)]
             template_atoms = template_atoms[np.isin(template_atoms.atom_name, backbone_atoms)]
-        assert len(structure_atoms) == len(template_atoms), 'Different number of atoms in template and given residues'
+        if len(structure_atoms) != len(template_atoms):
+            raise ValueError(
+                'Different number of atoms in template and given residues: '
+                f'template_atoms={len(template_atoms)}, structure_atoms={len(structure_atoms)}, '
+                f'template={template_atoms}, structure={structure_atoms}'
+            )
         template_atoms = superimpose(fixed=structure_atoms, mobile=template_atoms)[0]  # tranlsation and rotation fit
 
         if not self.distogram_separation:
