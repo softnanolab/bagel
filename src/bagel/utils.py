@@ -163,7 +163,7 @@ def resolve_and_set_model_dir() -> pathlib.Path:
     return fallback_base
 
 
-def get_reconciled_sequence(atoms: AtomArray, fasta_sequence: str) -> None:
+def get_reconciled_sequence(atoms: AtomArray, fasta_sequence: str) -> tuple[str, bool]:
     """
     Take a sequence from an AtomArray object. If there are missing residues in the AtomArray,
     use the provided fasta_sequence to fill in the gaps.
@@ -194,8 +194,14 @@ def get_reconciled_sequence(atoms: AtomArray, fasta_sequence: str) -> None:
 
     all_res_ids_from_chain = atoms.res_id.tolist()
     # Remove duplicates while preserving order
-    seen = set()
-    all_res_ids_from_chain = [x for x in all_res_ids_from_chain if not (x in seen or seen.add(x))]
+    seen: set[int] = set()
+    unique_res_ids: list[int] = []
+    for res_id in all_res_ids_from_chain:
+        if res_id not in seen:
+            seen.add(res_id)
+            unique_res_ids.append(res_id)
+
+    all_res_ids_from_chain = unique_res_ids
 
     max_res_id = max(all_res_ids_from_chain)
 
