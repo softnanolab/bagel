@@ -46,6 +46,7 @@ def modal_app_context(request) -> modal.App:
     else:
         yield None
 
+
 @pytest.fixture(scope='session')  # ensures only 1 Modal App is requested per process
 def esmfold(request, modal_app_context) -> bg.oracles.folding.ESMFold:
     """
