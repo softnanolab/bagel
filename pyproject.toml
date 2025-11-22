@@ -1,6 +1,6 @@
 [project]
 name = "biobagel"
-version = "0.1.8"
+version = "0.1.9"
 authors = [
   {name = "Jakub Lála", email = "jakublala@gmail.com"},
   {name = "Ayham Al-Saffar", email = "ayham.saffar@gmail.com"},
@@ -12,7 +12,7 @@ license = "MIT"
 license_files = "LICENSE"
 keywords = ["protein", "protein design", "optimization", "monte carlo", "sampling", "energy landscape"]
 
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 dependencies = [
     "biotite>=1.0.1",
     "boileroom==0.2.1",

@@ -22,6 +22,22 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class Mutation:
+    """Single mutation operation."""
+    chain_id: str
+    move_type: str | None  # 'substitution', 'addition', 'removal', or None if skipped
+    residue_index: int | None  # None for additions at end
+    old_amino_acid: str | None  # None for additions
+    new_amino_acid: str | None  # None for removals
+
+
+@dataclass
+class MutationRecord:
+    """Record of all mutations performed in a single one_step() call."""
+    mutations: list[Mutation]  # Ordered list of mutations in this step
+
+
+@dataclass
 class MutationProtocol(ABC):
     mutation_bias: Dict[str, float] = field(default_factory=lambda: mutation_bias_no_cystein)
     n_mutations: int = 1
@@ -31,8 +47,7 @@ class MutationProtocol(ABC):
     def one_step(
         self,
         system: System,
-        old_system: System,
-    ) -> tuple[System, float]:
+    ) -> tuple[System, MutationRecord]:
         """
         Abstract method for performing a single mutation step.
 
@@ -40,17 +55,13 @@ class MutationProtocol(ABC):
         ----------
         system : System
             The system to be mutated
-        old_system : System
-            The original system before mutation, used for comparison
 
         Returns
         -------
         System
-            The mutated system
-        float
-            The energy difference between the mutated and original system
-        float
-            The difference in chemical potential contribution (related to size) between the mutated and original system
+            The mutated system (new copy)
+        MutationRecord
+            Record of all mutations performed in this step
         """
         pass
 
@@ -99,12 +110,57 @@ class MutationProtocol(ABC):
         amino_acid = np.random.choice(aa_keys, p=probs)
         chain.mutate_residue(index=index, amino_acid=amino_acid)
 
-    def reset_system(self, system: System) -> System:
-        system.total_energy = None
-        for state in system.states:
-            state._energy_terms_value = {}
-            state._oracles_result = OraclesResultDict()
-        return system
+    def replay(self, system: System, mutation_record: MutationRecord) -> System:
+        """
+        Replay a mutation record on a system, reusing existing mutation logic.
+
+        Parameters
+        ----------
+        system : System
+            The system to apply mutations to
+        mutation_record : MutationRecord
+            Record of mutations to replay
+
+        Returns
+        -------
+        System
+            System with mutations applied
+        """
+        replayed_system = system.__copy__()
+        for mutation in mutation_record.mutations:
+            # Find the chain by chain_id
+            chain = None
+            for state in replayed_system.states:
+                for c in state.chains:
+                    if c.chain_ID == mutation.chain_id:
+                        chain = c
+                        break
+                if chain is not None:
+                    break
+
+            if chain is None:
+                raise ValueError(f'Chain with ID {mutation.chain_id} not found in system')
+
+            if mutation.move_type is None:
+                # Skip this mutation (e.g., removal was skipped because chain.length == 1)
+                continue
+            elif mutation.move_type == 'substitution':
+                chain.mutate_residue(mutation.residue_index, mutation.new_amino_acid)
+            elif mutation.move_type == 'addition':
+                chain.add_residue(mutation.new_amino_acid, mutation.residue_index)
+                # Update energy terms for all states
+                for state in replayed_system.states:
+                    state.add_residue_to_all_energy_terms(mutation.chain_id, mutation.residue_index)
+            elif mutation.move_type == 'removal':
+                chain.remove_residue(mutation.residue_index)
+                # Update energy terms for all states
+                for state in replayed_system.states:
+                    state.remove_residue_from_all_energy_terms(mutation.chain_id, mutation.residue_index)
+            else:
+                raise ValueError(f'Unknown move_type: {mutation.move_type}')
+
+        replayed_system.reset()
+        return replayed_system
 
 
 class Canonical(MutationProtocol):
@@ -133,14 +189,50 @@ class Canonical(MutationProtocol):
     def one_step(
         self,
         system: System,
-        old_system: System,
-    ) -> tuple[System, float]:
+    ) -> tuple[System, MutationRecord]:
+        mutated_system = system.__copy__()
+        mutations: list[Mutation] = []
+
         for _ in range(self.n_mutations):
-            chain = self.choose_chain(system)
-            self.mutate_random_residue(chain=chain)
-        self.reset_system(system=system)  # Reset the system so it knows it must recalculate fold and energy
-        delta_energy = system.get_total_energy() - old_system.get_total_energy()
-        return system, delta_energy
+            chain = self.choose_chain(mutated_system)
+            chain_id = chain.chain_ID
+
+            # Capture mutation details before applying
+            index = np.random.choice(chain.mutable_residue_indexes)
+            old_amino_acid = chain.residues[index].name
+
+            # Choose a new aminoacid
+            aa_keys = list(self.mutation_bias.keys())
+            probs = np.array([self.mutation_bias[a] for a in aa_keys], dtype=float)
+            if self.exclude_self:  # exclude the current amino acid from the probability distribution
+                mask = np.array([a != old_amino_acid for a in aa_keys], dtype=bool)
+                probs = probs * mask
+                total = probs.sum()
+                if total <= 0:
+                    raise ValueError(
+                        f'No valid mutation targets after excluding current AA={old_amino_acid}. '
+                        'Check mutation_bias provides non-zero probability to at least one alternative.'
+                    )
+                probs = probs / total
+            new_amino_acid = np.random.choice(aa_keys, p=probs)
+
+            # Apply the mutation
+            chain.mutate_residue(index=index, amino_acid=new_amino_acid)
+
+            # Record the mutation
+            mutations.append(
+                Mutation(
+                    chain_id=chain_id,
+                    move_type='substitution',
+                    residue_index=index,
+                    old_amino_acid=old_amino_acid,
+                    new_amino_acid=new_amino_acid,
+                )
+            )
+
+        mutated_system.reset()  # Reset the system so it knows it must recalculate fold and energy
+        mutation_record = MutationRecord(mutations=mutations)
+        return mutated_system, mutation_record
 
 
 class GrandCanonical(MutationProtocol):
@@ -216,10 +308,14 @@ class GrandCanonical(MutationProtocol):
     def one_step(
         self,
         system: System,
-        old_system: System,
-    ) -> tuple[System, float]:
+    ) -> tuple[System, MutationRecord]:
+        mutated_system = system.__copy__()
+        mutations: list[Mutation] = []
+
         for _ in range(self.n_mutations):
-            chain = self.choose_chain(system)
+            chain = self.choose_chain(mutated_system)
+            chain_id = chain.chain_ID
+
             # Now pick a move to make among removal, addition, or mutation
             assert self.move_probabilities.keys() == {'substitution', 'addition', 'removal'}, (
                 'Move probabilities must be mutation, addition and removal'
@@ -228,14 +324,74 @@ class GrandCanonical(MutationProtocol):
                 list(self.move_probabilities.keys()),
                 p=list(self.move_probabilities.values()),
             )
+
             if move == 'substitution':
-                self.mutate_random_residue(chain=chain)
+                # Capture mutation details before applying
+                index = np.random.choice(chain.mutable_residue_indexes)
+                old_amino_acid = chain.residues[index].name
+
+                # Choose a new aminoacid
+                aa_keys = list(self.mutation_bias.keys())
+                probs = np.array([self.mutation_bias[a] for a in aa_keys], dtype=float)
+                if self.exclude_self:  # exclude the current amino acid from the probability distribution
+                    mask = np.array([a != old_amino_acid for a in aa_keys], dtype=bool)
+                    probs = probs * mask
+                    total = probs.sum()
+                    if total <= 0:
+                        raise ValueError(
+                            f'No valid mutation targets after excluding current AA={old_amino_acid}. '
+                            'Check mutation_bias provides non-zero probability to at least one alternative.'
+                        )
+                    probs = probs / total
+                new_amino_acid = np.random.choice(aa_keys, p=probs)
+
+                # Apply the mutation
+                chain.mutate_residue(index=index, amino_acid=new_amino_acid)
+
             elif move == 'addition':
-                self.add_random_residue(chain=chain, system=system)
+                # Capture addition details before applying
+                index = np.random.choice(range(chain.length + 1))
+                old_amino_acid = None
+                new_amino_acid = np.random.choice(list(self.mutation_bias.keys()), p=list(self.mutation_bias.values()))
+
+                # Apply the addition
+                chain.add_residue(index=index, amino_acid=new_amino_acid)
+                # Update energy terms for all states
+                for state in mutated_system.states:
+                    state.add_residue_to_all_energy_terms(chain_ID=chain_id, residue_index=index)
+
+
             elif move == 'removal':
-                self.remove_random_residue(chain=chain, system=system)
+                # Check if removal is possible
+                if chain.length > 1:
+                    # Capture removal details before applying
+                    index = np.random.choice(chain.mutable_residue_indexes)
+                    old_amino_acid = chain.residues[index].name
 
-        self.reset_system(system=system)  # Reset the system so it knows it must recalculate fold and energy
-        delta_energy = system.get_total_energy() - old_system.get_total_energy()
+                    # Apply the removal
+                    chain.remove_residue(index=index)
+                    # Update energy terms for all states
+                    for state in mutated_system.states:
+                        state.remove_residue_from_all_energy_terms(chain_ID=chain_id, residue_index=index)
 
-        return system, delta_energy
+                    new_amino_acid = None
+                else:
+                    # Record skipped removal with move_type=None
+                    move = None
+                    index = None
+                    old_amino_acid = None
+                    new_amino_acid = None
+
+            mutations.append(
+                Mutation(
+                    chain_id=chain_id,
+                    move_type=move,
+                    residue_index=index,
+                    old_amino_acid=old_amino_acid,
+                    new_amino_acid=new_amino_acid,
+                )
+            )
+
+        mutated_system.reset()  # Reset the system so it knows it must recalculate fold and energy
+        mutation_record = MutationRecord(mutations=mutations)
+        return mutated_system, mutation_record
