@@ -7,7 +7,6 @@ import numpy as np
 import pathlib as pl
 from biotite.structure import AtomArray, Atom, array, concatenate
 from biotite.structure.io import load_structure
-from dotenv import load_dotenv
 import bagel as bg
 
 
@@ -20,17 +19,6 @@ def pytest_addoption(parser):
         help='What do do with tests that require oracles. options: skip or local or modal',
         choices=('skip', 'local', 'modal'),
     )
-
-
-def pytest_configure(config):
-    """Configure pytest session, including loading .env for local oracle tests."""
-    oracle_flag = config.getoption('--oracles')
-    if oracle_flag == 'local':
-        # Load .env file if it exists
-        load_dotenv()
-        # If MODEL_DIR is not set, use XDG-compliant default
-        if not os.environ.get('MODEL_DIR'):
-            bg.utils.resolve_and_set_model_dir()
 
 
 """
