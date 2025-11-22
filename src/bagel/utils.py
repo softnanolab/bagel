@@ -4,7 +4,7 @@ import os
 import tempfile
 import logging
 import numpy as np
-from typing import Optional
+from typing import Optional, Callable
 
 from biotite.structure import AtomArray
 from .constants import aa_dict
@@ -12,7 +12,7 @@ from .constants import aa_dict
 try:
     from dotenv import load_dotenv  # type: ignore[import-not-found]
 except ImportError:
-    load_dotenv = None
+    load_dotenv: Optional[Callable[..., bool]] = None  # type: ignore[no-redef]
 
 import biotite.database.rcsb as rcsb
 import biotite.sequence.io.fasta as fasta
