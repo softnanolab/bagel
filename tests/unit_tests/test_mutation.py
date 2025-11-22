@@ -60,7 +60,9 @@ def test_GrandCanonical_MutationProtocol_does_not_remove_all_residues_in_chain(
     mutated_system, mutation_record = mutator.one_step(system=single_residue_system)
     assert len(mutated_system.states[0].chains[0].residues) > 0
     # Check that removal was skipped
-    assert any(m.move_type is None for m in mutation_record.mutations), 'removal should be skipped when chain.length == 1'
+    assert any(m.move_type is None for m in mutation_record.mutations), (
+        'removal should be skipped when chain.length == 1'
+    )
 
 
 def test_mutation_protocol_resets_system_total_energy(
@@ -135,9 +137,7 @@ def test_mutation_replay_produces_same_sequence_trajectory(
 ) -> None:
     """Test that replaying recorded mutations produces the same sequence trajectory."""
     np.random.seed(42)
-    mutator = bg.mutation.GrandCanonical(
-        move_probabilities={'substitution': 0.4, 'addition': 0.3, 'removal': 0.3}
-    )
+    mutator = bg.mutation.GrandCanonical(move_probabilities={'substitution': 0.4, 'addition': 0.3, 'removal': 0.3})
 
     def get_sequences(system: bg.System) -> list[list[str]]:
         """Extract sequences from all chains in all states."""

@@ -22,21 +22,33 @@ def test_MonteCarloMinimizer_temperature_input_types(temp_log_path):
     n_steps = 5
     float_temp = 1.0
     minimizer_float = bg.minimizer.MonteCarloMinimizer(
-        mutator=mock_mutator, temperature=float_temp, n_steps=n_steps, experiment_name='test_float', log_path=temp_log_path
+        mutator=mock_mutator,
+        temperature=float_temp,
+        n_steps=n_steps,
+        experiment_name='test_float',
+        log_path=temp_log_path,
     )
     assert np.allclose(minimizer_float.temperature_schedule, np.array([float_temp] * n_steps))
 
     # Test with list input
     list_temp = [1.0, 2.0, 3.0, 4.0, 5.0]
     minimizer_list = bg.minimizer.MonteCarloMinimizer(
-        mutator=mock_mutator, temperature=list_temp, n_steps=n_steps, experiment_name='test_list', log_path=temp_log_path
+        mutator=mock_mutator,
+        temperature=list_temp,
+        n_steps=n_steps,
+        experiment_name='test_list',
+        log_path=temp_log_path,
     )
     assert np.allclose(minimizer_list.temperature_schedule, np.array(list_temp))
 
     # Test with numpy array input
     array_temp = np.array([5.0, 4.0, 3.0, 2.0, 1.0])
     minimizer_array = bg.minimizer.MonteCarloMinimizer(
-        mutator=mock_mutator, temperature=array_temp, n_steps=n_steps, experiment_name='test_array', log_path=temp_log_path
+        mutator=mock_mutator,
+        temperature=array_temp,
+        n_steps=n_steps,
+        experiment_name='test_array',
+        log_path=temp_log_path,
     )
     assert np.allclose(minimizer_array.temperature_schedule, array_temp)
 

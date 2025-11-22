@@ -10,7 +10,7 @@ from biotite.structure import AtomArray
 from .constants import aa_dict
 
 try:
-    from dotenv import load_dotenv
+    from dotenv import load_dotenv  # type: ignore[import-not-found]
 except ImportError:
     load_dotenv = None
 
