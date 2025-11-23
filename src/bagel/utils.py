@@ -10,9 +10,9 @@ from biotite.structure import AtomArray
 from .constants import aa_dict
 
 try:
-    from dotenv import load_dotenv  # type: ignore[import-not-found]
+    from dotenv import load_dotenv
 except ImportError:
-    load_dotenv: Optional[Callable[..., bool]] = None  # type: ignore[no-redef]
+    load_dotenv = None
 
 import biotite.database.rcsb as rcsb
 import biotite.sequence.io.fasta as fasta
