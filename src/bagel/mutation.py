@@ -27,7 +27,7 @@ class Mutation:
 
     chain_id: str
     move_type: str | None  # 'substitution', 'addition', 'removal', or None if skipped
-    residue_index: int
+    residue_index: int | None  # None for skipped moves (e.g. impossible removals)
     old_amino_acid: str | None  # None for additions
     new_amino_acid: str | None  # None for removals
 
