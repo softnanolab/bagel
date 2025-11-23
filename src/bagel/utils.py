@@ -11,7 +11,7 @@ from .constants import aa_dict
 
 load_dotenv: Optional[Callable[..., bool]]
 try:
-    from dotenv import load_dotenv  # type: ignore[no-redef]
+    from dotenv import load_dotenv
 except ImportError:
     load_dotenv = None
 
