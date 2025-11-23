@@ -21,18 +21,18 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(frozen=True)
 class Mutation:
     """Single mutation operation."""
 
     chain_id: str
     move_type: str | None  # 'substitution', 'addition', 'removal', or None if skipped
-    residue_index: int | None  # None for additions at end
+    residue_index: int
     old_amino_acid: str | None  # None for additions
     new_amino_acid: str | None  # None for removals
 
 
-@dataclass
+@dataclass(frozen=True)
 class MutationRecord:
     """Record of all mutations performed in a single one_step() call."""
 
@@ -147,18 +147,23 @@ class MutationProtocol(ABC):
                 # Skip this mutation (e.g., removal was skipped because chain.length == 1)
                 continue
             elif mutation.move_type == 'substitution':
-                assert mutation.residue_index is not None, 'Residue index is required for substitution'
-                assert mutation.new_amino_acid is not None, 'New amino acid is required for substitution'
+                if mutation.residue_index is None:
+                    raise ValueError('Residue index is required for substitution')
+                if mutation.new_amino_acid is None:
+                    raise ValueError('New amino acid is required for substitution')
                 chain.mutate_residue(mutation.residue_index, mutation.new_amino_acid)
             elif mutation.move_type == 'addition':
-                assert mutation.new_amino_acid is not None, 'New amino acid is required for addition'
-                assert mutation.residue_index is not None, 'Residue index is required for addition'
+                if mutation.new_amino_acid is None:
+                    raise ValueError('New amino acid is required for addition')
+                if mutation.residue_index is None:
+                    raise ValueError('Residue index is required for addition')
                 chain.add_residue(mutation.new_amino_acid, mutation.residue_index)
                 # Update energy terms for all states
                 for state in replayed_system.states:
                     state.add_residue_to_all_energy_terms(mutation.chain_id, mutation.residue_index)
             elif mutation.move_type == 'removal':
-                assert mutation.residue_index is not None, 'Residue index is required for removal'
+                if mutation.residue_index is None:
+                    raise ValueError('Residue index is required for removal')
                 chain.remove_residue(mutation.residue_index)
                 # Update energy terms for all states
                 for state in replayed_system.states:

@@ -9,8 +9,9 @@ from typing import Optional, Callable
 from biotite.structure import AtomArray
 from .constants import aa_dict
 
+load_dotenv: Optional[Callable[..., bool]]
 try:
-    from dotenv import load_dotenv
+    from dotenv import load_dotenv  # type: ignore[no-redef]
 except ImportError:
     load_dotenv = None
 
