@@ -9,11 +9,10 @@ from typing import Optional, Callable
 from biotite.structure import AtomArray
 from .constants import aa_dict
 
-load_dotenv: Optional[Callable[..., bool]]
 try:
     from dotenv import load_dotenv
 except ImportError:
-    load_dotenv = None
+    load_dotenv: Optional[Callable[..., bool]] = None  # type: ignore
 
 import biotite.database.rcsb as rcsb
 import biotite.sequence.io.fasta as fasta
