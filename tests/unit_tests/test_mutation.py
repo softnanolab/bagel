@@ -3,7 +3,9 @@ import numpy as np
 import bagel as bg
 
 
-def _energy_term_topology(system: bg.System) -> dict[str, dict[str, tuple[tuple[tuple[str, ...], tuple[int, ...]], ...]]]:
+def _energy_term_topology(
+    system: bg.System,
+) -> dict[str, dict[str, tuple[tuple[tuple[str, ...], tuple[int, ...]], ...]]]:
     """
     Helper used to compare how energy terms track residues across systems.
     Returns a nested mapping: state -> energy term -> ordered residue groups.
@@ -198,6 +200,4 @@ def test_grand_canonical_replay_matches_sequences_and_topology(
         replay_topology_traj.append(topology)
 
     assert sequence_trajectory == replay_sequence_traj, 'Replayed sequences diverged from recorded trajectory'
-    assert (
-        topology_trajectory == replay_topology_traj
-    ), 'Energy term residue groups diverged during replayed trajectory'
+    assert topology_trajectory == replay_topology_traj, 'Energy term residue groups diverged during replayed trajectory'

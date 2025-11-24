@@ -13,7 +13,7 @@ from .chain import Chain
 from .system import System
 from .constants import mutation_bias_no_cystein
 from dataclasses import dataclass, field
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional
 from abc import ABC, abstractmethod
 from .oracles.base import OraclesResultDict
 import logging
@@ -28,7 +28,7 @@ class Mutation:
 
     For GrandCanonical, the Mutation can be skipped if the move is impossible. In that case, move_type is None,
     but we keep track of the chain_id.
-    
+
     """
 
     chain_id: str
@@ -36,7 +36,9 @@ class Mutation:
     residue_index: int | None  # None for skipped moves (e.g. impossible removals)
     old_amino_acid: str | None  # None for additions
     new_amino_acid: str | None  # None for removals
-    parent_residue_index_by_state: Dict[str, int] | None = None  # For additions: state_name -> parent_residue_index
+    parent_residue_index_by_state: Dict[str, Optional[int]] | None = (
+        None  # For additions: state_name -> parent_residue_index
+    )
 
 
 @dataclass(frozen=True)
@@ -160,16 +162,17 @@ class MutationProtocol(ABC):
         # Precompute chain mapping for O(1) lookups
         chain_map: Dict[str, Chain] = {}
         for state in replayed_system.states:
-            for chain in state.chains:
-                if chain.chain_ID not in chain_map:
-                    chain_map[chain.chain_ID] = chain
+            for state_chain in state.chains:
+                if state_chain.chain_ID not in chain_map:
+                    chain_map[state_chain.chain_ID] = state_chain
 
         for mutation in mutation_record.mutations:
             # Find the chain by chain_id using precomputed mapping
-            chain = chain_map.get(mutation.chain_id)
+            chain: Chain | None = chain_map.get(mutation.chain_id)
 
             if chain is None:
                 raise ValueError(f'Chain with ID {mutation.chain_id} not found in system')
+            assert chain is not None  # Type narrowing after None check
 
             if mutation.move_type is None:
                 # Skip this mutation (e.g., removal was skipped because chain.length == 1)
@@ -384,9 +387,9 @@ class GrandCanonical(MutationProtocol):
         # neighbours. You look within the same chain and the same state and you add the residue to the same energy terms
         # the neighbours are part of. You actually look left and right, and randomly decide between the two. If the
         # residue is at the beginning or at the end of the chain, you just look at one of them.
-        # Note: This method doesn't record parent choices, so it uses the random path in add_residue_to_all_energy_terms
-        # For deterministic replay, use one_step() which properly records parent choices.
-        parent_residue_index_by_state: Dict[str, int] = {}
+        # This method records parent choices per state by storing the int|None returned
+        # by add_residue_to_all_energy_terms so deterministic replays can reuse them.
+        parent_residue_index_by_state: Dict[str, Optional[int]] = {}
         for state in system.states:
             parent_residue_index = state.add_residue_to_all_energy_terms(chain_ID=chain_ID, residue_index=residue_index)
             parent_residue_index_by_state[state.name] = parent_residue_index

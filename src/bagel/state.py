@@ -195,8 +195,10 @@ class State:
                 'This should not be possible unless a whole chain has disappeared but was still picked for mutation'
             )
             if left_residue is None:
+                assert right_residue is not None  # Type narrowing: at least one must be not None
                 parent_residue = right_residue
             elif right_residue is None:
+                assert left_residue is not None  # Type narrowing: at least one must be not None
                 parent_residue = left_residue
             else:
                 parent_residue = np.random.choice([left_residue, right_residue])  # type: ignore
