@@ -132,12 +132,31 @@ class State:
             # ensuring residue indexes in energy terms are updated to reflect a change in chain length
             term.shift_residues_indices_after_removal(chain_ID, residue_index)
 
-    def add_residue_to_all_energy_terms(self, chain_ID: str, residue_index: int) -> None:
+    def add_residue_to_all_energy_terms(
+        self, chain_ID: str, residue_index: int, parent_residue_index: int | None = None
+    ) -> int | None:
         """
         You look within the same chain and the same state and you add the residue to the same energy terms the
         neighbours are part of. You actually look left and right, and randomly decide between the two. If the residue is
         at the beginning or at the end of the chain, you just look at one of them. You do it for all
         terms that are inheritable.
+
+        Parameters
+        ----------
+        chain_ID : str
+            ID of the chain where the residue was added
+        residue_index : int
+            Index of the newly added residue
+        parent_residue_index : int | None, optional
+            If provided, use this as the parent residue index (deterministic path).
+            If None, randomly choose between left and right neighbor (usual, default, inference path).
+
+        Returns
+        -------
+        int
+            Index of the parent residue
+            None if the parent residue is not found in the chain
+
         """
 
         # Get the chain that needs to be checked to inherit the energy terms from the neighbours
@@ -150,23 +169,40 @@ class State:
 
         if chain is None:
             # This is ok, it can happen if a residue is added to a chain that is not in one of the states
-            return
+            return None
 
-        # Remember the following selection is done AFTER the residue has been added to the Chain object via chain.add_residue
-        left_residue = chain.residues[residue_index - 1] if residue_index > 0 else None
-        right_residue = chain.residues[residue_index + 1] if residue_index < len(chain.residues) - 1 else None
-        # Now choose randomly between the left and the right residue, if they exist
-        assert left_residue is not None or right_residue is not None, (
-            'This should not be possible unless a whole chain has disappeared but was still picked for mutation'
-        )
-        if left_residue is None:
-            parent_residue = right_residue
-        elif right_residue is None:
-            parent_residue = left_residue
+        # Determine parent residue: use explicit parent_residue_index if provided, otherwise choose randomly
+        if parent_residue_index is not None:
+            # Deterministic Path: use the provided parent_residue_index
+            if parent_residue_index not in [residue.index for residue in chain.residues]:
+                raise ValueError(
+                    f'Parent residue with index {parent_residue_index} not found in chain {chain_ID}. '
+                    f'Available indices: {[r.index for r in chain.residues]}'
+                )
+
+            parent_residue = chain.residues[parent_residue_index]
+
+            assert parent_residue.chain_ID == chain_ID, (
+                'The parent residue is not in the same chain, should not happen!'
+            )
         else:
-            parent_residue = np.random.choice([left_residue, right_residue])  # type: ignore
+            # Usual Inference Path: random choice between left and right neighbor
+            # Remember the following selection is done AFTER the residue has been added to the Chain object via chain.add_residue
+            left_residue = chain.residues[residue_index - 1] if residue_index > 0 else None
+            right_residue = chain.residues[residue_index + 1] if residue_index < len(chain.residues) - 1 else None
+            # Now choose randomly between the left and the right residue, if they exist
+            assert left_residue is not None or right_residue is not None, (
+                'This should not be possible unless a whole chain has disappeared but was still picked for mutation'
+            )
+            if left_residue is None:
+                parent_residue = right_residue
+            elif right_residue is None:
+                parent_residue = left_residue
+            else:
+                parent_residue = np.random.choice([left_residue, right_residue])  # type: ignore
 
         assert parent_residue is not None, 'The parent residue is None, should not happen!'
+
         # Now add the residue to the energy terms associated to the parent residue
         for term in self.energy_terms:
             # The order of these two operations is important.
@@ -185,3 +221,5 @@ class State:
                     'The parent residue is not in the same chain, should not happen!'
                 )
                 term.add_residue(chain_ID, residue_index, parent_index)
+
+        return parent_residue.index

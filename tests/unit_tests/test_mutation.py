@@ -3,6 +3,23 @@ import numpy as np
 import bagel as bg
 
 
+def _energy_term_topology(system: bg.System) -> dict[str, dict[str, tuple[tuple[tuple[str, ...], tuple[int, ...]], ...]]]:
+    """
+    Helper used to compare how energy terms track residues across systems.
+    Returns a nested mapping: state -> energy term -> ordered residue groups.
+    """
+    topology: dict[str, dict[str, tuple[tuple[tuple[str, ...], tuple[int, ...]], ...]]] = {}
+    for state in system.states:
+        term_mapping: dict[str, tuple[tuple[tuple[str, ...], tuple[int, ...]], ...]] = {}
+        for term in state.energy_terms:
+            residue_groups = []
+            for chain_ids, residue_indices in term.residue_groups:
+                residue_groups.append((tuple(chain_ids.tolist()), tuple(residue_indices.tolist())))
+            term_mapping[term.name] = tuple(residue_groups)
+        topology[state.name] = term_mapping
+    return topology
+
+
 @patch.object(bg.System, 'get_total_energy')  # prevents unnecessary folding
 def test_GrandCanonical_MutationProtocol_one_step_method_gives_correct_output_for_addition_move(
     mocked_calculate_method: Mock,
@@ -131,39 +148,56 @@ def test_mutate_random_residue_includes_self_at_expected_rate_when_flag_false() 
 
 
 @patch.object(bg.System, 'get_total_energy')  # prevents unnecessary folding
-def test_mutation_replay_produces_same_sequence_trajectory(
+def test_grand_canonical_replay_matches_sequences_and_topology(
     mocked_calculate_method: Mock,
     energies_system: bg.System,
 ) -> None:
-    """Test that replaying recorded mutations produces the same sequence trajectory."""
-    np.random.seed(42)
-    mutator = bg.mutation.GrandCanonical(move_probabilities={'substitution': 0.4, 'addition': 0.3, 'removal': 0.3})
+    """Run a longer GC trajectory and ensure replay reproduces sequences and energy topology."""
+    np.random.seed(1234)
+    steps = 25
+    mutator = bg.mutation.GrandCanonical(
+        n_mutations=1, move_probabilities={'substitution': 0.4, 'addition': 0.3, 'removal': 0.3}
+    )
 
-    def get_sequences(system: bg.System) -> list[list[str]]:
-        """Extract sequences from all chains in all states."""
-        return [[chain.sequence for chain in state.chains] for state in system.states]
+    def capture_state(system: bg.System) -> tuple[list[list[str]], dict[str, dict[str, tuple]]]:
+        sequences = [[chain.sequence for chain in state.chains] for state in system.states]
+        topology = _energy_term_topology(system)
+        return sequences, topology
 
-    # Record mutations and sequence trajectory
     current_system = energies_system.__copy__()
-    mutation_records = []
-    sequence_trajectory = [get_sequences(current_system)]
+    mutation_records: list[bg.mutation.MutationRecord] = []
+    sequence_trajectory: list[list[list[str]]] = []
+    topology_trajectory: list[dict[str, dict[str, tuple]]] = []
 
-    num_steps = 5
-    for _ in range(num_steps):
+    sequences, topology = capture_state(current_system)
+    sequence_trajectory.append(sequences)
+    topology_trajectory.append(topology)
+
+    for _ in range(steps):
         mutated_system, mutation_record = mutator.one_step(system=current_system)
         mutation_records.append(mutation_record)
         current_system = mutated_system
-        sequence_trajectory.append(get_sequences(current_system))
+        sequences, topology = capture_state(current_system)
+        sequence_trajectory.append(sequences)
+        topology_trajectory.append(topology)
 
-    # Replay mutations on fresh copy
+    assert len(mutation_records) == steps, 'Did not record the expected number of mutation steps'
+
     replayed_system = energies_system.__copy__()
-    replayed_trajectory = [get_sequences(replayed_system)]
+    replay_sequence_traj: list[list[list[str]]] = []
+    replay_topology_traj: list[dict[str, dict[str, tuple]]] = []
+
+    sequences, topology = capture_state(replayed_system)
+    replay_sequence_traj.append(sequences)
+    replay_topology_traj.append(topology)
 
     for mutation_record in mutation_records:
         replayed_system = mutator.replay(replayed_system, mutation_record)
-        replayed_trajectory.append(get_sequences(replayed_system))
+        sequences, topology = capture_state(replayed_system)
+        replay_sequence_traj.append(sequences)
+        replay_topology_traj.append(topology)
 
-    # Compare trajectories
-    assert len(sequence_trajectory) == len(replayed_trajectory), 'trajectory lengths must match'
-    for step, (original, replayed) in enumerate(zip(sequence_trajectory, replayed_trajectory)):
-        assert original == replayed, f'sequences at step {step} do not match: {original} != {replayed}'
+    assert sequence_trajectory == replay_sequence_traj, 'Replayed sequences diverged from recorded trajectory'
+    assert (
+        topology_trajectory == replay_topology_traj
+    ), 'Energy term residue groups diverged during replayed trajectory'
