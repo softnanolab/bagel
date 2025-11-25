@@ -261,12 +261,7 @@ class Canonical(MutationProtocol):
 
         for _ in range(self.n_mutations):
             chain = self.choose_chain(mutated_system)
-            chain_id = chain.chain_ID
-
-            # Capture mutation details before applying
-            # Use mutate_random_residue to perform mutation and get Mutation object
-            mutation = mutate_random_residue(chain, mutation_bias=self.mutation_bias, exclude_self=self.exclude_self)
-            mutations.append(mutation)
+            mutations.append(self.mutate_random_residue(chain))
         mutated_system.reset()  # Reset the system so it knows it must recalculate fold and energy
         mutation_record = MutationRecord(mutations=mutations)
         return mutated_system, mutation_record
