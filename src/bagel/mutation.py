@@ -13,9 +13,8 @@ from .chain import Chain
 from .system import System
 from .constants import mutation_bias_no_cystein
 from dataclasses import dataclass, field
-from typing import Dict, Tuple, Optional
+from typing import Dict, Optional
 from abc import ABC, abstractmethod
-from .oracles.base import OraclesResultDict
 import logging
 
 logger = logging.getLogger(__name__)

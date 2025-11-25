@@ -8,7 +8,6 @@ criteria.
 
 import importlib
 import os
-from types import ModuleType
 from typing import Any
 
 from .utils import get_version_from_pyproject, resolve_and_set_model_dir
