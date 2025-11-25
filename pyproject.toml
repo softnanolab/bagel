@@ -1,6 +1,6 @@
 [project]
 name = "biobagel"
-version = "0.1.8"
+version = "0.1.9"
 authors = [
   {name = "Jakub Lála", email = "jakublala@gmail.com"},
   {name = "Ayham Al-Saffar", email = "ayham.saffar@gmail.com"},
@@ -12,7 +12,7 @@ license = "MIT"
 license_files = "LICENSE"
 keywords = ["protein", "protein design", "optimization", "monte carlo", "sampling", "energy landscape"]
 
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 dependencies = [
     "biotite>=1.0.1",
     "boileroom==0.2.1",
@@ -30,6 +30,7 @@ dev = [
     "pytest-xdist>=3.6.1",
     "pytest-cov>=6.0.0",
     "pytest-repeat>=0.9.4",
+    "python-dotenv>=1.2.1",
     "ruff>=0.8.6",
     "sphinx>=8.1.3",
     "sphinx-rtd-theme>=1.3.0",
@@ -52,7 +53,7 @@ files = ["**/src/bagel/*.py"] #selects files checked during mypy call, but does 
 explicit_package_bases = true #allows giving directories different mypy settings
 
 [[tool.mypy.overrides]]
-module = ["biotite.*", "pytest.*", "pandas.*", "bagel.*"] #libraries that dont have type stubs
+module = ["biotite.*", "pytest.*", "pandas.*", "bagel.*", "dotenv"] #libraries that dont have type stubs
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

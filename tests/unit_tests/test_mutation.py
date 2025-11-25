@@ -3,14 +3,34 @@ import numpy as np
 import bagel as bg
 
 
+def _energy_term_topology(
+    system: bg.System,
+) -> dict[str, dict[str, tuple[tuple[tuple[str, ...], tuple[int, ...]], ...]]]:
+    """
+    Helper used to compare how energy terms track residues across systems.
+    Returns a nested mapping: state -> energy term -> ordered residue groups.
+    """
+    topology: dict[str, dict[str, tuple[tuple[tuple[str, ...], tuple[int, ...]], ...]]] = {}
+    for state in system.states:
+        term_mapping: dict[str, tuple[tuple[tuple[str, ...], tuple[int, ...]], ...]] = {}
+        for term in state.energy_terms:
+            residue_groups = []
+            for chain_ids, residue_indices in term.residue_groups:
+                residue_groups.append((tuple(chain_ids.tolist()), tuple(residue_indices.tolist())))
+            term_mapping[term.name] = tuple(residue_groups)
+        topology[state.name] = term_mapping
+    return topology
+
+
 @patch.object(bg.System, 'get_total_energy')  # prevents unnecessary folding
 def test_GrandCanonical_MutationProtocol_one_step_method_gives_correct_output_for_addition_move(
     mocked_calculate_method: Mock,
     energies_system: bg.System,
 ) -> None:
     mutator = bg.mutation.GrandCanonical(move_probabilities={'substitution': 0.0, 'addition': 1.0, 'removal': 0.0})
-    mutated_system, _ = mutator.one_step(system=energies_system, old_system=energies_system.__copy__())
-    assert mocked_calculate_method.called, 'mutator did not recalculate structure and energies.'
+    mutated_system, mutation_record = mutator.one_step(system=energies_system)
+    assert isinstance(mutation_record, bg.mutation.MutationRecord), 'mutator did not return MutationRecord'
+    assert len(mutation_record.mutations) > 0, 'mutation record should contain mutations'
     #! The following check is ACTUALLY correct, because the residue MUST BE ADDED AT LEAST IN ONE STATE (as checked by "any")
     assert any([len(state.chains[0].residues) == 6 for state in mutated_system.states]), AssertionError(
         f'residue not added {[len(state.chains[0].residues) == 6 for state in mutated_system.states]}'
@@ -30,8 +50,9 @@ def test_GrandCanonical_MutationProtocol_one_step_method_gives_correct_output_fo
     energies_system: bg.System,
 ) -> None:
     mutator = bg.mutation.GrandCanonical(move_probabilities={'substitution': 0.0, 'addition': 0.0, 'removal': 1.0})
-    mutated_system, _ = mutator.one_step(system=energies_system, old_system=energies_system.__copy__())
-    assert mocked_calculate_method.called, 'mutator did not recalculate structure and energies.'
+    mutated_system, mutation_record = mutator.one_step(system=energies_system)
+    assert isinstance(mutation_record, bg.mutation.MutationRecord), 'mutator did not return MutationRecord'
+    assert len(mutation_record.mutations) > 0, 'mutation record should contain mutations'
     assert any([len(state.chains[0].residues) == 4 for state in mutated_system.states]), AssertionError(
         f'residue not removed {mutated_system.states[0].chains[0].residues}'
     )
@@ -55,8 +76,12 @@ def test_GrandCanonical_MutationProtocol_does_not_remove_all_residues_in_chain(
     )
     single_residue_system = bg.System(states=[state])
     mutator = bg.mutation.GrandCanonical(move_probabilities={'substitution': 0.0, 'addition': 0.0, 'removal': 1.0})
-    mutated_system, _ = mutator.one_step(system=single_residue_system, old_system=single_residue_system.__copy__())
+    mutated_system, mutation_record = mutator.one_step(system=single_residue_system)
     assert len(mutated_system.states[0].chains[0].residues) > 0
+    # Check that removal was skipped
+    assert any(m.move_type is None for m in mutation_record.mutations), (
+        'removal should be skipped when chain.length == 1'
+    )
 
 
 def test_mutation_protocol_resets_system_total_energy(
@@ -72,8 +97,7 @@ def test_mutation_protocol_resets_system_total_energy(
         assert state._oracles_result is not None, 'system oracles result is None'
         assert len(state._oracles_result) == 1, 'system oracles result is not correct'
 
-    mutator = bg.mutation.Canonical()
-    mutator.reset_system(system)
+    system.reset()
     assert system.total_energy is None, 'system total energy not reset'
 
     for state in system.states:
@@ -123,3 +147,57 @@ def test_mutate_random_residue_includes_self_at_expected_rate_when_flag_false() 
     expected = 1.0 / 19.0
     # Loose tolerance to avoid flakiness but still meaningful
     assert abs(observed - expected) < 0.05, f'self-substitution rate {observed} deviates from expected {expected}'
+
+
+@patch.object(bg.System, 'get_total_energy')  # prevents unnecessary folding
+def test_grand_canonical_replay_matches_sequences_and_topology(
+    mocked_calculate_method: Mock,
+    energies_system: bg.System,
+) -> None:
+    """Run a longer GC trajectory and ensure replay reproduces sequences and energy topology."""
+    np.random.seed(1234)
+    steps = 25
+    mutator = bg.mutation.GrandCanonical(
+        n_mutations=1, move_probabilities={'substitution': 0.4, 'addition': 0.3, 'removal': 0.3}
+    )
+
+    def capture_state(system: bg.System) -> tuple[list[list[str]], dict[str, dict[str, tuple]]]:
+        sequences = [[chain.sequence for chain in state.chains] for state in system.states]
+        topology = _energy_term_topology(system)
+        return sequences, topology
+
+    current_system = energies_system.__copy__()
+    mutation_records: list[bg.mutation.MutationRecord] = []
+    sequence_trajectory: list[list[list[str]]] = []
+    topology_trajectory: list[dict[str, dict[str, tuple]]] = []
+
+    sequences, topology = capture_state(current_system)
+    sequence_trajectory.append(sequences)
+    topology_trajectory.append(topology)
+
+    for _ in range(steps):
+        mutated_system, mutation_record = mutator.one_step(system=current_system)
+        mutation_records.append(mutation_record)
+        current_system = mutated_system
+        sequences, topology = capture_state(current_system)
+        sequence_trajectory.append(sequences)
+        topology_trajectory.append(topology)
+
+    assert len(mutation_records) == steps, 'Did not record the expected number of mutation steps'
+
+    replayed_system = energies_system.__copy__()
+    replay_sequence_traj: list[list[list[str]]] = []
+    replay_topology_traj: list[dict[str, dict[str, tuple]]] = []
+
+    sequences, topology = capture_state(replayed_system)
+    replay_sequence_traj.append(sequences)
+    replay_topology_traj.append(topology)
+
+    for mutation_record in mutation_records:
+        replayed_system = mutator.replay(replayed_system, mutation_record)
+        sequences, topology = capture_state(replayed_system)
+        replay_sequence_traj.append(sequences)
+        replay_topology_traj.append(topology)
+
+    assert sequence_trajectory == replay_sequence_traj, 'Replayed sequences diverged from recorded trajectory'
+    assert topology_trajectory == replay_topology_traj, 'Energy term residue groups diverged during replayed trajectory'

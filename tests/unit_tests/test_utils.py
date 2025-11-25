@@ -43,6 +43,7 @@ def test_get_atomarray_in_residue_range(pdb_path):
     assert np.array_equal(unique_residue_ids, expected_residue_ids)
     assert np.array_equal(unique_residue_names, expected_residue_names)
 
+
 def test_get_reconciled_sequence():
     """Test the get_reconciled_sequence function with various scenarios."""
 
@@ -69,7 +70,7 @@ def test_get_reconciled_sequence():
     result, added = get_reconciled_sequence(atoms, fasta_seq)
     assert result == 'AGMFW', f"Expected 'AGMFW', got '{result}'"
     assert added == False, 'No residues should be added'
-    
+
     # Test 2: Missing residues in AtomArray - should use FASTA to fill gaps
     res_ids = [1, 2, 4, 5]  # Missing residue 3
     res_names = ['ALA', 'GLY', 'PHE', 'TRP']
@@ -78,7 +79,7 @@ def test_get_reconciled_sequence():
     result, added = get_reconciled_sequence(atoms, fasta_seq)
     assert result == 'AGMFW', f"Expected 'AGMFW', got '{result}'"
     assert added == True, 'Residues should be added'
-    
+
     # Test 3: Mismatch between PDB and FASTA - PDB should be preferred
     res_ids = [1, 2, 3]
     res_names = ['ALA', 'GLY', 'MET']  # PDB has MET
@@ -87,7 +88,7 @@ def test_get_reconciled_sequence():
     result, added = get_reconciled_sequence(atoms, fasta_seq)
     assert result == 'AGM', f"Expected 'AGM' (PDB preferred), got '{result}'"
     assert added == False, 'No residues should be added'
-    
+
     # Test 4: Multiple missing residues
     res_ids = [1, 3, 5]  # Missing 2 and 4
     res_names = ['ALA', 'MET', 'TRP']
@@ -96,7 +97,7 @@ def test_get_reconciled_sequence():
     result, added = get_reconciled_sequence(atoms, fasta_seq)
     assert result == 'AGMFW', f"Expected 'AGMFW', got '{result}'"
     assert added == True, 'Residues should be added'
-    
+
     # Test 5: Missing residues in the middle and at the end
     res_ids = [1, 2, 5]  # Missing 3 and 4, but has 5 so max_res_id is 5
     res_names = ['ALA', 'GLY', 'TRP']
@@ -105,7 +106,7 @@ def test_get_reconciled_sequence():
     result, added = get_reconciled_sequence(atoms, fasta_seq)
     assert result == 'AGMFW', f"Expected 'AGMFW', got '{result}'"
     assert added == True, 'Residues should be added'
-    
+
     # Test 6: No FASTA sequence provided - should use random for missing residues
     res_ids = [1, 3, 5]
     res_names = ['ALA', 'MET', 'TRP']
