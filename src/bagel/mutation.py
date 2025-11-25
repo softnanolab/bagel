@@ -264,38 +264,9 @@ class Canonical(MutationProtocol):
             chain_id = chain.chain_ID
 
             # Capture mutation details before applying
-            index = np.random.choice(chain.mutable_residue_indexes)
-            old_amino_acid = chain.residues[index].name
-
-            # Choose a new aminoacid
-            aa_keys = list(self.mutation_bias.keys())
-            probs = np.array([self.mutation_bias[a] for a in aa_keys], dtype=float)
-            if self.exclude_self:  # exclude the current amino acid from the probability distribution
-                mask = np.array([a != old_amino_acid for a in aa_keys], dtype=bool)
-                probs = probs * mask
-                total = probs.sum()
-                if total <= 0:
-                    raise ValueError(
-                        f'No valid mutation targets after excluding current AA={old_amino_acid}. '
-                        'Check mutation_bias provides non-zero probability to at least one alternative.'
-                    )
-                probs = probs / total
-            new_amino_acid = np.random.choice(aa_keys, p=probs)
-
-            # Apply the mutation
-            chain.mutate_residue(index=index, amino_acid=new_amino_acid)
-
-            # Record the mutation
-            mutations.append(
-                Mutation(
-                    chain_id=chain_id,
-                    move_type='substitution',
-                    residue_index=index,
-                    old_amino_acid=old_amino_acid,
-                    new_amino_acid=new_amino_acid,
-                )
-            )
-
+            # Use mutate_random_residue to perform mutation and get Mutation object
+            mutation = mutate_random_residue(chain, mutation_bias=self.mutation_bias, exclude_self=self.exclude_self)
+            mutations.append(mutation)
         mutated_system.reset()  # Reset the system so it knows it must recalculate fold and energy
         mutation_record = MutationRecord(mutations=mutations)
         return mutated_system, mutation_record
