@@ -1,0 +1,4 @@
+step,temperature,accept
+1,1.0,True
+2,0.8,False
+3,0.6,True
