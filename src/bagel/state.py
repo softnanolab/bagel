@@ -153,9 +153,9 @@ class State:
 
         Returns
         -------
-        int
+        int | None
             Index of the parent residue
-            None if the parent residue is not found in the chain
+            None if the chain is not found in this state
 
         """
 
