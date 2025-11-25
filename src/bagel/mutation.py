@@ -172,7 +172,6 @@ class MutationProtocol(ABC):
 
             if chain is None:
                 raise ValueError(f'Chain with ID {mutation.chain_id} not found in system')
-            assert chain is not None  # Type narrowing after None check
 
             if mutation.move_type is None:
                 # Skip this mutation (e.g., removal was skipped because chain.length == 1)

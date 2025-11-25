@@ -39,7 +39,7 @@ _LAZY_MODULES = {
 def __getattr__(name: str) -> Any:
     """
     Lazily import attributes and modules on first access.
-    
+
     This reduces initial import time by deferring heavy imports until needed.
     This is especially useful for the analyzer module, which is not used in the main package.
     """
