@@ -174,13 +174,16 @@ class State:
         # Determine parent residue: use explicit parent_residue_index if provided, otherwise choose randomly
         if parent_residue_index is not None:
             # Deterministic Path: use the provided parent_residue_index
-            if parent_residue_index not in [residue.index for residue in chain.residues]:
+            # Safely find the index, avoiding any non-contiguous indices, which should not happen however.
+            parent_residue = next(
+                (residue for residue in chain.residues if residue.index == parent_residue_index),
+                None,
+            )
+            if parent_residue is None:
                 raise ValueError(
                     f'Parent residue with index {parent_residue_index} not found in chain {chain_ID}. '
                     f'Available indices: {[r.index for r in chain.residues]}'
                 )
-
-            parent_residue = chain.residues[parent_residue_index]
 
             assert parent_residue.chain_ID == chain_ID, (
                 'The parent residue is not in the same chain, should not happen!'

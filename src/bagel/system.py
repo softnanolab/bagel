@@ -42,9 +42,14 @@ class System:
         return self.total_energy
 
     def reset(self) -> None:
-        """Clear energy caches so system knows it must recalculate."""
+        """
+        Clear energy caches so system knows it must recalculate.
+
+        TODO: I do not like the system-design pattern here that much, caching should be done a bit safer.
+        """
         self.total_energy = None
         for state in self.states:
+            state._energy = None
             state._energy_terms_value = {}
             state._oracles_result = OraclesResultDict()
 
