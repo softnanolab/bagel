@@ -319,7 +319,7 @@ class MonteCarloMinimizer(Minimizer):
 
             # Check for early stopping
             if should_stop:
-                logger.info(f'Early stopping triggered at step {step + 1}')
+                logger.info(f'Early stopping triggered at step {step}')
                 break
 
         # Create final callback context and call on_optimization_end
