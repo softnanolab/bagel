@@ -17,7 +17,7 @@ if os.environ.get('BAGEL_SKIP_MODEL_SETUP') != '1':
 
 __version__ = get_version_from_pyproject()
 
-__all__ = ['Chain', 'Residue', 'State', 'System', 'constants', 'energies', 'minimizer', 'mutation', 'oracles']
+__all__ = ['Chain', 'Residue', 'State', 'System', 'constants', 'energies', 'minimizer', 'mutation', 'oracles', 'callbacks']
 
 _LAZY_ATTRS = {
     'Chain': '.chain',
@@ -32,6 +32,7 @@ _LAZY_MODULES = {
     'minimizer': '.minimizer',
     'mutation': '.mutation',
     'oracles': '.oracles',
+    'callbacks': '.callbacks',
 }
 
 

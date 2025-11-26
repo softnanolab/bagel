@@ -17,6 +17,12 @@ import csv
 import logging
 import datetime as dt
 
+# Import callbacks at the end to avoid circular imports
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .callbacks import Callback, CallbackManager, CallbackContext
+
 logger = logging.getLogger(__name__)
 
 time_stamp: Callable[[], str] = lambda: dt.datetime.now().strftime('%y%m%d_%H%M%S')
@@ -26,12 +32,21 @@ class Minimizer(ABC):
     """Base class for energy minimization logic."""
 
     def __init__(
-        self, mutator: MutationProtocol, experiment_name: str, log_frequency: int, log_path: pl.Path | str | None
+        self,
+        mutator: MutationProtocol,
+        experiment_name: str,
+        log_frequency: int,
+        log_path: pl.Path | str | None,
+        callbacks: list['Callback'] | None = None,
     ) -> None:
         self.mutator = mutator
         self.experiment_name = experiment_name
         self.log_frequency = log_frequency
         self.log_path: pl.Path = self.initialise_log_path(log_path)
+
+        # Initialize callback manager
+        from .callbacks import CallbackManager
+        self.callback_manager = CallbackManager(callbacks)
 
         logger.debug(f'Logging path: {self.log_path}')
         logger.debug(f'Experiment name: {self.experiment_name}')
@@ -77,7 +92,11 @@ class Minimizer(ABC):
         self.log_step(-1, system, best_system, False)
 
     def log_step(self, step: int, system: System, best_system: System, new_best: bool, **kwargs: Any) -> None:
-        """Logs step information."""
+        """
+        Logs step information.
+
+        TODO: Consider converting log_step to a callback for unified interface.
+        """
         real_step = step + 1
         logger.info(f'Step={real_step} - ' + ' - '.join(f'{k}={v}' for k, v in kwargs.items()))
         assert isinstance(self.log_path, pl.Path), f'log_path must be a Path, not {type(self.log_path)}'
@@ -117,6 +136,7 @@ class MonteCarloMinimizer(Minimizer):
         log_frequency: int = 100,
         preserve_best_system_every_n_steps: int | None = None,
         log_path: pl.Path | str | None = None,
+        callbacks: list['Callback'] | None = None,
     ) -> None:
         if experiment_name is None:
             experiment_name = f'mc_minimizer_{time_stamp()}'
@@ -138,7 +158,11 @@ class MonteCarloMinimizer(Minimizer):
         self.preserve_best_system_every_n_steps = preserve_best_system_every_n_steps
         self.acceptance_criterion = self._get_acceptance_criterion(acceptance_criterion)
         super().__init__(
-            mutator=mutator, experiment_name=experiment_name, log_frequency=log_frequency, log_path=log_path
+            mutator=mutator,
+            experiment_name=experiment_name,
+            log_frequency=log_frequency,
+            log_path=log_path,
+            callbacks=callbacks,
         )
 
     def _get_acceptance_criterion(self, name: str) -> Callable[[float, float], float]:
@@ -165,20 +189,81 @@ class MonteCarloMinimizer(Minimizer):
         """Hook called before each Monte Carlo step."""
         return system
 
-    def _after_step(self, system: System, best_system: System, step: int) -> System:
-        """Hook called after each Monte Carlo step."""
+    def _after_step(
+        self,
+        system: System,
+        best_system: System,
+        step: int,
+        new_best: bool,
+        accept: bool,
+        **kwargs: Any,
+    ) -> tuple[System, bool]:
+        """
+        Hook called after each Monte Carlo step.
+
+        This is the final post-step processing point. It:
+        1. Runs existing preserve_best_system logic (if applicable)
+        2. Extracts metrics and creates CallbackContext
+        3. Executes all callbacks
+        4. Calls log_step as default behavior
+        5. Returns system and early stopping flag
+
+        Parameters
+        ----------
+        system : System
+            Current system state after the step.
+        best_system : System
+            Best system found so far.
+        step : int
+            Current step number (0-indexed).
+        new_best : bool
+            Whether this step found a new best system.
+        accept : bool
+            Whether the mutation was accepted.
+        **kwargs : Any
+            Additional step-specific keyword arguments (e.g., temperature).
+
+        Returns
+        -------
+        tuple[System, bool]
+            Tuple of (system, should_stop) where should_stop indicates if
+            optimization should stop early.
+        """
+        # Run existing preserve_best_system logic first
         if self.preserve_best_system_every_n_steps is not None:
             if (step + 1) % self.preserve_best_system_every_n_steps == 0:
                 logger.debug(f'Starting new cycle with best system from previous cycle')
-                return best_system.__copy__()
-        return system
+                system = best_system.__copy__()
+
+        # Extract metrics and create callback context
+        from .callbacks import CallbackContext
+
+        metrics = self.callback_manager._extract_metrics(system, best_system)
+        step_kwargs = {'accept': accept, **kwargs}
+        context = CallbackContext(
+            step=step,
+            system=system,
+            best_system=best_system,
+            new_best=new_best,
+            metrics=metrics,
+            minimizer=self,
+            step_kwargs=step_kwargs,
+        )
+
+        # Execute callbacks
+        should_stop = self.callback_manager.on_step_end(context)
+
+        # Call log_step as default behavior
+        self.log_step(step, system, best_system, new_best, **step_kwargs)
+
+        return system, should_stop
 
     def minimize_one_step(self, step: int, system: System) -> tuple[System, bool]:
         """Perform one Monte Carlo step."""
         mutated_system, _ = self.mutator.one_step(system.__copy__())
         delta_energy = mutated_system.get_total_energy() - system.get_total_energy()
 
-        acceptance_probability = self.acceptance_criterion(delta_energy, self.temperature_schedule[step])
+        acceptance_probability = self.acceptance_criterion(delta_energy, self.temperature_schedule[step - 1])
         logger.debug(f'{delta_energy=}, {acceptance_probability=}')
 
         if acceptance_probability > np.random.uniform(low=0.0, high=1.0):
@@ -194,23 +279,60 @@ class MonteCarloMinimizer(Minimizer):
             'Cannot start without lowest energy system having a calculated energy'
         )
 
+        # Create initial callback context and call on_optimization_start
+        from .callbacks import CallbackContext
+
+        initial_metrics = self.callback_manager._extract_metrics(system, best_system)
+        initial_context = CallbackContext(
+            step=0,
+            system=system,
+            best_system=best_system,
+            new_best=False,
+            metrics=initial_metrics,
+            minimizer=self,
+            step_kwargs={},
+        )
+        self.callback_manager.on_optimization_start(initial_context)
+
         self.log_initial_system(system, best_system)
 
-        for step in range(self.n_steps):
-            new_best = False
+        for step in range(1, self.n_steps + 1):
             system = self._before_step(system, step)
             system, accept = self.minimize_one_step(step, system)
-            system = self._after_step(system, best_system, step)
 
             assert system.total_energy is not None, 'Cannot evolve system if current energy not available'
 
+            new_best = False
             if system.total_energy < best_system.total_energy:
                 new_best = True
                 best_system = system.__copy__()
 
-            self.log_step(
-                step, system, best_system, new_best, temperature=self.temperature_schedule[step], accept=accept
+            system, should_stop = self._after_step(
+                system,
+                best_system,
+                step,
+                new_best,
+                accept,
+                temperature=self.temperature_schedule[step - 1],
             )
+
+            # Check for early stopping
+            if should_stop:
+                logger.info(f'Early stopping triggered at step {step + 1}')
+                break
+
+        # Create final callback context and call on_optimization_end
+        final_metrics = self.callback_manager._extract_metrics(best_system, best_system)
+        final_context = CallbackContext(
+            step=step,
+            system=best_system,
+            best_system=best_system,
+            new_best=False,
+            metrics=final_metrics,
+            minimizer=self,
+            step_kwargs={},
+        )
+        self.callback_manager.on_optimization_end(final_context)
 
         assert best_system.total_energy is not None, f'Best energy {best_system.total_energy} cannot be None!'
         return best_system
@@ -230,6 +352,7 @@ class SimulatedAnnealing(MonteCarloMinimizer):
         log_frequency: int = 100,
         preserve_best_system_every_n_steps: int | None = None,
         log_path: pl.Path | str | None = None,
+        callbacks: list['Callback'] | None = None,
     ) -> None:
         if experiment_name is None:
             experiment_name = f'simulated_annealing_{time_stamp()}'
@@ -242,6 +365,7 @@ class SimulatedAnnealing(MonteCarloMinimizer):
             log_frequency=log_frequency,
             preserve_best_system_every_n_steps=preserve_best_system_every_n_steps,
             log_path=log_path,
+            callbacks=callbacks,
         )
 
         self.initial_temperature = initial_temperature
@@ -267,6 +391,7 @@ class SimulatedTempering(MonteCarloMinimizer):
         log_frequency: int = 100,
         preserve_best_system_every_n_steps: int | None = None,
         log_path: pl.Path | str | None = None,
+        callbacks: list['Callback'] | None = None,
     ) -> None:
         if experiment_name is None:
             experiment_name = f'simulated_tempering_{time_stamp()}'
@@ -280,6 +405,7 @@ class SimulatedTempering(MonteCarloMinimizer):
             log_frequency=log_frequency,
             preserve_best_system_every_n_steps=preserve_best_system_every_n_steps,
             log_path=log_path,
+            callbacks=callbacks,
         )
 
         self.high_temperature = high_temperature
