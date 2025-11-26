@@ -169,6 +169,8 @@ class CallbackManager:
             best_system.get_total_energy()
 
         # System-level energies
+        assert system.total_energy is not None, 'System energy must be calculated'
+        assert best_system.total_energy is not None, 'Best system energy must be calculated'
         metrics['system_energy'] = system.total_energy
         metrics['best_system_energy'] = best_system.total_energy
 
@@ -202,7 +204,9 @@ class CallbackManager:
             try:
                 callback.on_optimization_start(context)
             except Exception as e:
-                logger.error(f'Error in callback {callback.__class__.__name__}.on_optimization_start: {e}', exc_info=True)
+                logger.error(
+                    f'Error in callback {callback.__class__.__name__}.on_optimization_start: {e}', exc_info=True
+                )
 
     def on_step_end(self, context: CallbackContext) -> bool:
         """
@@ -277,9 +281,7 @@ class EarlyStopping(Callback):
     ... )
     """
 
-    def __init__(
-        self, monitor: str, patience: int, min_delta: float = 0.0, mode: str = 'min'
-    ) -> None:
+    def __init__(self, monitor: str, patience: int, min_delta: float = 0.0, mode: str = 'min') -> None:
         if mode not in ('min', 'max'):
             raise ValueError(f'mode must be "min" or "max", got {mode}')
 
@@ -365,9 +367,7 @@ class WandBLogger(Callback):
     ... )
     """
 
-    def __init__(
-        self, project: str, name: str | None = None, config: dict[str, Any] | None = None
-    ) -> None:
+    def __init__(self, project: str, name: str | None = None, config: dict[str, Any] | None = None) -> None:
         self.project = project
         self.name = name
         self.config = config if config is not None else {}
@@ -395,4 +395,3 @@ class WandBLogger(Callback):
         In the full implementation, this would call wandb.finish().
         """
         logger.debug(f'WandBLogger: Would finish run')
-

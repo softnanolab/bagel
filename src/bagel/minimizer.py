@@ -46,6 +46,7 @@ class Minimizer(ABC):
 
         # Initialize callback manager
         from .callbacks import CallbackManager
+
         self.callback_manager = CallbackManager(callbacks)
 
         logger.debug(f'Logging path: {self.log_path}')
