@@ -12,6 +12,7 @@ from .chain import Chain, Residue
 from dataclasses import dataclass
 
 from .oracles.folding import FoldingOracle, FoldingResult
+from .oracles.base import OraclesResultDict
 from .constants import aa_dict
 from copy import deepcopy
 import pathlib as pl
@@ -39,6 +40,18 @@ class System:
         if self.total_energy is None:
             self.total_energy = np.sum([state.get_energy() for state in self.states])
         return self.total_energy
+
+    def reset(self) -> None:
+        """
+        Clear energy caches so system knows it must recalculate.
+
+        TODO: I do not like the system-design pattern here that much, caching should be done a bit safer.
+        """
+        self.total_energy = None
+        for state in self.states:
+            state._energy = None
+            state._energy_terms_value = {}
+            state._oracles_result = OraclesResultDict()
 
     def dump_logs(self, step: int, path: pl.Path, save_structure: bool = True) -> None:
         r"""

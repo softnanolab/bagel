@@ -51,6 +51,10 @@ uv run pytest --oracles skip
 # --oracles local   # Use local GPU-based execution
 ```
 
+When using `--oracles local`, the `MODEL_DIR` environment variable must be set. You can either:
+- Set it in a `.env` file (copy `.env.example` to `.env` and update the path), or
+- Set it as an environment variable. If not set, it will default to an XDG-compliant location (`~/.cache/bagel/models` or `$XDG_CACHE_HOME/bagel/models`).
+
 ## Commit Checking
 
 On commit, MyPy, Ruff, and PyTest checks are all run to ensure code quality.

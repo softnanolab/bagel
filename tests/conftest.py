@@ -552,46 +552,6 @@ def energies_system(fake_esmfold: bg.oracles.folding.ESMFold) -> bg.System:
 
 
 @pytest.fixture
-def SA_minimizer() -> bg.minimizer.SimulatedAnnealing:
-    """Returns a minimizer that skips folding and closes all files minimizer creates by end of test."""
-    with patch('desprot.minimizer.inspect.stack') as mock_inspect_function:
-        # normally points to file executed, but is unpredictable when run by pytest and so must be set manually
-        mock_inspect_function.return_value = [[1, __file__]]
-        minimizer = bg.minimizer.SimulatedAnnealing(
-            folder=None,
-            mutator=bg.mutation.Canonical(),
-            initial_temperature=0.35,
-            final_temperature=0.1,
-            n_steps=6,
-            experiment_name=str(np.random.randint(low=0, high=999_999)),
-            structure_log_frequency=2,
-        )
-    yield minimizer
-    shutil.rmtree(minimizer.log_path)
-
-
-@pytest.fixture
-def ST_minimizer() -> bg.minimizer.SimulatedTempering:
-    """Returns a minimizer that skips folding and closes all files minimizer creates by end of test."""
-    with patch('desprot.minimizer.inspect.stack') as mock_inspect_function:
-        # normally points to file executed, but is unpredictable when run by pytest and so must be set manually
-        mock_inspect_function.return_value = [[1, __file__]]
-        minimizer = bg.minimizer.SimulatedTempering(
-            folder=None,
-            mutator=bg.mutation.Canonical(),
-            high_temperature=0.1,
-            low_temperature=0.01,
-            n_steps_high=2,
-            n_steps_low=1,
-            n_cycles=2,
-            experiment_name=str(np.random.randint(low=0, high=999_999)),
-            structure_log_frequency=2,
-        )
-    yield minimizer
-    shutil.rmtree(minimizer.log_path)
-
-
-@pytest.fixture
 def monomer(base_sequence):
     residues = [bg.Residue(name=aa, chain_ID='C-A', index=i, mutable=True) for i, aa in enumerate(base_sequence)]
     return [bg.Chain(residues=residues)]

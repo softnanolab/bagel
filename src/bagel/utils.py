@@ -4,10 +4,15 @@ import os
 import tempfile
 import logging
 import numpy as np
-from typing import Optional
+from typing import Optional, Callable
 
 from biotite.structure import AtomArray
 from .constants import aa_dict
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv: Optional[Callable[..., bool]] = None  # type: ignore
 
 import biotite.database.rcsb as rcsb
 import biotite.sequence.io.fasta as fasta
@@ -142,16 +147,24 @@ def resolve_and_set_model_dir() -> pathlib.Path:
     Resolve and set the MODEL_DIR environment variable to a user-writable cache
     location following XDG conventions.
 
+    This function first attempts to load MODEL_DIR from a .env file (if python-dotenv
+    is installed), then follows the precedence below.
+
     Precedence:
-    1) Respect existing MODEL_DIR if set.
-    2) Use XDG_CACHE_HOME if defined; otherwise default to ~/.cache.
-    3) Append "bagel/models" and create the directory if it does not exist.
+    1) Load .env file if it exists (if python-dotenv is available).
+    2) Respect existing MODEL_DIR if set (from environment or .env).
+    3) Use XDG_CACHE_HOME if defined; otherwise default to ~/.cache.
+    4) Append "bagel/models" and create the directory if it does not exist.
 
     Returns
     -------
     pathlib.Path
         Absolute path to the resolved model directory.
     """
+    # Load .env file if python-dotenv is available
+    if load_dotenv is not None:
+        load_dotenv(override=True)
+
     try:
         if os.environ.get('MODEL_DIR'):
             resolved = pathlib.Path(os.environ['MODEL_DIR']).expanduser().resolve()

@@ -23,6 +23,7 @@ docs/_build
 # IDE specific
 .vscode
 .idea
+.cursor
 
 # Project specific
 data
