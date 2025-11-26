@@ -40,6 +40,9 @@ dev = [
 local = [
     "transformers>=4.49.0",
 ]
+wandb = [
+    "wandb>=0.23.0",
+]
 
 [project.urls]
 Repository = "https://github.com/softnanolab/bagel.git"

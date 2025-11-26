@@ -304,38 +304,304 @@ def test_EarlyStopping_patience(simple_system, mock_minimizer):
     assert early_stop._should_stop is True
 
 
+def test_early_stopping_with_embeddings_similarity(simple_system, mock_minimizer):
+    """Test early stopping with state-level metric (embeddings_similarity) using monkeypatching."""
+    # Monitor state-level metric: "test_state:embeddings_similarity"
+    # Use mode="max" since higher similarity is better
+    early_stop = bg.callbacks.EarlyStopping(
+        monitor='test_state:embeddings_similarity',
+        patience=3,
+        mode='max',
+        min_delta=0.01,
+    )
+
+    # Initialize
+    initial_metrics = {'test_state:embeddings_similarity': 0.5}
+    initial_context = bg.callbacks.CallbackContext(
+        step=0,
+        system=simple_system,
+        best_system=simple_system,
+        new_best=False,
+        metrics=initial_metrics,
+        minimizer=mock_minimizer,
+        step_kwargs={},
+    )
+    early_stop.on_optimization_start(initial_context)
+    early_stop.on_step_end(initial_context)
+    assert early_stop._best_value == 0.5
+    assert early_stop._steps_since_improvement == 0
+    assert early_stop._should_stop is False
+
+    # Step 1: Improve (0.5 -> 0.6)
+    metrics1 = {'test_state:embeddings_similarity': 0.6}
+    context1 = bg.callbacks.CallbackContext(
+        step=1,
+        system=simple_system,
+        best_system=simple_system,
+        new_best=False,
+        metrics=metrics1,
+        minimizer=mock_minimizer,
+        step_kwargs={},
+    )
+    early_stop.on_step_end(context1)
+    assert early_stop._best_value == 0.6
+    assert early_stop._steps_since_improvement == 0
+    assert early_stop._should_stop is False
+
+    # Step 2: Plateau (0.6 -> 0.59, not enough improvement)
+    metrics2 = {'test_state:embeddings_similarity': 0.59}
+    context2 = bg.callbacks.CallbackContext(
+        step=2,
+        system=simple_system,
+        best_system=simple_system,
+        new_best=False,
+        metrics=metrics2,
+        minimizer=mock_minimizer,
+        step_kwargs={},
+    )
+    early_stop.on_step_end(context2)
+    assert early_stop._best_value == 0.6  # Best unchanged
+    assert early_stop._steps_since_improvement == 1
+    assert early_stop._should_stop is False
+
+    # Step 3: Still plateau
+    early_stop.on_step_end(context2)
+    assert early_stop._steps_since_improvement == 2
+    assert early_stop._should_stop is False
+
+    # Step 4: Still plateau (patience exceeded)
+    early_stop.on_step_end(context2)
+    assert early_stop._steps_since_improvement == 3
+    assert early_stop._should_stop is True
+
+
+def test_early_stopping_plateau_detection(simple_system, mock_minimizer):
+    """Test that early stopping correctly detects when metric plateaus (no improvement)."""
+    early_stop = bg.callbacks.EarlyStopping(monitor='system_energy', patience=2, mode='min')
+
+    # Initialize
+    metrics0 = {'system_energy': -2.0}
+    context0 = bg.callbacks.CallbackContext(
+        step=0,
+        system=simple_system,
+        best_system=simple_system,
+        new_best=False,
+        metrics=metrics0,
+        minimizer=mock_minimizer,
+        step_kwargs={},
+    )
+    early_stop.on_optimization_start(context0)
+    early_stop.on_step_end(context0)
+    assert early_stop._best_value == -2.0
+    assert early_stop._steps_since_improvement == 0
+
+    # Simulate plateau: metric stays the same
+    plateau_metrics = {'system_energy': -1.8}  # Worse than best, so no improvement
+    plateau_context = bg.callbacks.CallbackContext(
+        step=1,
+        system=simple_system,
+        best_system=simple_system,
+        new_best=False,
+        metrics=plateau_metrics,
+        minimizer=mock_minimizer,
+        step_kwargs={},
+    )
+
+    # Step 1: No improvement
+    early_stop.on_step_end(plateau_context)
+    assert early_stop._best_value == -2.0
+    assert early_stop._steps_since_improvement == 1
+    assert early_stop._should_stop is False
+
+    # Step 2: Still no improvement (patience exceeded)
+    early_stop.on_step_end(plateau_context)
+    assert early_stop._best_value == -2.0
+    assert early_stop._steps_since_improvement == 2
+    assert early_stop._should_stop is True
+
+
+def test_early_stopping_reset_on_improvement(simple_system, mock_minimizer):
+    """Test that patience resets when metric improves after a plateau."""
+    early_stop = bg.callbacks.EarlyStopping(monitor='system_energy', patience=3, mode='min')
+
+    # Initialize
+    metrics0 = {'system_energy': -2.0}
+    context0 = bg.callbacks.CallbackContext(
+        step=0,
+        system=simple_system,
+        best_system=simple_system,
+        new_best=False,
+        metrics=metrics0,
+        minimizer=mock_minimizer,
+        step_kwargs={},
+    )
+    early_stop.on_optimization_start(context0)
+    early_stop.on_step_end(context0)
+    assert early_stop._best_value == -2.0
+    assert early_stop._steps_since_improvement == 0
+
+    # Step 1-2: Plateau (no improvement)
+    plateau_metrics = {'system_energy': -1.5}  # Worse than best
+    plateau_context = bg.callbacks.CallbackContext(
+        step=1,
+        system=simple_system,
+        best_system=simple_system,
+        new_best=False,
+        metrics=plateau_metrics,
+        minimizer=mock_minimizer,
+        step_kwargs={},
+    )
+    early_stop.on_step_end(plateau_context)
+    assert early_stop._steps_since_improvement == 1
+    early_stop.on_step_end(plateau_context)
+    assert early_stop._steps_since_improvement == 2
+    assert early_stop._should_stop is False
+
+    # Step 3: Improvement! (should reset patience)
+    improved_metrics = {'system_energy': -2.5}  # Better than best
+    improved_context = bg.callbacks.CallbackContext(
+        step=3,
+        system=simple_system,
+        best_system=simple_system,
+        new_best=False,
+        metrics=improved_metrics,
+        minimizer=mock_minimizer,
+        step_kwargs={},
+    )
+    early_stop.on_step_end(improved_context)
+    assert early_stop._best_value == -2.5  # Updated best
+    assert early_stop._steps_since_improvement == 0  # Reset!
+    assert early_stop._should_stop is False
+
+    # Step 4-5: Plateau again
+    early_stop.on_step_end(plateau_context)
+    assert early_stop._steps_since_improvement == 1
+    early_stop.on_step_end(plateau_context)
+    assert early_stop._steps_since_improvement == 2
+    assert early_stop._should_stop is False
+
+    # Step 6: Still plateau (patience exceeded)
+    early_stop.on_step_end(plateau_context)
+    assert early_stop._steps_since_improvement == 3
+    assert early_stop._should_stop is True
+
+
 # ============================================================================
 # Test WandBLogger
 # ============================================================================
 
 
-def test_WandBLogger_initialization():
+def test_WandBLogger_initialization(monkeypatch):
     """Test WandBLogger initialization."""
-    wandb_logger = bg.callbacks.WandBLogger(project='test-project')
-    assert wandb_logger.project == 'test-project'
-    assert wandb_logger.name is None
+    # Unset WANDB_PROJECT to test constructor project
+    monkeypatch.delenv('WANDB_PROJECT', raising=False)
+    wandb_logger = bg.callbacks.WandBLogger(project='bagel-test')
+    assert wandb_logger.project == 'bagel-test'
     assert wandb_logger.config == {}
 
 
-def test_WandBLogger_dummy_methods(simple_system, mock_minimizer):
-    """Test that WandBLogger dummy methods don't crash."""
-    wandb_logger = bg.callbacks.WandBLogger(project='test-project', name='test-run')
+def test_WandBLogger_with_wandb_mocked(simple_system, mock_minimizer, monkeypatch):
+    """Test WandBLogger when wandb is installed and mocked."""
+    from unittest.mock import MagicMock, patch
 
-    metrics = {'system_energy': -1.5}
-    context = bg.callbacks.CallbackContext(
-        step=0,
-        system=simple_system,
-        best_system=simple_system,
-        new_best=False,
-        metrics=metrics,
-        minimizer=mock_minimizer,
-        step_kwargs={},
-    )
+    # Unset WANDB_PROJECT to test constructor project
+    monkeypatch.delenv('WANDB_PROJECT', raising=False)
 
-    # Should not raise exceptions
-    wandb_logger.on_optimization_start(context)
-    wandb_logger.on_step_end(context)
-    wandb_logger.on_optimization_end(context)
+    # Mock wandb module
+    mock_wandb = MagicMock()
+    mock_run = MagicMock()
+    mock_run.name = 'test-run-123'
+    mock_wandb.init.return_value = mock_run
+
+    # Patch wandb in the callbacks module
+    with patch('bagel.callbacks.wandb', mock_wandb):
+        wandb_logger = bg.callbacks.WandBLogger(project='bagel-test', config={'n_steps': 100})
+
+        metrics = {'system_energy': -1.5, 'best_system_energy': -1.5}
+        context = bg.callbacks.CallbackContext(
+            step=0,
+            system=simple_system,
+            best_system=simple_system,
+            new_best=False,
+            metrics=metrics,
+            minimizer=mock_minimizer,
+            step_kwargs={},
+        )
+
+        # Test initialization
+        wandb_logger.on_optimization_start(context)
+        mock_wandb.init.assert_called_once()
+        call_kwargs = mock_wandb.init.call_args[1]
+        assert call_kwargs['project'] == 'bagel-test'
+        # Should use minimizer's experiment_name
+        assert call_kwargs['name'] == mock_minimizer.experiment_name
+        assert call_kwargs['config']['n_steps'] == 100
+
+        # Test logging
+        wandb_logger.on_step_end(context)
+        mock_wandb.log.assert_called_once_with(metrics, step=0)
+
+        # Test finish
+        wandb_logger.on_optimization_end(context)
+        mock_wandb.finish.assert_called_once()
+
+
+def test_WandBLogger_env_var_override(simple_system, mock_minimizer, monkeypatch):
+    """Test that WANDB_PROJECT env var overrides constructor project."""
+    from unittest.mock import MagicMock, patch
+
+    mock_wandb = MagicMock()
+    mock_run = MagicMock()
+    mock_wandb.init.return_value = mock_run
+
+    # Set environment variable
+    monkeypatch.setenv('WANDB_PROJECT', 'env-project')
+
+    with patch('bagel.callbacks.wandb', mock_wandb):
+        wandb_logger = bg.callbacks.WandBLogger(project='constructor-project')
+
+        context = bg.callbacks.CallbackContext(
+            step=0,
+            system=simple_system,
+            best_system=simple_system,
+            new_best=False,
+            metrics={},
+            minimizer=mock_minimizer,
+            step_kwargs={},
+        )
+
+        wandb_logger.on_optimization_start(context)
+        call_kwargs = mock_wandb.init.call_args[1]
+        assert call_kwargs['project'] == 'env-project'  # Should use env var
+
+
+def test_WandBLogger_init_failure(simple_system, mock_minimizer, monkeypatch):
+    """Test WandBLogger handles wandb.init() failure gracefully."""
+    from unittest.mock import MagicMock, patch
+
+    mock_wandb = MagicMock()
+    mock_wandb.init.side_effect = Exception('API key invalid')
+
+    with patch('bagel.callbacks.wandb', mock_wandb):
+        wandb_logger = bg.callbacks.WandBLogger(project='bagel-test')
+
+        context = bg.callbacks.CallbackContext(
+            step=0,
+            system=simple_system,
+            best_system=simple_system,
+            new_best=False,
+            metrics={'system_energy': -1.5},
+            minimizer=mock_minimizer,
+            step_kwargs={},
+        )
+
+        # Should not crash
+        wandb_logger.on_optimization_start(context)
+        assert wandb_logger._run is None
+
+        # Subsequent calls should not crash
+        wandb_logger.on_step_end(context)
+        wandb_logger.on_optimization_end(context)
 
 
 # ============================================================================
@@ -359,7 +625,16 @@ def test_callbacks_integrated_into_minimizer(temp_log_path, simple_system):
 
     callback = TestCallback()
     mock_mutator = Mock()
-    mock_mutator.one_step = lambda sys: (sys.__copy__(), Mock())
+
+    def mock_one_step(system):
+        """Mock mutator that returns a copy with calculated energy."""
+        copied_system = system.__copy__()
+        # Ensure energy is calculated on the copied system
+        if copied_system.total_energy is None:
+            copied_system.get_total_energy()
+        return copied_system, Mock()
+
+    mock_mutator.one_step = mock_one_step
 
     minimizer = bg.minimizer.MonteCarloMinimizer(
         mutator=mock_mutator,
@@ -390,7 +665,16 @@ def test_early_stopping_stops_optimization(temp_log_path, simple_system):
     early_stop = bg.callbacks.EarlyStopping(monitor='system_energy', patience=1, mode='min')
     step_counter = StepCounter()
     mock_mutator = Mock()
-    mock_mutator.one_step = lambda sys: (sys.__copy__(), Mock())
+
+    def mock_one_step(system):
+        """Mock mutator that returns a copy with calculated energy."""
+        copied_system = system.__copy__()
+        # Ensure energy is calculated on the copied system
+        if copied_system.total_energy is None:
+            copied_system.get_total_energy()
+        return copied_system, Mock()
+
+    mock_mutator.one_step = mock_one_step
 
     minimizer = bg.minimizer.MonteCarloMinimizer(
         mutator=mock_mutator,
@@ -410,7 +694,16 @@ def test_early_stopping_stops_optimization(temp_log_path, simple_system):
 def test_no_callbacks_backward_compatibility(temp_log_path, simple_system):
     """Test that minimizer works with no callbacks (backward compatibility)."""
     mock_mutator = Mock()
-    mock_mutator.one_step = lambda sys: (sys.__copy__(), Mock())
+
+    def mock_one_step(system):
+        """Mock mutator that returns a copy with calculated energy."""
+        copied_system = system.__copy__()
+        # Ensure energy is calculated on the copied system
+        if copied_system.total_energy is None:
+            copied_system.get_total_energy()
+        return copied_system, Mock()
+
+    mock_mutator.one_step = mock_one_step
 
     minimizer = bg.minimizer.MonteCarloMinimizer(
         mutator=mock_mutator,

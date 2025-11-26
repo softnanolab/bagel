@@ -7,12 +7,22 @@ Copyright (c) 2025 Jakub Lála, Ayham Al-Saffar, Stefano Angioletti-Uberti
 """
 
 from dataclasses import dataclass
-from abc import ABC, abstractmethod
-from typing import Any
+from abc import ABC
+from typing import Any, TYPE_CHECKING
 import logging
+import os
+import pathlib as pl
 
 from .system import System
 from .minimizer import Minimizer
+
+if TYPE_CHECKING:
+    import wandb
+else:
+    try:
+        import wandb
+    except ImportError:
+        wandb = None
 
 logger = logging.getLogger(__name__)
 
@@ -180,11 +190,11 @@ class CallbackManager:
             if state._energy is None:
                 state.get_energy()
 
-            # Extract individual energy terms
+            # Extract individual energy terms (HACK: extracting private attributes)
             for energy_name, energy_value in state._energy_terms_value.items():
                 metrics[f'{state.name}:{energy_name}'] = energy_value
 
-            # Extract state total energy
+            # Extract state total energy (HACK: extracting private attributes)
             if state._energy is not None:
                 metrics[f'{state.name}:state_energy'] = state._energy
 
@@ -346,52 +356,131 @@ class WandBLogger(Callback):
     """
     Callback for logging metrics to Weights & Biases.
 
-    This is a dummy implementation that stores parameters but doesn't actually
-    log to WandB yet. The actual WandB integration will be implemented later.
+    Uses environment variables for authentication:
+    - WANDB_API_KEY: Your WandB API key (required for online logging)
+    - WANDB_ENTITY: Username or team name (optional)
+    - WANDB_PROJECT: Project name (optional, overrides constructor project)
+
+    If wandb is not installed, this callback will log warnings but not crash.
 
     Parameters
     ----------
     project : str
-        WandB project name.
-    name : str | None, optional
-        Run name. If None, a default name will be used.
+        WandB project name. Can be overridden by WANDB_PROJECT env var.
     config : dict[str, Any] | None, optional
         Hyperparameters and configuration to log.
+
+    Notes
+    -----
+    The WandB run name is automatically set from the minimizer's experiment_name.
+    This ensures consistency between the minimizer's experiment name and WandB run name.
 
     Examples
     --------
     >>> wandb_logger = WandBLogger(
     ...     project="protein-design",
-    ...     name="experiment-1",
     ...     config={"temperature": 1.0, "n_steps": 1000}
     ... )
     """
 
-    def __init__(self, project: str, name: str | None = None, config: dict[str, Any] | None = None) -> None:
-        self.project = project
-        self.name = name
+    def __init__(self, project: str, config: dict[str, Any] | None = None) -> None:
+        if wandb is None:
+            logger.warning(
+                'wandb is not installed. WandBLogger will not log metrics. '
+                'Install with: pip install wandb or uv sync --extra wandb'
+            )
+
+        self.project = os.environ.get('WANDB_PROJECT', project)
         self.config = config if config is not None else {}
+        self._run: Any = None
+
+    def _resolve_wandb_dir(self) -> pl.Path:
+        """
+        Resolve WandB directory following bagel's cache pattern.
+
+        Precedence:
+        1) WANDB_DIR environment variable if set
+        2) XDG_CACHE_HOME/bagel/wandb if XDG_CACHE_HOME is defined
+        3) ~/.cache/bagel/wandb otherwise
+
+        Returns
+        -------
+        pl.Path
+            Absolute path to the WandB directory.
+        """
+        if os.environ.get('WANDB_DIR'):
+            resolved = pl.Path(os.environ['WANDB_DIR']).expanduser().resolve()
+        else:
+            xdg_cache_home = os.getenv('XDG_CACHE_HOME')
+            if xdg_cache_home:
+                base_cache_dir = pl.Path(xdg_cache_home).expanduser().resolve()
+            else:
+                base_cache_dir = pl.Path.home() / '.cache'
+            resolved = (base_cache_dir / 'bagel' / '.wandb').resolve()
+
+        resolved.mkdir(parents=True, exist_ok=True)
+        return resolved
 
     def on_optimization_start(self, context: CallbackContext) -> None:
         """
-        Initialize WandB run (dummy implementation).
+        Initialize WandB run.
 
-        In the full implementation, this would call wandb.init().
+        Uses environment variables for authentication.
         """
-        logger.debug(f'WandBLogger: Would initialize run for project "{self.project}", name "{self.name}"')
+        if wandb is None:
+            return
+
+        try:
+            # Merge config with minimizer info if available
+            run_config = {**self.config}
+            if hasattr(context.minimizer, 'temperature'):
+                run_config.setdefault('temperature', context.minimizer.temperature)
+
+            init_kwargs: dict[str, Any] = {
+                'project': self.project,
+                'config': run_config,
+                'dir': str(self._resolve_wandb_dir()),
+            }
+
+            # Use minimizer's experiment_name as the WandB run name
+            if hasattr(context.minimizer, 'experiment_name'):
+                init_kwargs['name'] = context.minimizer.experiment_name
+
+            entity = os.environ.get('WANDB_ENTITY')
+            if entity:
+                init_kwargs['entity'] = entity
+
+            self._run = wandb.init(**init_kwargs)
+            logger.info(f'WandBLogger: Initialized run "{self._run.name}" in project "{self.project}"')
+        except Exception as e:
+            logger.error(f'WandBLogger: Failed to initialize WandB run: {e}', exc_info=True)
+            self._run = None
 
     def on_step_end(self, context: CallbackContext) -> None:
         """
-        Log metrics to WandB (dummy implementation).
+        Log metrics to WandB.
 
-        In the full implementation, this would call wandb.log() with all metrics.
+        Logs all metrics from context.metrics dictionary.
         """
-        logger.debug(f'WandBLogger: Would log metrics at step {context.step}')
+        if wandb is None or self._run is None:
+            return
+
+        try:
+            wandb.log(context.metrics, step=context.step)
+        except Exception as e:
+            logger.error(f'WandBLogger: Failed to log metrics: {e}', exc_info=True)
 
     def on_optimization_end(self, context: CallbackContext) -> None:
         """
-        Finish WandB run (dummy implementation).
-
-        In the full implementation, this would call wandb.finish().
+        Finish WandB run.
         """
-        logger.debug(f'WandBLogger: Would finish run')
+        if wandb is None or self._run is None:
+            return
+
+        try:
+            wandb.finish()
+            logger.info('WandBLogger: Finished run')
+        except Exception as e:
+            logger.error(f'WandBLogger: Failed to finish WandB run: {e}', exc_info=True)
+        finally:
+            self._run = None

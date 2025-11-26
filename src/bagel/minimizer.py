@@ -90,7 +90,7 @@ class Minimizer(ABC):
         """Logs initial system state."""
         assert isinstance(self.log_path, pl.Path), f'log_path must be a Path, not {type(self.log_path)}'
         system.dump_config(self.log_path)
-        self.log_step(-1, system, best_system, False)
+        self.log_step(0, system, best_system, False)
 
     def log_step(self, step: int, system: System, best_system: System, new_best: bool, **kwargs: Any) -> None:
         """
@@ -98,13 +98,12 @@ class Minimizer(ABC):
 
         TODO: Consider converting log_step to a callback for unified interface.
         """
-        real_step = step + 1
-        logger.info(f'Step={real_step} - ' + ' - '.join(f'{k}={v}' for k, v in kwargs.items()))
+        logger.info(f'Step={step} - ' + ' - '.join(f'{k}={v}' for k, v in kwargs.items()))
         assert isinstance(self.log_path, pl.Path), f'log_path must be a Path, not {type(self.log_path)}'
-        if real_step > 0:
-            self.dump_logs(self.log_path, real_step, **kwargs)
-        system.dump_logs(real_step, self.log_path / 'current', save_structure=real_step % self.log_frequency == 0)
-        best_system.dump_logs(real_step, self.log_path / 'best', save_structure=new_best)
+        if step > 0:
+            self.dump_logs(self.log_path, step, **kwargs)
+        system.dump_logs(step, self.log_path / 'current', save_structure=step % self.log_frequency == 0)
+        best_system.dump_logs(step, self.log_path / 'best', save_structure=new_best)
 
     @abstractmethod
     def minimize_system(self, system: System) -> System:
@@ -232,7 +231,7 @@ class MonteCarloMinimizer(Minimizer):
         """
         # Run existing preserve_best_system logic first
         if self.preserve_best_system_every_n_steps is not None:
-            if (step + 1) % self.preserve_best_system_every_n_steps == 0:
+            if step % self.preserve_best_system_every_n_steps == 0:
                 logger.debug(f'Starting new cycle with best system from previous cycle')
                 system = best_system.__copy__()
 
@@ -241,6 +240,8 @@ class MonteCarloMinimizer(Minimizer):
 
         metrics = self.callback_manager._extract_metrics(system, best_system)
         step_kwargs = {'accept': accept, **kwargs}
+        # Callback context uses step directly from loop (1, 2, 3...) which represents
+        # step 1 = after first mutation, step 2 = after second mutation, etc.
         context = CallbackContext(
             step=step,
             system=system,
@@ -254,7 +255,6 @@ class MonteCarloMinimizer(Minimizer):
         # Execute callbacks
         should_stop = self.callback_manager.on_step_end(context)
 
-        # Call log_step as default behavior
         self.log_step(step, system, best_system, new_best, **step_kwargs)
 
         return system, should_stop
@@ -297,6 +297,7 @@ class MonteCarloMinimizer(Minimizer):
 
         self.log_initial_system(system, best_system)
 
+        step = 0
         for step in range(1, self.n_steps + 1):
             system = self._before_step(system, step)
             system, accept = self.minimize_one_step(step, system)
@@ -319,7 +320,7 @@ class MonteCarloMinimizer(Minimizer):
 
             # Check for early stopping
             if should_stop:
-                logger.info(f'Early stopping triggered at step {step + 1}')
+                logger.info(f'Early stopping triggered at step {step}')
                 break
 
         # Create final callback context and call on_optimization_end
