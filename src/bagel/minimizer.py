@@ -26,15 +26,24 @@ class Minimizer(ABC):
     """Base class for energy minimization logic."""
 
     def __init__(
-        self, mutator: MutationProtocol, experiment_name: str, log_frequency: int, log_path: pl.Path | str | None
+        self,
+        mutator: MutationProtocol,
+        experiment_name: str,
+        log_frequency: int,
+        log_path: pl.Path | str | None,
+        early_stopping: dict[str, int] | None = None,
     ) -> None:
         self.mutator = mutator
         self.experiment_name = experiment_name
         self.log_frequency = log_frequency
         self.log_path: pl.Path = self.initialise_log_path(log_path)
+        # Early stopping configuration: {metric_name: window_size_in_steps}
+        self.early_stopping: dict[str, int] = early_stopping or {}
 
         logger.debug(f'Logging path: {self.log_path}')
         logger.debug(f'Experiment name: {self.experiment_name}')
+        if self.early_stopping:
+            logger.debug(f'Early stopping config: {self.early_stopping}')
 
     def __post_init__(self) -> None:
         pass
@@ -117,6 +126,7 @@ class MonteCarloMinimizer(Minimizer):
         log_frequency: int = 100,
         preserve_best_system_every_n_steps: int | None = None,
         log_path: pl.Path | str | None = None,
+        early_stopping: dict[str, int] | None = None,
     ) -> None:
         if experiment_name is None:
             experiment_name = f'mc_minimizer_{time_stamp()}'
@@ -138,7 +148,11 @@ class MonteCarloMinimizer(Minimizer):
         self.preserve_best_system_every_n_steps = preserve_best_system_every_n_steps
         self.acceptance_criterion = self._get_acceptance_criterion(acceptance_criterion)
         super().__init__(
-            mutator=mutator, experiment_name=experiment_name, log_frequency=log_frequency, log_path=log_path
+            mutator=mutator,
+            experiment_name=experiment_name,
+            log_frequency=log_frequency,
+            log_path=log_path,
+            early_stopping=early_stopping,
         )
 
     def _get_acceptance_criterion(self, name: str) -> Callable[[float, float], float]:
@@ -196,6 +210,39 @@ class MonteCarloMinimizer(Minimizer):
 
         self.log_initial_system(system, best_system)
 
+        # Set up time tracking
+        start_time = dt.datetime.now()
+
+        # Prepare early stopping tracking
+        supported_metrics = {'best_energy', 'current_energy'}
+        for metric_name in self.early_stopping.keys():
+            if metric_name not in supported_metrics:
+                raise ValueError(
+                    f'Unknown early stopping metric "{metric_name}". Supported metrics: {sorted(supported_metrics)}'
+                )
+
+        def get_metric_value(metric_name: str, current: System, best: System) -> float:
+            assert current.total_energy is not None and best.total_energy is not None
+            if metric_name == 'best_energy':
+                return float(best.total_energy)
+            if metric_name == 'current_energy':
+                return float(current.total_energy)
+            # This should be unreachable due to validation above
+            raise ValueError(f'Unhandled metric "{metric_name}"')
+
+        best_value_by_metric: dict[str, float] = {}
+        recorded_best_at_last_check: dict[str, float] = {}
+        next_check_step: dict[str, int] = {}
+        if self.early_stopping:
+            # Initialize tracking based on step 0 (before entering the loop)
+            for metric_name, window_size in self.early_stopping.items():
+                current_value = get_metric_value(metric_name, system, best_system)
+                best_value_by_metric[metric_name] = current_value
+                recorded_best_at_last_check[metric_name] = current_value
+                next_check_step[metric_name] = max(1, int(window_size))
+
+        early_stop_triggered_metric: str | None = None
+
         for step in range(self.n_steps):
             new_best = False
             system = self._before_step(system, step)
@@ -208,9 +255,50 @@ class MonteCarloMinimizer(Minimizer):
                 new_best = True
                 best_system = system.__copy__()
 
+            # Update early stopping trackers (track best-so-far for each metric)
+            if self.early_stopping:
+                for metric_name in self.early_stopping.keys():
+                    value = get_metric_value(metric_name, system, best_system)
+                    if value < best_value_by_metric[metric_name]:
+                        best_value_by_metric[metric_name] = value
+
+            # Time metrics
+            real_step = step + 1
+            elapsed_seconds = (dt.datetime.now() - start_time).total_seconds()
+            avg_time_per_step = elapsed_seconds / real_step
+            remaining_seconds = max(0.0, avg_time_per_step * (self.n_steps - real_step))
+
             self.log_step(
-                step, system, best_system, new_best, temperature=self.temperature_schedule[step], accept=accept
+                step,
+                system,
+                best_system,
+                new_best,
+                temperature=self.temperature_schedule[step],
+                accept=accept,
+                current_energy=float(system.total_energy),
+                best_energy=float(best_system.total_energy),
+                time_elapsed_s=elapsed_seconds,
+                time_remaining_s=remaining_seconds,
             )
+
+            # Early stopping check after logging the step
+            if self.early_stopping:
+                for metric_name, window_size in self.early_stopping.items():
+                    if real_step >= next_check_step[metric_name]:
+                        # If no improvement since last check, trigger early stop
+                        if best_value_by_metric[metric_name] < recorded_best_at_last_check[metric_name]:
+                            # Improvement observed; move the window
+                            recorded_best_at_last_check[metric_name] = best_value_by_metric[metric_name]
+                            next_check_step[metric_name] += window_size
+                        else:
+                            early_stop_triggered_metric = metric_name
+                            logger.info(
+                                f'Early stopping triggered at step {real_step} for metric "{metric_name}" '
+                                f'with window {window_size} steps.'
+                            )
+                            break
+                if early_stop_triggered_metric is not None:
+                    break
 
         assert best_system.total_energy is not None, f'Best energy {best_system.total_energy} cannot be None!'
         return best_system
@@ -230,6 +318,7 @@ class SimulatedAnnealing(MonteCarloMinimizer):
         log_frequency: int = 100,
         preserve_best_system_every_n_steps: int | None = None,
         log_path: pl.Path | str | None = None,
+        early_stopping: dict[str, int] | None = None,
     ) -> None:
         if experiment_name is None:
             experiment_name = f'simulated_annealing_{time_stamp()}'
@@ -242,6 +331,7 @@ class SimulatedAnnealing(MonteCarloMinimizer):
             log_frequency=log_frequency,
             preserve_best_system_every_n_steps=preserve_best_system_every_n_steps,
             log_path=log_path,
+            early_stopping=early_stopping,
         )
 
         self.initial_temperature = initial_temperature
@@ -267,6 +357,7 @@ class SimulatedTempering(MonteCarloMinimizer):
         log_frequency: int = 100,
         preserve_best_system_every_n_steps: int | None = None,
         log_path: pl.Path | str | None = None,
+        early_stopping: dict[str, int] | None = None,
     ) -> None:
         if experiment_name is None:
             experiment_name = f'simulated_tempering_{time_stamp()}'
@@ -280,6 +371,7 @@ class SimulatedTempering(MonteCarloMinimizer):
             log_frequency=log_frequency,
             preserve_best_system_every_n_steps=preserve_best_system_every_n_steps,
             log_path=log_path,
+            early_stopping=early_stopping,
         )
 
         self.high_temperature = high_temperature
