@@ -9,7 +9,7 @@ import numpy.typing as npt
 from ...chain import Chain
 from .base import EmbeddingResult, EmbeddingOracle
 from typing import List, Any
-from boileroom.models.esm.esm2 import ESM2Output  # type: ignore
+from boileroom.models.esm.types import ESM2Output  # type: ignore
 from boileroom.models.esm.esm2 import ESM2 as ESM2Boiler
 import logging
 
