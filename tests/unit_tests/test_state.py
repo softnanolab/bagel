@@ -200,3 +200,73 @@ def test_state_get_energy(fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch)
     assert len(multi_oracle_state._oracles_result) == 2  # Should have results from both oracles
     assert oracle_a in multi_oracle_state._oracles_result
     assert oracle_b in multi_oracle_state._oracles_result
+
+
+def test_energy_cache_auto_invalidation(fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch) -> None:
+    """Test that energy cache automatically invalidates when chains or energy_terms change."""
+    # Mock oracle to track calls
+    call_count = {'count': 0}
+
+    def mock_predict(self, chains):
+        call_count['count'] += 1
+        # Create a mock structure with minimal required data
+        mock_structure = AtomArray(0)  # Empty structure
+        return bg.oracles.folding.ESMFoldResult(
+            input_chains=chains,
+            structure=mock_structure,
+            ptm=np.array([0.7]),  # Mock pTM value
+            pae=np.zeros((0, 0)),  # Empty PAE matrix
+            local_plddt=np.array([]),  # Empty local plDDT scores
+        )
+
+    monkeypatch.setattr(bg.oracles.folding.ESMFold, 'predict', mock_predict)
+
+    # Create mock energy terms
+    class MockEnergyTerm(bg.energies.EnergyTerm):
+        def compute(self, oracles_result):
+            # Return both unweighted and weighted energies
+            return 1.0, 1.0 * self.weight
+
+    # Create initial state
+    chain = bg.Chain([bg.Residue(name='A', chain_ID='A', index=i) for i in range(3)])
+    energy_term = MockEnergyTerm(
+        name='MockEnergyTerm',
+        oracle=fake_esmfold,
+        weight=1.0,
+        inheritable=True,
+    )
+    state = bg.State(name='test', chains=[chain], energy_terms=[energy_term])
+
+    # Test 1: First computation - should calculate
+    energy1 = state.get_energy()
+    assert call_count['count'] == 1
+    assert state._energy == energy1
+    assert state._energy == 1.0  # 1.0 * 1.0
+
+    # Test 2: Second call with no changes - should use cache
+    energy2 = state.get_energy()
+    assert call_count['count'] == 1  # No new oracle call
+    assert energy2 == energy1
+
+    # Test 3: Mutate chain - cache should auto-invalidate
+    chain.mutate_residue(0, 'V')
+    energy3 = state.get_energy()
+    assert call_count['count'] == 2  # New oracle call
+    assert state._energy == energy3
+    assert energy3 == 1.0  # Still 1.0, but recalculated
+
+    # Test 4: Add residue - cache should auto-invalidate
+    chain.add_residue('G', 1)
+    energy4 = state.get_energy()
+    assert call_count['count'] == 3
+
+    # Test 5: Remove residue - cache should auto-invalidate
+    chain.remove_residue(0)
+    energy5 = state.get_energy()
+    assert call_count['count'] == 4
+
+    # Test 6: Change energy term weight - cache should auto-invalidate
+    energy_term.weight = 2.0
+    energy6 = state.get_energy()
+    assert call_count['count'] == 5
+    assert state._energy == 2.0  # 1.0 * 2.0

@@ -130,13 +130,13 @@ def test_CallbackManager_extract_metrics(simple_system):
     manager = bg.callbacks.CallbackManager()
     best_system = simple_system.__copy__()
 
-    metrics = manager._extract_metrics(simple_system, best_system)
+    metrics = manager.extract_metrics(simple_system, best_system)
 
     assert 'system_energy' in metrics
     assert 'best_system_energy' in metrics
     assert metrics['system_energy'] == -1.5
     # Should have state-level metrics
-    assert 'state_A:state_energy' in metrics
+    assert 'state_A/state_energy' in metrics
     # Energy term names are 'pTM' and 'global_pLDDT', not class names
     assert any('pTM' in key for key in metrics.keys())
 
@@ -156,7 +156,7 @@ def test_CallbackManager_execution_order(simple_system, mock_minimizer):
     callback2 = TestCallback('callback2')
     manager = bg.callbacks.CallbackManager([callback1, callback2])
 
-    metrics = manager._extract_metrics(simple_system, simple_system)
+    metrics = manager.extract_metrics(simple_system, simple_system)
     context = bg.callbacks.CallbackContext(
         step=0,
         system=simple_system,
@@ -188,7 +188,7 @@ def test_CallbackManager_all_callbacks_execute_on_early_stop(simple_system, mock
     continue_callback = ContinueCallback()
     manager = bg.callbacks.CallbackManager([stop_callback, continue_callback])
 
-    metrics = manager._extract_metrics(simple_system, simple_system)
+    metrics = manager.extract_metrics(simple_system, simple_system)
     context = bg.callbacks.CallbackContext(
         step=0,
         system=simple_system,
@@ -225,7 +225,7 @@ def test_CallbackManager_exception_handling(simple_system, mock_minimizer):
     working_callback = WorkingCallback()
     manager = bg.callbacks.CallbackManager([failing_callback, working_callback])
 
-    metrics = manager._extract_metrics(simple_system, simple_system)
+    metrics = manager.extract_metrics(simple_system, simple_system)
     context = bg.callbacks.CallbackContext(
         step=0,
         system=simple_system,

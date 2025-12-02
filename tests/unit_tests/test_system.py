@@ -101,12 +101,12 @@ def test_system_dump_logs_folder_is_correct(mixed_system: bg.System) -> None:
     correct_energies = pd.DataFrame(
         {
             'step': [mock_step],
-            'small:pTM': [-0.7],
-            'small:selective_surface_area': [0.2],
-            'mixed:local_pLDDT': [-0.4],
-            'mixed:cross_PAE': [0.5],
-            'small:state_energy': [-0.5],
-            'mixed:state_energy': [0.1],
+            'small/pTM': [-0.7],
+            'small/selective_surface_area': [0.2],
+            'mixed/local_pLDDT': [-0.4],
+            'mixed/cross_PAE': [0.5],
+            'small/state_energy': [-0.5],
+            'mixed/state_energy': [0.1],
             'system_energy': [-0.4],
         }
     )

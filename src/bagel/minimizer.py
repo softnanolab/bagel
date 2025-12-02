@@ -215,7 +215,8 @@ class MonteCarloMinimizer(Minimizer):
         best_system : System
             Best system found so far.
         step : int
-            Current step number (0-indexed).
+            Current step number (1-indexed). The loop passes 1, 2, 3, ... where
+            step 1 = after first mutation, step 2 = after second mutation, etc.
         new_best : bool
             Whether this step found a new best system.
         accept : bool
@@ -238,7 +239,7 @@ class MonteCarloMinimizer(Minimizer):
         # Extract metrics and create callback context
         from .callbacks import CallbackContext
 
-        metrics = self.callback_manager._extract_metrics(system, best_system)
+        metrics = self.callback_manager.extract_metrics(system, best_system)
         step_kwargs = {'accept': accept, **kwargs}
         # Callback context uses step directly from loop (1, 2, 3...) which represents
         # step 1 = after first mutation, step 2 = after second mutation, etc.
@@ -275,15 +276,17 @@ class MonteCarloMinimizer(Minimizer):
         """Minimize system using Monte Carlo method."""
         system.get_total_energy()  # update the energy internally
         best_system = system.__copy__()
-        assert system.total_energy is not None, 'Cannot start without system having a calculated energy'
-        assert best_system.total_energy is not None, (
-            'Cannot start without lowest energy system having a calculated energy'
-        )
+        system_energy = system.get_total_energy()
+        if system_energy is None:
+            raise ValueError('Cannot start without system having a calculated energy')
+        best_system_energy = best_system.get_total_energy()
+        if best_system_energy is None:
+            raise ValueError('Cannot start without lowest energy system having a calculated energy')
 
         # Create initial callback context and call on_optimization_start
         from .callbacks import CallbackContext
 
-        initial_metrics = self.callback_manager._extract_metrics(system, best_system)
+        initial_metrics = self.callback_manager.extract_metrics(system, best_system)
         initial_context = CallbackContext(
             step=0,
             system=system,
@@ -302,10 +305,12 @@ class MonteCarloMinimizer(Minimizer):
             system = self._before_step(system, step)
             system, accept = self.minimize_one_step(step, system)
 
-            assert system.total_energy is not None, 'Cannot evolve system if current energy not available'
+            system_energy = system.get_total_energy()
+            if system_energy is None:
+                raise ValueError('Cannot evolve system if current energy not available')
 
             new_best = False
-            if system.total_energy < best_system.total_energy:
+            if system_energy < best_system.get_total_energy():
                 new_best = True
                 best_system = system.__copy__()
 
@@ -324,7 +329,7 @@ class MonteCarloMinimizer(Minimizer):
                 break
 
         # Create final callback context and call on_optimization_end
-        final_metrics = self.callback_manager._extract_metrics(best_system, best_system)
+        final_metrics = self.callback_manager.extract_metrics(best_system, best_system)
         final_context = CallbackContext(
             step=step,
             system=best_system,
@@ -336,7 +341,9 @@ class MonteCarloMinimizer(Minimizer):
         )
         self.callback_manager.on_optimization_end(final_context)
 
-        assert best_system.total_energy is not None, f'Best energy {best_system.total_energy} cannot be None!'
+        best_final_energy = best_system.get_total_energy()
+        if best_final_energy is None:
+            raise ValueError(f'Best energy cannot be None!')
         return best_system
 
 

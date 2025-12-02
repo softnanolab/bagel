@@ -46,8 +46,8 @@ class CallbackContext:
         Extracted energy metrics including:
         - 'system_energy': Total energy of current system
         - 'best_system_energy': Total energy of best system
-        - '{state.name}:{energy_name}': Individual energy term values
-        - '{state.name}:state_energy': Total energy per state
+        - '{state.name}/{energy_name}': Individual energy term values
+        - '{state.name}/state_energy': Total energy per state
     minimizer : Minimizer
         Reference to the minimizer instance running the optimization.
     step_kwargs : dict[str, Any]
@@ -149,14 +149,14 @@ class CallbackManager:
         """
         self.callbacks.append(callback)
 
-    def _extract_metrics(self, system: System, best_system: System) -> dict[str, float]:
+    def extract_metrics(self, system: System, best_system: System) -> dict[str, float]:
         """
         Extract energy metrics from system and best_system.
 
         Extracts:
         - System-level energies: 'system_energy', 'best_system_energy'
-        - State-level energy terms: '{state.name}:{energy_name}'
-        - State-level total energies: '{state.name}:state_energy'
+        - State-level energy terms: '{state.name}/{energy_name}'
+        - State-level total energies: '{state.name}/state_energy'
 
         Parameters
         ----------
@@ -172,31 +172,30 @@ class CallbackManager:
         """
         metrics: dict[str, float] = {}
 
-        # Ensure energies are calculated
-        if system.total_energy is None:
-            system.get_total_energy()
-        if best_system.total_energy is None:
-            best_system.get_total_energy()
+        # Ensure energies are calculated and get system-level energies
+        system_energy = system.get_total_energy()
+        if system_energy is None:
+            raise ValueError('System energy must be calculated. Call get_total_energy() first.')
+        metrics['system_energy'] = system_energy
 
-        # System-level energies
-        assert system.total_energy is not None, 'System energy must be calculated'
-        assert best_system.total_energy is not None, 'Best system energy must be calculated'
-        metrics['system_energy'] = system.total_energy
-        metrics['best_system_energy'] = best_system.total_energy
+        best_system_energy = best_system.get_total_energy()
+        if best_system_energy is None:
+            raise ValueError('Best system energy must be calculated. Call get_total_energy() first.')
+        metrics['best_system_energy'] = best_system_energy
 
         # Extract state-level metrics from current system
         for state in system.states:
-            # Ensure state energy is calculated
-            if state._energy is None:
-                state.get_energy()
+            # Ensure state energy is calculated (cache auto-invalidates if needed)
+            state.get_energy()
 
-            # Extract individual energy terms (HACK: extracting private attributes)
-            for energy_name, energy_value in state._energy_terms_value.items():
-                metrics[f'{state.name}:{energy_name}'] = energy_value
+            # Extract individual energy terms using public API
+            energy_terms = state.get_energy_terms()
+            for energy_name, energy_value in energy_terms.items():
+                metrics[f'{state.name}/{energy_name}'] = energy_value
 
-            # Extract state total energy (HACK: extracting private attributes)
-            if state._energy is not None:
-                metrics[f'{state.name}:state_energy'] = state._energy
+            # Extract state total energy using return value from get_energy()
+            state_energy = state.get_energy()
+            metrics[f'{state.name}/state_energy'] = state_energy
 
         return metrics
 

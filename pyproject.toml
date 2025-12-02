@@ -56,7 +56,7 @@ files = ["**/src/bagel/*.py"] #selects files checked during mypy call, but does 
 explicit_package_bases = true #allows giving directories different mypy settings
 
 [[tool.mypy.overrides]]
-module = ["biotite.*", "pytest.*", "pandas.*", "bagel.*", "dotenv"] #libraries that dont have type stubs
+module = ["biotite.*", "pytest.*", "pandas.*", "bagel.*", "dotenv", "wandb"] # libraries that don't have type stubs
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

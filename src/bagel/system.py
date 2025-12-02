@@ -45,13 +45,15 @@ class System:
         """
         Clear energy caches so system knows it must recalculate.
 
-        TODO: I do not like the system-design pattern here that much, caching should be done a bit safer.
+        Note: Cache invalidation is now automatic when chains or energy_terms change,
+        so explicit reset() is optional but available for explicit clearing.
         """
         self.total_energy = None
         for state in self.states:
             state._energy = None
             state._energy_terms_value = {}
             state._oracles_result = OraclesResultDict()
+            state._cache_key = None
 
     def dump_logs(self, step: int, path: pl.Path, save_structure: bool = True) -> None:
         r"""
@@ -90,10 +92,13 @@ class System:
 
         energies: dict[str, int | float] = {'step': step}  #  order of insertion consistent in every dump_logs call
         for state in self.states:
-            for energy_name, energy_value in state._energy_terms_value.items():
-                energies[f'{state.name}:{energy_name}'] = energy_value
-            assert state._energy is not None, 'State energy not calculated. Call get_energy() first.'
-            energies[f'{state.name}:state_energy'] = state._energy  # HACK
+            # Use public API to get energy terms
+            energy_terms = state.get_energy_terms()
+            for energy_name, energy_value in energy_terms.items():
+                energies[f'{state.name}/{energy_name}'] = energy_value
+            # Use public API to get energy
+            state_energy = state.get_energy()
+            energies[f'{state.name}/state_energy'] = state_energy
 
             with open(path / f'{state.name}.fasta', mode='a') as file:
                 file.write(f'>{step}\n')

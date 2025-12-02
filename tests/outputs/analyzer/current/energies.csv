@@ -1,4 +1,4 @@
-step,state_A:hydrophobicity,state_A:packing,state_A:state_energy,system_energy
+step,state_A/hydrophobicity,state_A/packing,state_A/state_energy,system_energy
 1,-10.0,-2.0,-12.0,-12.0
 2,-9.5,-1.5,-11.0,-11.0
 3,-11.0,-2.5,-13.5,-13.5

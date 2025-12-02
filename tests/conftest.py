@@ -119,10 +119,42 @@ def fake_esmfold(request, monkeypatch) -> bg.oracles.folding.ESMFold:
     def mock_load(self, config={}):
         pass
 
-    # Patch the _load method
-    monkeypatch.setattr(bg.oracles.folding.ESMFold, '_load', mock_load)
+    # Mock the fold method to return a proper ESMFoldResult based on input chains
+    def mock_fold(self, chains):
+        # Create an AtomArray with atoms for each residue in each chain
+        atoms_list = []
+        for chain in chains:
+            for residue in chain.residues:
+                # Create at least one atom (CA) per residue with correct chain_id and res_id
+                atom = Atom(
+                    coord=[0.0, 0.0, 0.0],
+                    chain_id=chain.chain_ID,
+                    res_id=residue.index,
+                    res_name=bg.constants.aa_dict.get(residue.name, 'GLY'),
+                    atom_name='CA',
+                    element='C',
+                )
+                atoms_list.append(atom)
 
-    # Now create the actual instance - _load will be patched
+        mock_structure = array(atoms_list) if atoms_list else AtomArray(0)
+
+        # Calculate number of residues across all chains
+        num_residues = sum(len(chain.residues) for chain in chains) if chains else 0
+
+        # Return ESMFoldResult with proper structure
+        return bg.oracles.folding.ESMFoldResult(
+            input_chains=chains,
+            structure=mock_structure,
+            local_plddt=np.zeros((1, num_residues)) if num_residues > 0 else np.array([]).reshape(1, 0),
+            ptm=np.array([0.5])[None, :],
+            pae=np.zeros((1, num_residues, num_residues)) if num_residues > 0 else np.zeros((1, 0, 0)),
+        )
+
+    # Patch both methods
+    monkeypatch.setattr(bg.oracles.folding.ESMFold, '_load', mock_load)
+    monkeypatch.setattr(bg.oracles.folding.ESMFold, 'fold', mock_fold)
+
+    # Now create the actual instance
     return bg.oracles.folding.ESMFold(use_modal=False)
 
 
@@ -481,7 +513,6 @@ def simple_state(fake_esmfold: bg.oracles.folding.ESMFold) -> bg.State:
         ],
         name='state_A',
     )
-    state._structure = AtomArray(length=len(residues))
     state._energy_terms_value = {
         state.energy_terms[0].name: -1.0,
         state.energy_terms[1].name: -0.5,
