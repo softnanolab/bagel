@@ -55,7 +55,7 @@ class State:
     _energy: float | None = field(default=None, init=False)
     _oracles_result: OraclesResultDict = field(default_factory=lambda: OraclesResultDict(), init=False)
     _energy_terms_value: dict[str, float] = field(default_factory=lambda: {}, init=False)
-    _cache_key: tuple | None = field(default=None, init=False)
+    _cache_key: tuple[tuple[str, ...], tuple[tuple[str, float], ...]] | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         """Sanity check."""
@@ -74,7 +74,7 @@ class State:
         return [chain.sequence for chain in self.chains]
 
     @property
-    def _current_cache_key(self) -> tuple:
+    def _current_cache_key(self) -> tuple[tuple[str, ...], tuple[tuple[str, float], ...]]:
         """Generate cache key from chain sequences and energy term properties."""
         # Track chain sequences (what oracle.predict() depends on)
         sequences = tuple(chain.sequence for chain in self.chains)
@@ -126,6 +126,8 @@ class State:
 
     def get_energy_terms(self) -> dict[str, float]:
         """Get unweighted energy term values, computing if needed."""
+        self._invalidate_cache_if_needed()
+
         if self._energy is None:
             self.get_energy()  # This will compute and cache
         if self._energy_terms_value == {}:

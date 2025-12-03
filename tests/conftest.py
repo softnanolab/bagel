@@ -250,6 +250,8 @@ def small_structure_state(
     }
     state._oracles_result = bg.oracles.OraclesResultDict()
     state._oracles_result[state.oracles_list[0]] = folding_result
+    # Mark cache as valid for this manually-initialised test state
+    state._cache_key = state._current_cache_key  # type: ignore[attr-defined]
     return state
 
 
@@ -451,6 +453,8 @@ def mixed_structure_state(
     }
     state._oracles_result = bg.oracles.OraclesResultDict()
     state._oracles_result[state.oracles_list[0]] = folding_result
+    # Mark cache as valid for this manually-initialised test state
+    state._cache_key = state._current_cache_key  # type: ignore[attr-defined]
     return state
 
 
