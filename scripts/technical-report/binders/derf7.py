@@ -12,7 +12,7 @@ def main(
     use_modal: bool = False,
     binder_sequence: str = None,
     optimization_params: dict = None,
-    output_dir: str = 'data/DERF7-binder'
+    output_dir: str = 'data/DERF7-binder',
 ):
 
     # Check
@@ -134,8 +134,7 @@ def main(
         n_steps_low=optimization_params['n_steps_low'],
         n_cycles=optimization_params['n_cycles'],
         preserve_best_system_every_n_steps=optimization_params['n_steps_high'] + optimization_params['n_steps_low'],
-        experiment_name=experiment_name,
-        output_path=output_path,
+        output_path=output_dir,
         callbacks=[bg.callbacks.DefaultLogger(log_interval=1)],
     )
 
