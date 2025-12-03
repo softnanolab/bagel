@@ -30,7 +30,7 @@ def mock_minimizer(temp_log_path):
         temperature=1.0,
         n_steps=10,
         experiment_name='test_minimizer',
-        log_path=temp_log_path,
+        output_path=temp_log_path,
     )
     return minimizer
 
@@ -309,14 +309,14 @@ def test_early_stopping_with_embeddings_similarity(simple_system, mock_minimizer
     # Monitor state-level metric: "test_state:embeddings_similarity"
     # Use mode="max" since higher similarity is better
     early_stop = bg.callbacks.EarlyStopping(
-        monitor='test_state:embeddings_similarity',
+        monitor='test_state/embeddings_similarity',
         patience=3,
         mode='max',
         min_delta=0.01,
     )
 
     # Initialize
-    initial_metrics = {'test_state:embeddings_similarity': 0.5}
+    initial_metrics = {'test_state/embeddings_similarity': 0.5}
     initial_context = bg.callbacks.CallbackContext(
         step=0,
         system=simple_system,
@@ -333,7 +333,7 @@ def test_early_stopping_with_embeddings_similarity(simple_system, mock_minimizer
     assert early_stop._should_stop is False
 
     # Step 1: Improve (0.5 -> 0.6)
-    metrics1 = {'test_state:embeddings_similarity': 0.6}
+    metrics1 = {'test_state/embeddings_similarity': 0.6}
     context1 = bg.callbacks.CallbackContext(
         step=1,
         system=simple_system,
@@ -349,7 +349,7 @@ def test_early_stopping_with_embeddings_similarity(simple_system, mock_minimizer
     assert early_stop._should_stop is False
 
     # Step 2: Plateau (0.6 -> 0.59, not enough improvement)
-    metrics2 = {'test_state:embeddings_similarity': 0.59}
+    metrics2 = {'test_state/embeddings_similarity': 0.59}
     context2 = bg.callbacks.CallbackContext(
         step=2,
         system=simple_system,
@@ -641,7 +641,7 @@ def test_callbacks_integrated_into_minimizer(temp_log_path, simple_system):
         temperature=1.0,
         n_steps=2,
         experiment_name='test',
-        log_path=temp_log_path,
+        output_path=temp_log_path,
         callbacks=[callback],
     )
 
@@ -681,7 +681,7 @@ def test_early_stopping_stops_optimization(temp_log_path, simple_system):
         temperature=1.0,
         n_steps=10,  # Would normally run 10 steps
         experiment_name='test',
-        log_path=temp_log_path,
+        output_path=temp_log_path,
         callbacks=[early_stop, step_counter],
     )
 
@@ -710,7 +710,7 @@ def test_no_callbacks_backward_compatibility(temp_log_path, simple_system):
         temperature=1.0,
         n_steps=2,
         experiment_name='test',
-        log_path=temp_log_path,
+        output_path=temp_log_path,
         callbacks=None,
     )
 
