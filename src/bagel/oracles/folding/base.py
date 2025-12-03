@@ -41,7 +41,12 @@ class FoldingResult(OracleResult):
         Returns
         -------
         bool
-            True if the file was written successfully, False otherwise.
+            True if the file was written successfully.
+
+        Raises
+        ------
+        FileNotFoundError
+            If the structure file was not created after writing.
         """
         filepath.parent.mkdir(parents=True, exist_ok=True)
         structure_file = CIFFile()

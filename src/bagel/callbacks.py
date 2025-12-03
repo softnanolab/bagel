@@ -36,7 +36,7 @@ class CallbackContext:
     Parameters
     ----------
     step : int
-        Current step number (0-indexed).
+        Current step number. Step 0 = before optimization; steps 1..N = after each optimization step (1-indexed).
     system : System
         Current system state after the step.
     best_system : System
@@ -566,8 +566,8 @@ class WandBLogger(Callback):
 
         Precedence:
         1) WANDB_DIR environment variable if set
-        2) XDG_CACHE_HOME/bagel/wandb if XDG_CACHE_HOME is defined
-        3) ~/.cache/bagel/wandb otherwise
+        2) XDG_CACHE_HOME/bagel/.wandb if XDG_CACHE_HOME is defined
+        3) ~/.cache/bagel/.wandb otherwise
 
         Returns
         -------

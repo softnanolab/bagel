@@ -82,7 +82,6 @@ class Minimizer(ABC):
     def initialize_output_path(self, output_path: None | str | pl.Path) -> pl.Path:
         """
         Creates folder next to the .py script run named the <self.experiment_name>. Said folder cannot already exist.
-        Also copies the .py script run into that folder.
         """
         if isinstance(output_path, pl.Path):
             output_path = output_path / self.experiment_name
