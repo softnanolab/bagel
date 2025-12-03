@@ -7,11 +7,10 @@ Copyright (c) 2025 Jakub Lála, Ayham Al-Saffar, Stefano Angioletti-Uberti
 """
 
 from .chain import Chain
-from .oracles import Oracle, FoldingOracle, OraclesResultDict
+from .oracles import Oracle, OraclesResultDict
 from .energies import EnergyTerm
 from typing import Optional
 from pathlib import Path
-from biotite.structure.io.pdbx import CIFFile, set_structure
 from dataclasses import dataclass, field
 from typing import List, Any
 from copy import deepcopy
@@ -98,10 +97,9 @@ class State:
         # Validate that energy terms exist
         if not self.energy_terms:
             raise ValueError(
-                f"State '{self.name}' has no energy terms defined. "
-                "Cannot compute energy without energy terms."
+                f"State '{self.name}' has no energy terms defined. Cannot compute energy without energy terms."
             )
-        
+
         # Check cache validity and invalidate if needed
         self._invalidate_cache_if_needed()
 
@@ -115,7 +113,7 @@ class State:
             energy_term_names = [term.name for term in self.energy_terms]
             if len(energy_term_names) != len(set(energy_term_names)):
                 raise ValueError(
-                    f"Energy term names must be unique. Found duplicates: {energy_term_names}. "
+                    f'Energy term names must be unique. Found duplicates: {energy_term_names}. '
                     "Please rename using 'name'."
                 )
 
@@ -140,10 +138,9 @@ class State:
         # Validate that energy terms exist
         if not self.energy_terms:
             raise ValueError(
-                f"State '{self.name}' has no energy terms defined. "
-                "Cannot get energy term values without energy terms."
+                f"State '{self.name}' has no energy terms defined. Cannot get energy term values without energy terms."
             )
-        
+
         self._invalidate_cache_if_needed()
 
         if self._energy is None:
@@ -151,30 +148,6 @@ class State:
         if self._energy_term_values == {}:
             raise ValueError('Energy term values are not computed. You should not get here unless you are debugging.')
         return self._energy_term_values.copy()  # Return copy for safety
-
-    def to_cif(self, oracle: FoldingOracle, filepath: Path) -> bool:
-        """
-        Write the state to a CIF file of a specific FoldingOracle.
-
-        Parameters
-        ----------
-        filepath : Path
-            Path to the file to write the CIF structure to.
-
-        Returns
-        -------
-        bool
-            True if the file was written successfully, False otherwise.
-        """
-        filepath.parent.mkdir(parents=True, exist_ok=True)
-        structure_file = CIFFile()
-        set_structure(structure_file, self._oracles_result.get_structure(oracle))
-        logger.debug(f'Writing CIF structure of {self.name} from {type(oracle).__name__} to {filepath}')
-        structure_file.write(filepath)
-        if not filepath.exists():
-            raise FileNotFoundError(f'Structure file {filepath} was not created')
-        else:
-            return True
 
     def total_residues(self) -> int:
         return sum([len(chain.residues) for chain in self.chains])

@@ -133,6 +133,9 @@ def main(
         }
 
     current_dir = os.path.dirname(os.path.abspath(__file__))
+    output_dir_path = pl.Path(output_dir)
+    experiment_name = output_dir_path.name
+    output_path = pl.Path(current_dir) / output_dir_path.parent if output_dir_path.parent.parts else pl.Path(current_dir)
     minimizer = bg.minimizer.SimulatedTempering(
         mutator=mutator,
         high_temperature=optimization_params['high_temperature'],
@@ -141,8 +144,9 @@ def main(
         n_steps_low=optimization_params['n_steps_low'],
         n_cycles=optimization_params['n_cycles'],
         preserve_best_system_every_n_steps=optimization_params['n_steps_high'] + optimization_params['n_steps_low'],
-        log_frequency=1,
-        log_path=pl.Path(os.path.join(current_dir, output_dir)),
+        experiment_name=experiment_name,
+        output_path=output_path,
+        callbacks=[bg.callbacks.DefaultLogger(log_interval=1)],
     )
 
     # Return the best system

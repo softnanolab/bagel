@@ -103,7 +103,7 @@ def test_state_get_energy(fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch)
 
     # Test 3: Test with empty energy terms - should raise ValueError
     empty_state = bg.State(name='empty_state', chains=[chain], energy_terms=[])
-    with pytest.raises(ValueError, match="has no energy terms defined"):
+    with pytest.raises(ValueError, match='has no energy terms defined'):
         _ = empty_state.energy
 
     # Test 4: Test that duplicate energy term names raise AssertionError

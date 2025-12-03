@@ -27,8 +27,8 @@ minimizer = bg.minimizer.SimulatedAnnealing(
     initial_temperature = 0.2,
     final_temperature = 0.02,
     n_steps = 2_000,
-    log_frequency = 5,
     experiment_name = 'annealing_hallucination',
+    callbacks=[bg.callbacks.DefaultLogger(log_interval=5)],
 )
 
 minimizer.minimize_system(bg.System([state]))

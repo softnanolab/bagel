@@ -129,6 +129,9 @@ def main(
     # Note: the result in the paper comes from a parallel tempering implementation in previous version of the codebase
     # which is not yet implemented, but the simulated tempering below should produce equivalent results
     # The difference is only in the optimization; not in the energy terms, i.e. the definition of the System energy
+    output_dir_path = pl.Path(output_dir)
+    experiment_name = output_dir_path.name
+    output_path = pl.Path(current_dir) / output_dir_path.parent if output_dir_path.parent.parts else pl.Path(current_dir)
     minimizer = bg.minimizer.SimulatedTempering(
         mutator=mutator,
         high_temperature=optimization_params['high_temperature'],
@@ -137,8 +140,9 @@ def main(
         n_steps_low=optimization_params['n_steps_low'],
         n_cycles=optimization_params['n_cycles'],
         preserve_best_system_every_n_steps=optimization_params['n_steps_high'] + optimization_params['n_steps_low'],
-        log_frequency=1,
-        log_path=pl.Path(os.path.join(current_dir, output_dir)),
+        experiment_name=experiment_name,
+        output_path=output_path,
+        callbacks=[bg.callbacks.DefaultLogger(log_interval=1)],
     )
 
     # Run optimization and return the best system

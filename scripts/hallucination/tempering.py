@@ -24,8 +24,8 @@ minimizer = bg.minimizer.SimulatedTempering(
     n_steps_high=50,
     n_steps_low=200,
     n_cycles=40,
-    log_frequency=10,
     experiment_name='tempering_hallucination',
+    callbacks=[bg.callbacks.DefaultLogger(log_interval=10)],
 )
 
 minimizer.minimize_system(bg.System([state]))

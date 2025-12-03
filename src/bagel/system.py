@@ -42,18 +42,14 @@ class System:
             for state in self.states:
                 if not state.energy_terms:
                     logger.warning(
-                        f"State '{state.name}' has no energy terms. "
-                        "Skipping from system total energy calculation."
+                        f"State '{state.name}' has no energy terms. Skipping from system total energy calculation."
                     )
                     continue
                 state_energies.append(state.energy)
-            
+
             if not state_energies:
-                raise ValueError(
-                    "System has no states with energy terms defined. "
-                    "Cannot compute system total energy."
-                )
-            
+                raise ValueError('System has no states with energy terms defined. Cannot compute system total energy.')
+
             self.total_energy = np.sum(state_energies)
         return self.total_energy
 
@@ -70,7 +66,6 @@ class System:
             state._energy_term_values = {}
             state._oracles_result = OraclesResultDict()
             state._cache_key = None
-
 
     def dump_config(self, path: pl.Path) -> None:
         """

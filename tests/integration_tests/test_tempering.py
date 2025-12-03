@@ -106,16 +106,20 @@ def test_tempering_preserve_best_system_every_n_steps(
     )
     # Get the last logged best sequence (best sequences are only logged when new_best=True)
     last_best_sequence = analyzer.best_sequences['state_A'][max(analyzer.best_sequences['state_A'].keys())]
-    assert analyzer.current_sequences['state_A'][13] == last_best_sequence, (
-        'Best system from before was not preserved.'
-    )
+    assert analyzer.current_sequences['state_A'][13] == last_best_sequence, 'Best system from before was not preserved.'
 
     # go into the directory with current/folding, and check there's 16 files with .pae and .plddt and .cif
     # (step 0 plus steps 1-15 = 16 total steps)
     current_folding_dir = test_output_path / minimizer.experiment_name / 'current' / 'folding'
-    assert len(list(current_folding_dir.glob('*.pae'))) == 16, 'There should be 16 .pae files in the current/folding directory.'
-    assert len(list(current_folding_dir.glob('*.plddt'))) == 16, 'There should be 16 .plddt files in the current/folding directory.'
-    assert len(list(current_folding_dir.glob('*.cif'))) == 16, 'There should be 16 .cif files in the current/folding directory.'
+    assert len(list(current_folding_dir.glob('*.pae'))) == 16, (
+        'There should be 16 .pae files in the current/folding directory.'
+    )
+    assert len(list(current_folding_dir.glob('*.plddt'))) == 16, (
+        'There should be 16 .plddt files in the current/folding directory.'
+    )
+    assert len(list(current_folding_dir.glob('*.cif'))) == 16, (
+        'There should be 16 .cif files in the current/folding directory.'
+    )
 
 
 def test_tempering_energy_term_names_in_csv_files(

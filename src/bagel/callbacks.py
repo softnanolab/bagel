@@ -404,7 +404,7 @@ class FoldingLogger(Callback):
 
                 oracle_name = type(oracle).__name__
                 cif_path = folding_path / f'{state.name}_{oracle_name}_{step}.cif'
-                state.to_cif(oracle, cif_path)
+                oracle_result.to_cif(cif_path)
                 oracle_result.save_attributes(folding_path / f'{state.name}_{oracle_name}_{step}')
 
     def on_optimization_start(self, context: CallbackContext) -> None:
@@ -419,10 +419,14 @@ class FoldingLogger(Callback):
         current_folding_path, best_folding_path = self._ensure_folding_dirs(base_path)
 
         if context.step % self.log_interval == 0:
-            self._dump_folding_results_for_system(step=context.step, system=context.system, folding_path=current_folding_path)
+            self._dump_folding_results_for_system(
+                step=context.step, system=context.system, folding_path=current_folding_path
+            )
 
         if context.new_best:
-            self._dump_folding_results_for_system(step=context.step, system=context.best_system, folding_path=best_folding_path)
+            self._dump_folding_results_for_system(
+                step=context.step, system=context.best_system, folding_path=best_folding_path
+            )
 
 
 class EarlyStopping(Callback):
