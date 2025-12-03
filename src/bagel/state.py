@@ -40,11 +40,11 @@ class State:
     ----------
     _energy : float | None
         Private cached total (weighted) energy value for the State. Automatically invalidated
-        when chains or energy_terms change. Access via get_energy() method.
-    _energy_terms_value : dict[str, float]
+        when chains or energy_terms change. Access via energy property.
+    _energy_term_values : dict[str, float]
         Private cached (unweighted) values of individual :class:`.EnergyTerm` objects.
         Automatically invalidated when chains or energy_terms change. Access via
-        get_energy_terms() method.
+        energy_term_values property.
     _oracles_result : dict[Oracle, OracleResult]
         Results of different oracles, e.g., folding, embedding, etc.
     """
@@ -54,7 +54,7 @@ class State:
     energy_terms: List[EnergyTerm]
     _energy: float | None = field(default=None, init=False)
     _oracles_result: OraclesResultDict = field(default_factory=lambda: OraclesResultDict(), init=False)
-    _energy_terms_value: dict[str, float] = field(default_factory=lambda: {}, init=False)
+    _energy_term_values: dict[str, float] = field(default_factory=lambda: {}, init=False)
     _cache_key: tuple[tuple[str, ...], tuple[tuple[str, float], ...]] | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
@@ -88,12 +88,20 @@ class State:
         if self._cache_key != current_key:
             # Cache is stale - clear it
             self._energy = None
-            self._energy_terms_value = {}
+            self._energy_term_values = {}
             self._oracles_result = OraclesResultDict()
             self._cache_key = None
 
-    def get_energy(self) -> float:
-        """Calculate energy of state using energy terms."""
+    @property
+    def energy(self) -> float:
+        """Total weighted energy of state. Raises ValueError if no energy terms defined."""
+        # Validate that energy terms exist
+        if not self.energy_terms:
+            raise ValueError(
+                f"State '{self.name}' has no energy terms defined. "
+                "Cannot compute energy without energy terms."
+            )
+        
         # Check cache validity and invalidate if needed
         self._invalidate_cache_if_needed()
 
@@ -115,7 +123,7 @@ class State:
             for term in self.energy_terms:
                 unweighted_energy, weighted_energy = term.compute(oracles_result=self._oracles_result)
                 total_energy += weighted_energy
-                self._energy_terms_value[term.name] = unweighted_energy
+                self._energy_term_values[term.name] = unweighted_energy
                 logger.debug(f'Energy term {term.name} has value {unweighted_energy}')
 
             self._energy = total_energy
@@ -126,15 +134,23 @@ class State:
 
         return self._energy
 
-    def get_energy_terms(self) -> dict[str, float]:
-        """Get unweighted energy term values, computing if needed."""
+    @property
+    def energy_term_values(self) -> dict[str, float]:
+        """Unweighted energy term values. Raises ValueError if no energy terms defined."""
+        # Validate that energy terms exist
+        if not self.energy_terms:
+            raise ValueError(
+                f"State '{self.name}' has no energy terms defined. "
+                "Cannot get energy term values without energy terms."
+            )
+        
         self._invalidate_cache_if_needed()
 
         if self._energy is None:
-            self.get_energy()  # This will compute and cache
-        if self._energy_terms_value == {}:
-            raise ValueError('Energy terms values are not computed. You should not get here unless you are debugging.')
-        return self._energy_terms_value.copy()  # Return copy for safety
+            _ = self.energy  # This will compute and cache
+        if self._energy_term_values == {}:
+            raise ValueError('Energy term values are not computed. You should not get here unless you are debugging.')
+        return self._energy_term_values.copy()  # Return copy for safety
 
     def to_cif(self, oracle: FoldingOracle, filepath: Path) -> bool:
         """

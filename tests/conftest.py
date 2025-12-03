@@ -244,7 +244,7 @@ def small_structure_state(
         pae=np.zeros((len(small_structure), len(small_structure)))[None, :, :],
         local_plddt=np.zeros(len(small_structure))[None, :],
     )
-    state._energy_terms_value = {
+    state._energy_term_values = {
         energy_terms[0].name: -0.7,
         energy_terms[1].name: 0.2,
     }
@@ -447,7 +447,7 @@ def mixed_structure_state(
         local_plddt=np.zeros(len(line_structure))[None, :],
     )
     state._energy = 0.1
-    state._energy_terms_value = {
+    state._energy_term_values = {
         energy_terms[0].name: -0.4,
         energy_terms[1].name: 0.5,
     }
@@ -469,7 +469,7 @@ def mixed_system(small_structure_state: bg.State, mixed_structure_state: bg.Stat
 
 
 @pytest.fixture
-def test_log_path(request) -> pl.Path:
+def test_output_path(request) -> pl.Path:
     test_name = request.node.name
     path = pl.Path(__file__).resolve().parent / 'data' / test_name
     yield path
@@ -517,7 +517,7 @@ def simple_state(fake_esmfold: bg.oracles.folding.ESMFold) -> bg.State:
         ],
         name='state_A',
     )
-    state._energy_terms_value = {
+    state._energy_term_values = {
         state.energy_terms[0].name: -1.0,
         state.energy_terms[1].name: -0.5,
     }
@@ -527,7 +527,7 @@ def simple_state(fake_esmfold: bg.oracles.folding.ESMFold) -> bg.State:
 @pytest.fixture
 def real_simple_state(simple_state: bg.State, esmfold: bg.oracles.folding.ESMFold) -> bg.State:
     state_copy = simple_state.__copy__()
-    state_copy._energy_terms_value = {}
+    state_copy._energy_term_values = {}
     for term in state_copy.energy_terms:
         term.oracle = esmfold
     return state_copy

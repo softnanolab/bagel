@@ -64,18 +64,55 @@ def test_system_dump_logs_folder_is_correct(mixed_system: bg.System) -> None:
     # Ensure system energy is calculated
     assert mixed_system.total_energy is not None, 'System energy should be calculated before dumping logs'
 
-    # Call dump_logs with the parameters aligned with the current implementation
-    mixed_system.dump_logs(step=mock_step, path=experiment_folder, save_structure=True)
+    # Use DefaultLogger and FoldingLogger to reproduce the previous dump_logs behavior
+    from bagel.callbacks import DefaultLogger, FoldingLogger
+
+    # Get the oracle instance from the system
+    oracle = mixed_system.states[0].oracles_list[0]
+
+    default_logger = DefaultLogger(log_interval=1)
+    folding_logger = FoldingLogger(folding_oracle=oracle, log_interval=1)
+
+    class _DummyMinimizer:
+        def __init__(self, output_path: pl.Path) -> None:
+            self.output_path = output_path
+
+    minimizer = _DummyMinimizer(output_path=experiment_folder)
+
+    from bagel.callbacks import CallbackContext
+
+    # Construct a minimal CallbackContext to drive the loggers
+    context = CallbackContext(
+        step=mock_step,
+        system=mixed_system,
+        best_system=mixed_system,
+        new_best=True,
+        metrics={},
+        minimizer=minimizer,  # type: ignore[arg-type]
+        step_kwargs={},
+    )
+
+    # Ensure config directory exists for dump_config in DefaultLogger
+    experiment_folder.mkdir(parents=True, exist_ok=True)
+    # DefaultLogger.on_optimization_start() logs step 0 once for current and best
+    default_logger.on_optimization_start(context)
+    # FoldingLogger logs folding outputs on step_end
+    folding_logger.on_optimization_start(context)
+    folding_logger.on_step_end(context)
 
     sequences = {
         header: sequence
-        for header, sequence in FastaFile.read_iter(file=experiment_folder / f'{mixed_system.states[1].name}.fasta')
+        for header, sequence in FastaFile.read_iter(
+            file=experiment_folder / 'current' / f'{mixed_system.states[1].name}.fasta'
+        )
     }
     assert sequences == {'0': 'G:VV:GVVV'}, 'incorrect sequence information saved'
 
     masks = {
         header: mask
-        for header, mask in FastaFile.read_iter(file=experiment_folder / f'{mixed_system.states[1].name}.mask.fasta')
+        for header, mask in FastaFile.read_iter(
+            file=experiment_folder / 'current' / f'{mixed_system.states[1].name}.mask.fasta'
+        )
     }
     assert masks == {'0': 'M:MM:MIIM'}, 'incorrect mutability mask information saved'
 
@@ -86,10 +123,10 @@ def test_system_dump_logs_folder_is_correct(mixed_system: bg.System) -> None:
 
     structures = {
         'small': get_structure(
-            CIFFile().read(file=experiment_folder / 'structures' / f'small_{oracle_name}_{mock_step}.cif')
+            CIFFile().read(file=experiment_folder / 'current' / 'folding' / f'small_{oracle_name}_{mock_step}.cif')
         )[0],
         'mixed': get_structure(
-            CIFFile().read(file=experiment_folder / 'structures' / f'mixed_{oracle_name}_{mock_step}.cif')
+            CIFFile().read(file=experiment_folder / 'current' / 'folding' / f'mixed_{oracle_name}_{mock_step}.cif')
         )[0],
     }
     correct_structures = {
@@ -97,7 +134,7 @@ def test_system_dump_logs_folder_is_correct(mixed_system: bg.System) -> None:
         'mixed': mixed_system.states[1]._oracles_result[oracle].structure,
     }
 
-    energies = pd.read_csv(experiment_folder / 'energies.csv')
+    energies = pd.read_csv(experiment_folder / 'current' / 'energies.csv')
     correct_energies = pd.DataFrame(
         {
             'step': [mock_step],
@@ -122,10 +159,10 @@ def test_system_dump_logs_folder_is_correct(mixed_system: bg.System) -> None:
     )
 
     # load the pae and plddt files
-    small_pae = np.loadtxt(experiment_folder / 'structures' / f'small_{oracle_name}_{mock_step}.pae')
-    small_plddt = np.loadtxt(experiment_folder / 'structures' / f'small_{oracle_name}_{mock_step}.plddt')
-    mixed_pae = np.loadtxt(experiment_folder / 'structures' / f'mixed_{oracle_name}_{mock_step}.pae')
-    mixed_plddt = np.loadtxt(experiment_folder / 'structures' / f'mixed_{oracle_name}_{mock_step}.plddt')
+    small_pae = np.loadtxt(experiment_folder / 'current' / 'folding' / f'small_{oracle_name}_{mock_step}.pae')
+    small_plddt = np.loadtxt(experiment_folder / 'current' / 'folding' / f'small_{oracle_name}_{mock_step}.plddt')
+    mixed_pae = np.loadtxt(experiment_folder / 'current' / 'folding' / f'mixed_{oracle_name}_{mock_step}.pae')
+    mixed_plddt = np.loadtxt(experiment_folder / 'current' / 'folding' / f'mixed_{oracle_name}_{mock_step}.plddt')
     assert np.array_equal(small_pae, mixed_system.states[0]._oracles_result[oracle].pae[0]), (
         'incorrect pae information saved'
     )

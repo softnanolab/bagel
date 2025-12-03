@@ -38,7 +38,23 @@ class System:
 
     def get_total_energy(self) -> float:
         if self.total_energy is None:
-            self.total_energy = np.sum([state.get_energy() for state in self.states])
+            state_energies = []
+            for state in self.states:
+                if not state.energy_terms:
+                    logger.warning(
+                        f"State '{state.name}' has no energy terms. "
+                        "Skipping from system total energy calculation."
+                    )
+                    continue
+                state_energies.append(state.energy)
+            
+            if not state_energies:
+                raise ValueError(
+                    "System has no states with energy terms defined. "
+                    "Cannot compute system total energy."
+                )
+            
+            self.total_energy = np.sum(state_energies)
         return self.total_energy
 
     def reset(self) -> None:
@@ -51,84 +67,10 @@ class System:
         self.total_energy = None
         for state in self.states:
             state._energy = None
-            state._energy_terms_value = {}
+            state._energy_term_values = {}
             state._oracles_result = OraclesResultDict()
             state._cache_key = None
 
-    def dump_logs(self, step: int, path: pl.Path, save_structure: bool = True) -> None:
-        r"""
-        Saves logging information for the system under the given directory path. This folder contains:
-
-        - a CSV file named 'energies.csv'. Columns include 'step', '\<state.name\>_\<energy.name\>' for all energies,
-          '\<state.name\>_energy' and 'system_energy'. Note the final
-          column is the sum of the mean weighted energies of each state.
-        - a FASTA file for all sequences named '\<state.name\>.fasta'. Each header is the sequence's step and each
-        sequence is a string of amino acid letters with : seperating each chain.
-        - a FASTA file of per-residue mutability masks named '\<state.name\>.mask.fasta'. Each header is the
-          sequence's step and each sequence is a string with 'M' for mutable and 'I' for immutable residues (default),
-          with : separating chains in the same order as the sequence FASTA.
-        - a further directory named 'structures' containing all CIF files. Files are named '\<state.name>_\<step>.cif'
-          for all states.
-
-        Expects the energies of the system to already be calculated.
-
-        Parameters
-        ----------
-        step : int
-            The index of the current optimisation step.
-        path: pl.Path
-            The directory in which the log files will be saved into.
-        save_structure: bool, default=True
-            Whether to save the CIF file of each state.
-        """
-        assert self.total_energy is not None, 'System energy not calculated. Call get_total_energy() first.'
-
-        structure_path = path / 'structures'
-        if step == 0:
-            structure_path.mkdir(parents=True)
-
-        assert path.exists(), 'Path does not exist. Please create the directory first.'
-        assert structure_path.exists(), 'Structure path does not exist. Please create the directory first.'
-
-        energies: dict[str, int | float] = {'step': step}  #  order of insertion consistent in every dump_logs call
-        for state in self.states:
-            # Use public API to get energy terms
-            energy_terms = state.get_energy_terms()
-            for energy_name, energy_value in energy_terms.items():
-                energies[f'{state.name}/{energy_name}'] = energy_value
-            # Use public API to get energy
-            state_energy = state.get_energy()
-            energies[f'{state.name}/state_energy'] = state_energy
-
-            with open(path / f'{state.name}.fasta', mode='a') as file:
-                file.write(f'>{step}\n')
-                file.write(f'{":".join(state.total_sequence)}\n')
-
-            mask_per_chain = [
-                ''.join(['M' if residue.mutable else 'I' for residue in chain.residues]) for chain in state.chains
-            ]
-            with open(path / f'{state.name}.mask.fasta', mode='a') as mask_file:
-                mask_file.write(f'>{step}\n')
-                mask_file.write(f'{":".join(mask_per_chain)}\n')
-
-            if save_structure:
-                for oracle, oracle_result in state._oracles_result.items():
-                    if isinstance(oracle, FoldingOracle) and isinstance(oracle_result, FoldingResult):
-                        oracle_name = type(oracle).__name__
-                        state.to_cif(oracle, structure_path / f'{state.name}_{oracle_name}_{step}.cif')
-                        oracle_result.save_attributes(structure_path / f'{state.name}_{oracle_name}_{step}')
-                    else:
-                        logger.debug(
-                            f'Skipping {oracle.__class__.__name__} for CIF export, as it is not a FoldingOracle'
-                        )
-
-        energies['system_energy'] = self.total_energy
-
-        energies_path = path / 'energies.csv'
-        with open(energies_path, mode='a') as file:
-            if step == 0:
-                file.write(','.join(energies.keys()) + '\n')
-            file.write(','.join([str(energy) for energy in energies.values()]) + '\n')
 
     def dump_config(self, path: pl.Path) -> None:
         """

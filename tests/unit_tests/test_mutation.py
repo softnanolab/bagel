@@ -93,7 +93,7 @@ def test_mutation_protocol_resets_system_total_energy(
     assert system.total_energy + 1.4 < 0.5, 'system total energy is not correct'
 
     for state in system.states:
-        assert len(state._energy_terms_value) == 2, 'system energy terms value is not correct'
+        assert len(state._energy_term_values) == 2, 'system energy terms value is not correct'
         assert state._oracles_result is not None, 'system oracles result is None'
         assert len(state._oracles_result) == 1, 'system oracles result is not correct'
 
@@ -101,7 +101,7 @@ def test_mutation_protocol_resets_system_total_energy(
     assert system.total_energy is None, 'system total energy not reset'
 
     for state in system.states:
-        assert len(state._energy_terms_value) == 0, 'system energy terms value is not correct'
+        assert len(state._energy_term_values) == 0, 'system energy terms value is not correct'
         assert state._oracles_result is not None, 'system oracles result is None'
         assert len(state._oracles_result) == 0, 'system oracles result is not correct'
 

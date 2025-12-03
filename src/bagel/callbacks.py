@@ -15,6 +15,7 @@ import pathlib as pl
 
 from .system import System
 from .minimizer import Minimizer
+from .oracles.folding import FoldingOracle, FoldingResult
 
 if TYPE_CHECKING:
     import wandb
@@ -185,16 +186,17 @@ class CallbackManager:
 
         # Extract state-level metrics from current system
         for state in system.states:
-            # Ensure state energy is calculated (cache auto-invalidates if needed)
-            state.get_energy()
+            # Skip states with no energy terms
+            if not state.energy_terms:
+                continue
 
             # Extract individual energy terms using public API
-            energy_terms = state.get_energy_terms()
+            energy_terms = state.energy_term_values
             for energy_name, energy_value in energy_terms.items():
                 metrics[f'{state.name}/{energy_name}'] = energy_value
 
-            # Extract state total energy using return value from get_energy()
-            state_energy = state.get_energy()
+            # Extract state total energy using property
+            state_energy = state.energy
             metrics[f'{state.name}/state_energy'] = state_energy
 
         return metrics
@@ -260,6 +262,167 @@ class CallbackManager:
                 callback.on_optimization_end(context)
             except Exception as e:
                 logger.error(f'Error in callback {callback.__class__.__name__}.on_optimization_end: {e}', exc_info=True)
+
+
+class DefaultLogger(Callback):
+    """
+    Default file-based logger for scalar and sequence data.
+
+    This logger writes:
+    - energies.csv with step, per-state energy terms, per-state total energies, and system_energy
+    - per-state FASTA files with sequences
+    - per-state mask FASTA files with mutability masks
+
+    It does not write structures; use FoldingLogger for structure outputs.
+
+    Output layout
+    -------------
+    Files are written under the Minimizer.output_path directory in two subtrees:
+    - <output_path>/current
+    - <output_path>/best
+
+    Parameters
+    ----------
+    log_interval : int
+        Interval (in steps) at which to log the current system.
+    """
+
+    def __init__(self, log_interval: int) -> None:
+        if log_interval <= 0:
+            raise ValueError(f'log_interval must be a positive integer, got {log_interval}')
+        self.log_interval = log_interval
+
+    def _ensure_dirs(self, base_path: pl.Path) -> tuple[pl.Path, pl.Path]:
+        current_path = base_path / 'current'
+        best_path = base_path / 'best'
+        current_path.mkdir(parents=True, exist_ok=True)
+        best_path.mkdir(parents=True, exist_ok=True)
+        return current_path, best_path
+
+    def _dump_system(self, step: int, system: System, path: pl.Path) -> None:
+        """
+        Core implementation of scalar/sequence logging.
+        """
+        total_energy = system.get_total_energy()
+        if total_energy is None:
+            raise ValueError('System energy not calculated. Call get_total_energy() first.')
+
+        path.mkdir(parents=True, exist_ok=True)
+
+        energies: dict[str, int | float] = {'step': step}
+        for state in system.states:
+            # Skip states with no energy terms
+            if not state.energy_terms:
+                continue
+
+            energy_terms = state.energy_term_values
+            for energy_name, energy_value in energy_terms.items():
+                energies[f'{state.name}/{energy_name}'] = energy_value
+
+            state_energy = state.energy
+            energies[f'{state.name}/state_energy'] = state_energy
+
+            with open(path / f'{state.name}.fasta', mode='a') as file:
+                file.write(f'>{step}\n')
+                file.write(f'{":".join(state.total_sequence)}\n')
+
+            mask_per_chain = [
+                ''.join(['M' if residue.mutable else 'I' for residue in chain.residues]) for chain in state.chains
+            ]
+            with open(path / f'{state.name}.mask.fasta', mode='a') as mask_file:
+                mask_file.write(f'>{step}\n')
+                mask_file.write(f'{":".join(mask_per_chain)}\n')
+
+        energies['system_energy'] = total_energy
+
+        energies_path = path / 'energies.csv'
+        write_header = step == 0 and not energies_path.exists()
+        with open(energies_path, mode='a') as file:
+            if write_header:
+                file.write(','.join(energies.keys()) + '\n')
+            file.write(','.join(str(energy) for energy in energies.values()) + '\n')
+
+    def on_optimization_start(self, context: CallbackContext) -> None:
+        base_path: pl.Path = context.minimizer.output_path
+        base_path.mkdir(parents=True, exist_ok=True)
+
+        # Write configuration once at the top level
+        context.system.dump_config(base_path)
+
+        current_path, best_path = self._ensure_dirs(base_path)
+        # Log initial step 0 without structures to mirror prior behavior
+        self._dump_system(step=0, system=context.system, path=current_path)
+        self._dump_system(step=0, system=context.best_system, path=best_path)
+
+    def on_step_end(self, context: CallbackContext) -> None:
+        base_path: pl.Path = context.minimizer.output_path
+        current_path, best_path = self._ensure_dirs(base_path)
+
+        if context.step % self.log_interval == 0:
+            self._dump_system(step=context.step, system=context.system, path=current_path)
+
+        if context.new_best:
+            self._dump_system(step=context.step, system=context.best_system, path=best_path)
+
+
+class FoldingLogger(Callback):
+    """
+    Logger that saves CIF structures and oracle attributes for a specific FoldingOracle instance.
+
+    Parameters
+    ----------
+    folding_oracle : FoldingOracle
+        The FoldingOracle instance to log (e.g. an ESMFold instance).
+    log_interval : int
+        Interval (in steps) at which to log structures for the current system.
+    """
+
+    def __init__(self, folding_oracle: FoldingOracle, log_interval: int) -> None:
+        if log_interval <= 0:
+            raise ValueError(f'log_interval must be a positive integer, got {log_interval}')
+        if not isinstance(folding_oracle, FoldingOracle):
+            raise TypeError(f'folding_oracle must be a FoldingOracle instance, got {type(folding_oracle)}')
+        self.folding_oracle = folding_oracle
+        self.log_interval = log_interval
+
+    def _ensure_folding_dirs(self, base_path: pl.Path) -> tuple[pl.Path, pl.Path]:
+        """Ensure current/folding and best/folding directories exist."""
+        current_folding_path = base_path / 'current' / 'folding'
+        best_folding_path = base_path / 'best' / 'folding'
+        current_folding_path.mkdir(parents=True, exist_ok=True)
+        best_folding_path.mkdir(parents=True, exist_ok=True)
+        return current_folding_path, best_folding_path
+
+    def _dump_folding_results_for_system(self, step: int, system: System, folding_path: pl.Path) -> None:
+        """Save CIF files and oracle attributes to the specified folding directory."""
+        for state in system.states:
+            for oracle, oracle_result in state._oracles_result.items():
+                if oracle is not self.folding_oracle:
+                    continue
+                if not isinstance(oracle_result, FoldingResult):
+                    continue
+
+                oracle_name = type(oracle).__name__
+                cif_path = folding_path / f'{state.name}_{oracle_name}_{step}.cif'
+                state.to_cif(oracle, cif_path)
+                oracle_result.save_attributes(folding_path / f'{state.name}_{oracle_name}_{step}')
+
+    def on_optimization_start(self, context: CallbackContext) -> None:
+        base_path: pl.Path = context.minimizer.output_path
+        current_folding_path, best_folding_path = self._ensure_folding_dirs(base_path)
+        # Log step 0 to both current and best
+        self._dump_folding_results_for_system(step=0, system=context.system, folding_path=current_folding_path)
+        self._dump_folding_results_for_system(step=0, system=context.best_system, folding_path=best_folding_path)
+
+    def on_step_end(self, context: CallbackContext) -> None:
+        base_path: pl.Path = context.minimizer.output_path
+        current_folding_path, best_folding_path = self._ensure_folding_dirs(base_path)
+
+        if context.step % self.log_interval == 0:
+            self._dump_folding_results_for_system(step=context.step, system=context.system, folding_path=current_folding_path)
+
+        if context.new_best:
+            self._dump_folding_results_for_system(step=context.step, system=context.best_system, folding_path=best_folding_path)
 
 
 class EarlyStopping(Callback):

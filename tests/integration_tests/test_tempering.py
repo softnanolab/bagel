@@ -6,7 +6,7 @@ import numpy as np
 # ? Could this not just be a mutation unit test?
 def test_tempering_does_not_mutate_immutable_residues(
     esmfold: bg.oracles.folding.ESMFold,
-    test_log_path: pl.Path,
+    test_output_path: pl.Path,
     very_high_temp: float,
 ) -> None:
     mutability = [False, True, False]
@@ -32,8 +32,8 @@ def test_tempering_does_not_mutate_immutable_residues(
         n_steps_low=2,
         n_cycles=1,
         preserve_best_system_every_n_steps=None,
-        log_frequency=1,
-        log_path=test_log_path,
+        callbacks=[bg.callbacks.DefaultLogger(log_interval=1)],
+        output_path=test_output_path,
     )
 
     best_system = minimizer.minimize_system(system=test_system)
@@ -43,7 +43,7 @@ def test_tempering_does_not_mutate_immutable_residues(
 
 def test_tempering_preserve_best_system_every_n_steps(
     esmfold: bg.oracles.folding.ESMFold,
-    test_log_path: pl.Path,
+    test_output_path: pl.Path,
     very_high_temp: float,
 ) -> None:
     np.random.seed(42)
@@ -70,15 +70,18 @@ def test_tempering_preserve_best_system_every_n_steps(
         n_steps_low=2,
         n_cycles=3,
         preserve_best_system_every_n_steps=13,
-        log_frequency=1,
-        log_path=test_log_path,
+        callbacks=[
+            bg.callbacks.DefaultLogger(log_interval=1),
+            bg.callbacks.FoldingLogger(folding_oracle=esmfold, log_interval=1),
+        ],
+        output_path=test_output_path,
     )
 
     best_system = minimizer.minimize_system(test_system)
 
     from bagel.analysis.analyzer import SimulatedTemperingAnalyzer
 
-    analyzer = SimulatedTemperingAnalyzer(test_log_path / minimizer.experiment_name)
+    analyzer = SimulatedTemperingAnalyzer(test_output_path / minimizer.experiment_name)
 
     # Check that step column is 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
     assert analyzer.optimization_df['step'].tolist() == list(range(1, 16)), 'Step column does not match expected'
@@ -101,23 +104,23 @@ def test_tempering_preserve_best_system_every_n_steps(
     assert analyzer.current_sequences['state_A'][12] != analyzer.current_sequences['state_A'][13], (
         'Current system at step 13 is the same as from before.'
     )
-    assert analyzer.current_sequences['state_A'][13] == analyzer.best_sequences['state_A'][12], (
+    # Get the last logged best sequence (best sequences are only logged when new_best=True)
+    last_best_sequence = analyzer.best_sequences['state_A'][max(analyzer.best_sequences['state_A'].keys())]
+    assert analyzer.current_sequences['state_A'][13] == last_best_sequence, (
         'Best system from before was not preserved.'
     )
-    assert analyzer.current_sequences['state_A'][13] == analyzer.best_sequences['state_A'][13], (
-        'Current and best systems are not the same.'
-    )
 
-    # go into the directory with current, and check there's 15 files with .pae and .plddt and .cif
-    current_dir = test_log_path / minimizer.experiment_name / 'current' / 'structures'
-    assert len(list(current_dir.glob('*.pae'))) == 16, 'There should be 16 .pae files in the current directory.'
-    assert len(list(current_dir.glob('*.plddt'))) == 16, 'There should be 16 .plddt files in the current directory.'
-    assert len(list(current_dir.glob('*.cif'))) == 16, 'There should be 16 .cif files in the current directory.'
+    # go into the directory with current/folding, and check there's 16 files with .pae and .plddt and .cif
+    # (step 0 plus steps 1-15 = 16 total steps)
+    current_folding_dir = test_output_path / minimizer.experiment_name / 'current' / 'folding'
+    assert len(list(current_folding_dir.glob('*.pae'))) == 16, 'There should be 16 .pae files in the current/folding directory.'
+    assert len(list(current_folding_dir.glob('*.plddt'))) == 16, 'There should be 16 .plddt files in the current/folding directory.'
+    assert len(list(current_folding_dir.glob('*.cif'))) == 16, 'There should be 16 .cif files in the current/folding directory.'
 
 
 def test_tempering_energy_term_names_in_csv_files(
     esmfold: bg.oracles.folding.ESMFold,
-    test_log_path: pl.Path,
+    test_output_path: pl.Path,
     very_high_temp: float,
 ) -> None:
     """Test that custom energy term names are correctly recorded in energies.csv files."""
@@ -145,18 +148,18 @@ def test_tempering_energy_term_names_in_csv_files(
         n_steps_low=1,
         n_cycles=2,  # Short run for testing
         preserve_best_system_every_n_steps=None,
-        log_frequency=1,
-        log_path=test_log_path,
+        callbacks=[bg.callbacks.DefaultLogger(log_interval=1)],
+        output_path=test_output_path,
     )
 
     best_system = minimizer.minimize_system(test_system)
 
     from bagel.analysis.analyzer import SimulatedTemperingAnalyzer
 
-    analyzer = SimulatedTemperingAnalyzer(test_log_path / minimizer.experiment_name)
+    analyzer = SimulatedTemperingAnalyzer(test_output_path / minimizer.experiment_name)
 
     # Expected energy term names using the actual state name
-    expected_energy_names = [f'{state.name}:pTM_test', f'{state.name}:global_pLDDT', f'{state.name}:global_pLDDT_test']
+    expected_energy_names = [f'{state.name}/pTM_test', f'{state.name}/global_pLDDT', f'{state.name}/global_pLDDT_test']
 
     # Check that custom energy term names appear in specific columns (2nd, 3rd, 4th) in current energies CSV
     current_energy_columns = analyzer.current_energies_df.columns.tolist()

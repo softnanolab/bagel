@@ -21,7 +21,7 @@ def add_chemical_potential_energy(state):
 
 def test_grandcanonical_does_not_change_chain_length_when_mutator_not_allowed_to_remove_or_add(
     real_simple_state: bg.State,
-    test_log_path: pl.Path,
+    test_output_path: pl.Path,
     very_high_temp: float,
 ) -> None:
     add_chemical_potential_energy(real_simple_state)
@@ -36,7 +36,7 @@ def test_grandcanonical_does_not_change_chain_length_when_mutator_not_allowed_to
         final_temperature=very_high_temp,
         n_steps=5,
         log_frequency=1,
-        log_path=test_log_path,
+        output_path=test_output_path,
     )
 
     minimizer.minimize_system(test_system)
@@ -46,7 +46,7 @@ def test_grandcanonical_does_not_change_chain_length_when_mutator_not_allowed_to
 
 def test_grandcanonical_does_not_increase_chain_length_when_mutator_not_allowed_to_add(
     real_simple_state: bg.State,
-    test_log_path: pl.Path,
+    test_output_path: pl.Path,
     very_high_temp: float,
 ) -> None:
     add_chemical_potential_energy(real_simple_state)
@@ -61,7 +61,7 @@ def test_grandcanonical_does_not_increase_chain_length_when_mutator_not_allowed_
         final_temperature=very_high_temp,
         n_steps=5,
         log_frequency=1,
-        log_path=test_log_path,
+        output_path=test_output_path,
     )
 
     minimizer.minimize_system(test_system)
@@ -71,7 +71,7 @@ def test_grandcanonical_does_not_increase_chain_length_when_mutator_not_allowed_
 
 def test_grandcanonical_does_not_zero_chain_length_when_mutator_only_allowed_to_remove(
     real_simple_state: bg.State,
-    test_log_path: pl.Path,
+    test_output_path: pl.Path,
     very_high_temp: float,
 ) -> None:
     add_chemical_potential_energy(real_simple_state)
@@ -86,7 +86,7 @@ def test_grandcanonical_does_not_zero_chain_length_when_mutator_only_allowed_to_
         final_temperature=very_high_temp,
         n_steps=starting_chain_length + 1,
         log_frequency=1,
-        log_path=test_log_path,
+        output_path=test_output_path,
     )
 
     minimizer.minimize_system(test_system)

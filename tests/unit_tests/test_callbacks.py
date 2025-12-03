@@ -49,7 +49,7 @@ def simple_system(fake_esmfold: bg.oracles.folding.ESMFold) -> bg.System:
         name='state_A',
     )
     state._energy = -1.5
-    state._energy_terms_value = {
+    state._energy_term_values = {
         state.energy_terms[0].name: -1.0,  # 'pTM'
         state.energy_terms[1].name: -0.5,  # 'global_pLDDT'
     }
