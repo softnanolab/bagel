@@ -201,3 +201,45 @@ def test_grand_canonical_replay_matches_sequences_and_topology(
 
     assert sequence_trajectory == replay_sequence_traj, 'Replayed sequences diverged from recorded trajectory'
     assert topology_trajectory == replay_topology_traj, 'Energy term residue groups diverged during replayed trajectory'
+
+
+@patch.object(bg.System, 'get_total_energy')
+def test_GrandCanonical_allows_insertion_and_deletion_at_chain_start_and_end(
+    mocked_calculate_method: Mock,
+    energies_system: bg.System,
+) -> None:
+    """Verify GrandCanonical allows insertion and deletion at the start and end of chains."""
+    mutator = bg.mutation.GrandCanonical(move_probabilities={'substitution': 0.0, 'addition': 1.0, 'removal': 0.0})
+
+    # Test addition at start (position 0)
+    with patch('numpy.random.choice') as mock_choice:
+        # First call selects the chain, second call selects position 0
+        mock_choice.side_effect = [energies_system.states[0].chains[0], 0, list(mutator.mutation_bias.keys())[0]]
+        mutated_system, mutation_record = mutator.one_step(system=energies_system)
+        assert mutation_record.mutations[0].residue_index == 0, 'Addition should occur at position 0 (start)'
+        assert mutation_record.mutations[0].move_type == 'addition'
+
+    # Test addition at end (position chain.length)
+    original_length = len(energies_system.states[0].chains[0].residues)
+    with patch('numpy.random.choice') as mock_choice:
+        mock_choice.side_effect = [energies_system.states[0].chains[0], original_length, list(mutator.mutation_bias.keys())[0]]
+        mutated_system, mutation_record = mutator.one_step(system=energies_system)
+        assert mutation_record.mutations[0].residue_index == original_length, 'Addition should occur at end position'
+        assert mutation_record.mutations[0].move_type == 'addition'
+
+    # Test removal at start (position 0)
+    mutator_removal = bg.mutation.GrandCanonical(move_probabilities={'substitution': 0.0, 'addition': 0.0, 'removal': 1.0})
+    with patch('numpy.random.choice') as mock_choice:
+        # Chain selection, then position 0 for removal
+        mock_choice.side_effect = [energies_system.states[0].chains[0], 0]
+        mutated_system, mutation_record = mutator_removal.one_step(system=energies_system)
+        assert mutation_record.mutations[0].residue_index == 0, 'Removal should occur at position 0 (start)'
+        assert mutation_record.mutations[0].move_type == 'removal'
+
+    # Test removal at end (last position)
+    last_mutable_index = energies_system.states[0].chains[0].mutable_residue_indexes[-1]
+    with patch('numpy.random.choice') as mock_choice:
+        mock_choice.side_effect = [energies_system.states[0].chains[0], last_mutable_index]
+        mutated_system, mutation_record = mutator_removal.one_step(system=energies_system)
+        assert mutation_record.mutations[0].residue_index == last_mutable_index, 'Removal should occur at last mutable position'
+        assert mutation_record.mutations[0].move_type == 'removal'
