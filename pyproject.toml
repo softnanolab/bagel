@@ -1,6 +1,6 @@
 [project]
 name = "biobagel"
-version = "0.1.9"
+version = "0.2.0"
 authors = [
   {name = "Jakub Lála", email = "jakublala@gmail.com"},
   {name = "Ayham Al-Saffar", email = "ayham.saffar@gmail.com"},
@@ -15,7 +15,7 @@ keywords = ["protein", "protein design", "optimization", "monte carlo", "samplin
 requires-python = ">=3.11,<3.14"
 dependencies = [
     "biotite>=1.0.1",
-    "boileroom==0.2.1",
+    "boileroom @ file:///home/jakub/projects/protein-design/boileroom",
     "numpy>=2.2.0",
     "pandas>=2.2.3",
     "pydantic>=2.10.6",
