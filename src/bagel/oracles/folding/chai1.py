@@ -48,19 +48,21 @@ class Chai1(FoldingOracle):
 
     result_class: Type[Chai1Result] = Chai1Result
 
-    def __init__(self, backend: str = "modal", config: dict[str, Any] = {}):
+    def __init__(self, backend: str = "modal", device: str | None = None, config: dict[str, Any] = {}):
         """
         Initialize Chai1 oracle.
 
         Parameters
         ----------
         backend : str
-            Backend to use. Only "modal" is supported.
+            Backend to use. Supported values: "modal", "apptainer"
+        device : str | None
+            Device to use (e.g., "cuda:0", "cuda:1").
         config : dict[str, Any]
             Configuration dictionary passed to the model
         """
-        assert backend == "modal", "Chai1 requires modal backend"
         self.backend = backend
+        self.device = device
         self.default_config = {}
         # Always request these fields in the output
         self.required_fields = ['plddt', 'pae', 'ptm']
@@ -68,7 +70,7 @@ class Chai1(FoldingOracle):
 
     def _load(self, config: dict[str, Any] = {}) -> None:
         config = {**self.default_config, **config}
-        self.model = Chai1Boiler(backend=self.backend, config=config)
+        self.model = Chai1Boiler(backend=self.backend, device=self.device, config=config)
 
     def _pre_process(self, chains: list[Chain]) -> list[str]:
         """

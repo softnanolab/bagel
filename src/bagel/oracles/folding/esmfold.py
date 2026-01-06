@@ -57,18 +57,21 @@ class ESMFold(FoldingOracle):
 
     result_class: Type[ESMFoldResult] = ESMFoldResult
 
-    def __init__(self, backend: str = "modal", config: dict[str, Any] = {}):
+    def __init__(self, backend: str = "modal", device: str | None = None, config: dict[str, Any] = {}):
         """
         Initialize ESMFold oracle.
 
         Parameters
         ----------
         backend : str
-            Backend to use. Supported values: "modal", "local"
+            Backend to use. Supported values: "modal", "local", "apptainer"
+        device : str | None
+            Device to use (e.g., "cuda:0", "cuda:1").
         config : dict[str, Any]
             Configuration dictionary passed to the model
         """
         self.backend = backend
+        self.device = device
         self.default_config = {
             'output_pdb': False,
             'output_cif': False,
@@ -82,7 +85,7 @@ class ESMFold(FoldingOracle):
 
     def _load(self, config: dict[str, Any] = {}) -> None:
         config = {**self.default_config, **config}
-        self.model = ESMFoldBoiler(backend=self.backend, config=config)
+        self.model = ESMFoldBoiler(backend=self.backend, device=self.device, config=config)
 
     def _pre_process(self, chains: list[Chain]) -> list[str]:
         """

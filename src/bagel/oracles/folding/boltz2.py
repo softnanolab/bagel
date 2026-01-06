@@ -48,19 +48,21 @@ class Boltz2(FoldingOracle):
 
     result_class: Type[Boltz2Result] = Boltz2Result
 
-    def __init__(self, backend: str = "modal", config: dict[str, Any] = {}):
+    def __init__(self, backend: str = "modal", device: str | None = None, config: dict[str, Any] = {}):
         """
         Initialize Boltz2 oracle.
 
         Parameters
         ----------
         backend : str
-            Backend to use. Only "modal" is supported.
+            Backend to use. Supported values: "modal", "apptainer"
+        device : str | None
+            Device to use (e.g., "cuda:0", "cuda:1").
         config : dict[str, Any]
             Configuration dictionary passed to the model
         """
-        assert backend == "modal", "Boltz2 requires modal backend"
         self.backend = backend
+        self.device = device
         self.default_config = {}
         # Always request these fields in the output
         self.required_fields = ['plddt', 'pae']
@@ -68,7 +70,7 @@ class Boltz2(FoldingOracle):
 
     def _load(self, config: dict[str, Any] = {}) -> None:
         config = {**self.default_config, **config}
-        self.model = Boltz2Boiler(backend=self.backend, config=config)
+        self.model = Boltz2Boiler(backend=self.backend, device=self.device, config=config)
 
     def _pre_process(self, chains: list[Chain]) -> list[str]:
         """
