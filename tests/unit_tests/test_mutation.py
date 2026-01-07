@@ -216,6 +216,7 @@ def test_GrandCanonical_allows_insertion_and_deletion_at_chain_start_and_end(
         # First call selects the chain, second call selects position 0
         mock_choice.side_effect = [energies_system.states[0].chains[0], 0, list(mutator.mutation_bias.keys())[0]]
         mutated_system, mutation_record = mutator.one_step(system=energies_system)
+        assert len(mutation_record.mutations) == 1 # At least one mutation need to have occurred
         assert mutation_record.mutations[0].residue_index == 0, 'Addition should occur at position 0 (start)'
         assert mutation_record.mutations[0].move_type == 'addition'
 
