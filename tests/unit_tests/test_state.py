@@ -89,21 +89,22 @@ def test_state_get_energy(fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch)
     # Create state with mock components
     state = bg.State(name='test_state', chains=[chain], energy_terms=[energy_term1, energy_term2])
 
-    energy = state.get_energy()
+    energy = state.energy
     assert energy == 5.0  # 1.0 * 2.0 + 1.0 * 3.0
     assert state._energy == 5.0
-    assert state._energy_terms_value == {'MockEnergyTerm1': 1.0, 'MockEnergyTerm2': 1.0}
+    assert state._energy_term_values == {'MockEnergyTerm1': 1.0, 'MockEnergyTerm2': 1.0}
     assert fake_esmfold in state._oracles_result
 
     # Test 2: Second call - should use cached values
     original_oracles_result = state._oracles_result.copy()
-    energy = state.get_energy()
+    energy = state.energy
     assert energy == 5.0
     assert state._oracles_result == original_oracles_result  # Should not recalculate oracle results
 
-    # Test 3: Test with empty energy terms
+    # Test 3: Test with empty energy terms - should raise ValueError
     empty_state = bg.State(name='empty_state', chains=[chain], energy_terms=[])
-    assert empty_state.get_energy() == 0.0
+    with pytest.raises(ValueError, match='has no energy terms defined'):
+        _ = empty_state.energy
 
     # Test 4: Test that duplicate energy term names raise AssertionError
     duplicate_term1 = MockEnergyTerm(
@@ -123,8 +124,8 @@ def test_state_get_energy(fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch)
         name='duplicate_test_state', chains=[chain], energy_terms=[duplicate_term1, duplicate_term2]
     )
 
-    with pytest.raises(AssertionError, match='Energy term names must be unique'):
-        duplicate_state.get_energy()
+    with pytest.raises(ValueError, match='Energy term names must be unique'):
+        _ = duplicate_state.energy
 
     # Test 5: Test with duplicate PTM energy term
     ptm_duplicate_term1 = bg.energies.PTMEnergy(
@@ -140,8 +141,8 @@ def test_state_get_energy(fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch)
         name='ptm_duplicate_test_state', chains=[chain], energy_terms=[ptm_duplicate_term1, ptm_duplicate_term2]
     )
 
-    with pytest.raises(AssertionError, match='Energy term names must be unique'):
-        ptm_duplicate_state.get_energy()
+    with pytest.raises(ValueError, match='Energy term names must be unique'):
+        _ = ptm_duplicate_state.energy
 
     # Test 6: Test with named PTM energy term
     ptm_term1 = bg.energies.PTMEnergy(
@@ -156,7 +157,7 @@ def test_state_get_energy(fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch)
     )
 
     ptm_state = bg.State(name='ptm_test_state', chains=[chain], energy_terms=[ptm_term1, ptm_term2])
-    ptm_energy = float(ptm_state.get_energy())  # Why is the energy output as an array?
+    ptm_energy = float(ptm_state.energy)  # Why is the energy output as an array?
     assert np.round(ptm_energy, 1) == -3.5  # -0.7 * 2.0 + -0.7 * 3.0
 
     # Test 7: Test with multiple oracles
@@ -195,8 +196,78 @@ def test_state_get_energy(fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch)
 
     multi_oracle_state = bg.State(name='multi_oracle_state', chains=[chain], energy_terms=[term_a, term_b])
 
-    energy = multi_oracle_state.get_energy()
+    energy = multi_oracle_state.energy
     assert energy == 2.0  # 1.0 + 2.0
     assert len(multi_oracle_state._oracles_result) == 2  # Should have results from both oracles
     assert oracle_a in multi_oracle_state._oracles_result
     assert oracle_b in multi_oracle_state._oracles_result
+
+
+def test_energy_cache_auto_invalidation(fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch) -> None:
+    """Test that energy cache automatically invalidates when chains or energy_terms change."""
+    # Mock oracle to track calls
+    call_count = {'count': 0}
+
+    def mock_predict(self, chains):
+        call_count['count'] += 1
+        # Create a mock structure with minimal required data
+        mock_structure = AtomArray(0)  # Empty structure
+        return bg.oracles.folding.ESMFoldResult(
+            input_chains=chains,
+            structure=mock_structure,
+            ptm=np.array([0.7]),  # Mock pTM value
+            pae=np.zeros((0, 0)),  # Empty PAE matrix
+            local_plddt=np.array([]),  # Empty local plDDT scores
+        )
+
+    monkeypatch.setattr(bg.oracles.folding.ESMFold, 'predict', mock_predict)
+
+    # Create mock energy terms
+    class MockEnergyTerm(bg.energies.EnergyTerm):
+        def compute(self, oracles_result):
+            # Return both unweighted and weighted energies
+            return 1.0, 1.0 * self.weight
+
+    # Create initial state
+    chain = bg.Chain([bg.Residue(name='A', chain_ID='A', index=i) for i in range(3)])
+    energy_term = MockEnergyTerm(
+        name='MockEnergyTerm',
+        oracle=fake_esmfold,
+        weight=1.0,
+        inheritable=True,
+    )
+    state = bg.State(name='test', chains=[chain], energy_terms=[energy_term])
+
+    # Test 1: First computation - should calculate
+    energy1 = state.energy
+    assert call_count['count'] == 1
+    assert state._energy == energy1
+    assert state._energy == 1.0  # 1.0 * 1.0
+
+    # Test 2: Second call with no changes - should use cache
+    energy2 = state.energy
+    assert call_count['count'] == 1  # No new oracle call
+    assert energy2 == energy1
+
+    # Test 3: Mutate chain - cache should auto-invalidate
+    chain.mutate_residue(0, 'V')
+    energy3 = state.energy
+    assert call_count['count'] == 2  # New oracle call
+    assert state._energy == energy3
+    assert energy3 == 1.0  # Still 1.0, but recalculated
+
+    # Test 4: Add residue - cache should auto-invalidate
+    chain.add_residue('G', 1)
+    energy4 = state.energy
+    assert call_count['count'] == 3
+
+    # Test 5: Remove residue - cache should auto-invalidate
+    chain.remove_residue(0)
+    energy5 = state.energy
+    assert call_count['count'] == 4
+
+    # Test 6: Change energy term weight - cache should auto-invalidate
+    energy_term.weight = 2.0
+    energy6 = state.energy
+    assert call_count['count'] == 5
+    assert state._energy == 2.0  # 1.0 * 2.0

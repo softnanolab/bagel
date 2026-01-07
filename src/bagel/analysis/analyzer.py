@@ -78,7 +78,7 @@ class MonteCarloAnalyzer(Analyzer):
     def _build_energy_weight_lookup(self) -> dict[str, float]:
         if self.config_df.empty:
             return {}
-        return {f'{row["state"]}:{row["energy"]}': float(row['weight']) for _, row in self.config_df.iterrows()}
+        return {f'{row["state"]}/{row["energy"]}': float(row['weight']) for _, row in self.config_df.iterrows()}
 
     def _attach_sequences_to_df(self, energies_df: pd.DataFrame, sequences: dict[str, dict[int, str]]) -> None:
         if 'step' not in energies_df.columns:
@@ -87,7 +87,7 @@ class MonteCarloAnalyzer(Analyzer):
 
         step_series = energies_df['step'].astype(int)
         for state_name, seq_by_step in sequences.items():
-            column = f'{state_name}:sequence'
+            column = f'{state_name}/sequence'
             energies_df[column] = step_series.map(seq_by_step.get)
 
     def plot_energies(self, weighted: bool = True, use_best: bool = False, ax: plt.Axes = None):
@@ -110,7 +110,7 @@ class MonteCarloAnalyzer(Analyzer):
 
         weight_lookup = self.energy_weights if weighted else {}
         columns_to_plot = [
-            col for col in energies_df.columns if col not in {'step', 'system_energy'} and not col.endswith(':sequence')
+            col for col in energies_df.columns if col not in {'step', 'system_energy'} and not col.endswith('/sequence')
         ]
 
         for column in columns_to_plot:

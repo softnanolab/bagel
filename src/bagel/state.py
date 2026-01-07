@@ -7,11 +7,10 @@ Copyright (c) 2025 Jakub Lála, Ayham Al-Saffar, Stefano Angioletti-Uberti
 """
 
 from .chain import Chain
-from .oracles import Oracle, FoldingOracle, OraclesResultDict
+from .oracles import Oracle, OraclesResultDict
 from .energies import EnergyTerm
 from typing import Optional
 from pathlib import Path
-from biotite.structure.io.pdbx import CIFFile, set_structure
 from dataclasses import dataclass, field
 from typing import List, Any
 from copy import deepcopy
@@ -38,20 +37,24 @@ class State:
 
     Attributes
     ----------
-    _energy : Optional[float]
-        Cached total (weighted) energy value for the State.
+    _energy : float | None
+        Private cached total (weighted) energy value for the State. Automatically invalidated
+        when chains or energy_terms change. Access via energy property.
+    _energy_term_values : dict[str, float]
+        Private cached (unweighted) values of individual :class:`.EnergyTerm` objects.
+        Automatically invalidated when chains or energy_terms change. Access via
+        energy_term_values property.
     _oracles_result : dict[Oracle, OracleResult]
         Results of different oracles, e.g., folding, embedding, etc.
-    _energy_terms_value : dict[(str, float)]
-        Cached (unweighted)values of individual :class:`.EnergyTerm` objects.
     """
 
     name: str
     chains: List[Chain]
     energy_terms: List[EnergyTerm]
-    _energy: Optional[float] = field(default=None, init=False)
+    _energy: float | None = field(default=None, init=False)
     _oracles_result: OraclesResultDict = field(default_factory=lambda: OraclesResultDict(), init=False)
-    _energy_terms_value: dict[(str, float)] = field(default_factory=lambda: {}, init=False)
+    _energy_term_values: dict[str, float] = field(default_factory=lambda: {}, init=False)
+    _cache_key: tuple[tuple[str, ...], tuple[tuple[str, float], ...]] | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         """Sanity check."""
@@ -69,56 +72,82 @@ class State:
     def total_sequence(self) -> List[str]:
         return [chain.sequence for chain in self.chains]
 
-    def get_energy(self) -> float:
-        """Calculate energy of state using energy terms ."""
-        if self._energy_terms_value == {}:  # If energies not yet calculated
+    @property
+    def _current_cache_key(self) -> tuple[tuple[str, ...], tuple[tuple[str, float], ...]]:
+        """Generate cache key from chain sequences and energy term properties."""
+        # Track chain sequences (what oracle.predict() depends on)
+        sequences = tuple(chain.sequence for chain in self.chains)
+        # Track energy term identity and weights (affects computation)
+        terms_signature = tuple((term.name, term.weight) for term in self.energy_terms)
+        return (sequences, terms_signature)
+
+    def _invalidate_cache_if_needed(self) -> None:
+        """Automatically invalidate cache if inputs have changed."""
+        current_key = self._current_cache_key
+        if self._cache_key != current_key:
+            # Cache is stale - clear it
+            self._energy = None
+            self._energy_term_values = {}
+            self._oracles_result = OraclesResultDict()
+            self._cache_key = None
+
+    @property
+    def energy(self) -> float:
+        """Total weighted energy of state. Raises ValueError if no energy terms defined."""
+        # Validate that energy terms exist
+        if not self.energy_terms:
+            raise ValueError(
+                f"State '{self.name}' has no energy terms defined. Cannot compute energy without energy terms."
+            )
+
+        # Check cache validity and invalidate if needed
+        self._invalidate_cache_if_needed()
+
+        if self._energy is None:  # Cache miss or invalidated
             # Check if the output of the oracle is already calculated, otherwise calculate it
             for oracle in self.oracles_list:
                 if oracle not in self._oracles_result:
                     self._oracles_result[oracle] = oracle.predict(chains=self.chains)
 
-        # Check that all energy term names are unique
-        energy_term_names = [term.name for term in self.energy_terms]
-        assert len(energy_term_names) == len(set(energy_term_names)), (
-            f"Energy term names must be unique. Found duplicates: {energy_term_names}. Please rename using 'name'."
-        )
+            # Check that all energy term names are unique
+            energy_term_names = [term.name for term in self.energy_terms]
+            if len(energy_term_names) != len(set(energy_term_names)):
+                raise ValueError(
+                    f'Energy term names must be unique. Found duplicates: {energy_term_names}. '
+                    "Please rename using 'name'."
+                )
 
-        total_energy = 0.0
-        for term in self.energy_terms:
-            unweighted_energy, weighted_energy = term.compute(oracles_result=self._oracles_result)
-            total_energy += weighted_energy
-            self._energy_terms_value[term.name] = unweighted_energy
-            logger.debug(f'Energy term {term.name} has value {unweighted_energy}')
+            total_energy = 0.0
+            for term in self.energy_terms:
+                unweighted_energy, weighted_energy = term.compute(oracles_result=self._oracles_result)
+                total_energy += weighted_energy
+                self._energy_term_values[term.name] = unweighted_energy
+                logger.debug(f'Energy term {term.name} has value {unweighted_energy}')
 
-        self._energy = total_energy
+            self._energy = total_energy
+            # Store cache key after successful computation
+            self._cache_key = self._current_cache_key
 
-        logger.debug(f'**Weighted** energy for state {self.name} is {self._energy}')
+            logger.debug(f'**Weighted** energy for state {self.name} is {self._energy}')
 
         return self._energy
 
-    def to_cif(self, oracle: FoldingOracle, filepath: Path) -> bool:
-        """
-        Write the state to a CIF file of a specific FoldingOracle.
+    @property
+    def energy_term_values(self) -> dict[str, float]:
+        """Unweighted energy term values. Raises ValueError if no energy terms defined."""
+        # Validate that energy terms exist
+        if not self.energy_terms:
+            raise ValueError(
+                f"State '{self.name}' has no energy terms defined. Cannot get energy term values without energy terms."
+            )
 
-        Parameters
-        ----------
-        filepath : Path
-            Path to the file to write the CIF structure to.
+        self._invalidate_cache_if_needed()
 
-        Returns
-        -------
-        bool
-            True if the file was written successfully, False otherwise.
-        """
-        filepath.parent.mkdir(parents=True, exist_ok=True)
-        structure_file = CIFFile()
-        set_structure(structure_file, self._oracles_result.get_structure(oracle))
-        logger.debug(f'Writing CIF structure of {self.name} from {type(oracle).__name__} to {filepath}')
-        structure_file.write(filepath)
-        if not filepath.exists():
-            raise FileNotFoundError(f'Structure file {filepath} was not created')
-        else:
-            return True
+        if self._energy is None:
+            _ = self.energy  # This will compute and cache
+        if self._energy_term_values == {}:
+            raise ValueError('Energy term values are not computed. You should not get here unless you are debugging.')
+        return self._energy_term_values.copy()  # Return copy for safety
 
     def total_residues(self) -> int:
         return sum([len(chain.residues) for chain in self.chains])

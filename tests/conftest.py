@@ -119,10 +119,42 @@ def fake_esmfold(request, monkeypatch) -> bg.oracles.folding.ESMFold:
     def mock_load(self, config={}):
         pass
 
-    # Patch the _load method
-    monkeypatch.setattr(bg.oracles.folding.ESMFold, '_load', mock_load)
+    # Mock the fold method to return a proper ESMFoldResult based on input chains
+    def mock_fold(self, chains):
+        # Create an AtomArray with atoms for each residue in each chain
+        atoms_list = []
+        for chain in chains:
+            for residue in chain.residues:
+                # Create at least one atom (CA) per residue with correct chain_id and res_id
+                atom = Atom(
+                    coord=[0.0, 0.0, 0.0],
+                    chain_id=chain.chain_ID,
+                    res_id=residue.index,
+                    res_name=bg.constants.aa_dict.get(residue.name, 'GLY'),
+                    atom_name='CA',
+                    element='C',
+                )
+                atoms_list.append(atom)
 
-    # Now create the actual instance - _load will be patched
+        mock_structure = array(atoms_list) if atoms_list else AtomArray(0)
+
+        # Calculate number of residues across all chains
+        num_residues = sum(len(chain.residues) for chain in chains) if chains else 0
+
+        # Return ESMFoldResult with proper structure
+        return bg.oracles.folding.ESMFoldResult(
+            input_chains=chains,
+            structure=mock_structure,
+            local_plddt=np.zeros((1, num_residues)) if num_residues > 0 else np.array([]).reshape(1, 0),
+            ptm=np.array([0.5])[None, :],
+            pae=np.zeros((1, num_residues, num_residues)) if num_residues > 0 else np.zeros((1, 0, 0)),
+        )
+
+    # Patch both methods
+    monkeypatch.setattr(bg.oracles.folding.ESMFold, '_load', mock_load)
+    monkeypatch.setattr(bg.oracles.folding.ESMFold, 'fold', mock_fold)
+
+    # Now create the actual instance
     return bg.oracles.folding.ESMFold(use_modal=False)
 
 
@@ -212,12 +244,14 @@ def small_structure_state(
         pae=np.zeros((len(small_structure), len(small_structure)))[None, :, :],
         local_plddt=np.zeros(len(small_structure))[None, :],
     )
-    state._energy_terms_value = {
+    state._energy_term_values = {
         energy_terms[0].name: -0.7,
         energy_terms[1].name: 0.2,
     }
     state._oracles_result = bg.oracles.OraclesResultDict()
     state._oracles_result[state.oracles_list[0]] = folding_result
+    # Mark cache as valid for this manually-initialised test state
+    state._cache_key = state._current_cache_key  # type: ignore[attr-defined]
     return state
 
 
@@ -413,12 +447,14 @@ def mixed_structure_state(
         local_plddt=np.zeros(len(line_structure))[None, :],
     )
     state._energy = 0.1
-    state._energy_terms_value = {
+    state._energy_term_values = {
         energy_terms[0].name: -0.4,
         energy_terms[1].name: 0.5,
     }
     state._oracles_result = bg.oracles.OraclesResultDict()
     state._oracles_result[state.oracles_list[0]] = folding_result
+    # Mark cache as valid for this manually-initialised test state
+    state._cache_key = state._current_cache_key  # type: ignore[attr-defined]
     return state
 
 
@@ -433,7 +469,7 @@ def mixed_system(small_structure_state: bg.State, mixed_structure_state: bg.Stat
 
 
 @pytest.fixture
-def test_log_path(request) -> pl.Path:
+def test_output_path(request) -> pl.Path:
     test_name = request.node.name
     path = pl.Path(__file__).resolve().parent / 'data' / test_name
     yield path
@@ -481,8 +517,7 @@ def simple_state(fake_esmfold: bg.oracles.folding.ESMFold) -> bg.State:
         ],
         name='state_A',
     )
-    state._structure = AtomArray(length=len(residues))
-    state._energy_terms_value = {
+    state._energy_term_values = {
         state.energy_terms[0].name: -1.0,
         state.energy_terms[1].name: -0.5,
     }
@@ -492,7 +527,7 @@ def simple_state(fake_esmfold: bg.oracles.folding.ESMFold) -> bg.State:
 @pytest.fixture
 def real_simple_state(simple_state: bg.State, esmfold: bg.oracles.folding.ESMFold) -> bg.State:
     state_copy = simple_state.__copy__()
-    state_copy._energy_terms_value = {}
+    state_copy._energy_term_values = {}
     for term in state_copy.energy_terms:
         term.oracle = esmfold
     return state_copy

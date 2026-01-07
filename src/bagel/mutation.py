@@ -225,7 +225,6 @@ class MutationProtocol(ABC):
             else:
                 raise ValueError(f'Unknown move_type: {mutation.move_type}')
 
-        replayed_system.reset()
         return replayed_system
 
 
@@ -262,7 +261,6 @@ class Canonical(MutationProtocol):
         for _ in range(self.n_mutations):
             chain = self.choose_chain(mutated_system)
             mutations.append(self.mutate_random_residue(chain))
-        mutated_system.reset()  # Reset the system so it knows it must recalculate fold and energy
         mutation_record = MutationRecord(mutations=mutations)
         return mutated_system, mutation_record
 
@@ -392,6 +390,5 @@ class GrandCanonical(MutationProtocol):
             elif move == 'removal':
                 mutations.append(self.remove_random_residue(chain, mutated_system))
 
-        mutated_system.reset()  # Reset the system so it knows it must recalculate fold and energy
         mutation_record = MutationRecord(mutations=mutations)
         return mutated_system, mutation_record

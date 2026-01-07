@@ -64,18 +64,55 @@ def test_system_dump_logs_folder_is_correct(mixed_system: bg.System) -> None:
     # Ensure system energy is calculated
     assert mixed_system.total_energy is not None, 'System energy should be calculated before dumping logs'
 
-    # Call dump_logs with the parameters aligned with the current implementation
-    mixed_system.dump_logs(step=mock_step, path=experiment_folder, save_structure=True)
+    # Use DefaultLogger and FoldingLogger to reproduce the previous dump_logs behavior
+    from bagel.callbacks import DefaultLogger, FoldingLogger
+
+    # Get the oracle instance from the system
+    oracle = mixed_system.states[0].oracles_list[0]
+
+    default_logger = DefaultLogger(log_interval=1)
+    folding_logger = FoldingLogger(folding_oracle=oracle, log_interval=1)
+
+    class _DummyMinimizer:
+        def __init__(self, log_path: pl.Path) -> None:
+            self.log_path = log_path
+
+    minimizer = _DummyMinimizer(log_path=experiment_folder)
+
+    from bagel.callbacks import CallbackContext
+
+    # Construct a minimal CallbackContext to drive the loggers
+    context = CallbackContext(
+        step=mock_step,
+        system=mixed_system,
+        best_system=mixed_system,
+        new_best=True,
+        metrics={},
+        minimizer=minimizer,  # type: ignore[arg-type]
+        step_kwargs={},
+    )
+
+    # Ensure config directory exists for dump_config in DefaultLogger
+    experiment_folder.mkdir(parents=True, exist_ok=True)
+    # DefaultLogger.on_optimization_start() logs step 0 once for current and best
+    default_logger.on_optimization_start(context)
+    # FoldingLogger logs folding outputs on step_end
+    folding_logger.on_optimization_start(context)
+    folding_logger.on_step_end(context)
 
     sequences = {
         header: sequence
-        for header, sequence in FastaFile.read_iter(file=experiment_folder / f'{mixed_system.states[1].name}.fasta')
+        for header, sequence in FastaFile.read_iter(
+            file=experiment_folder / 'current' / f'{mixed_system.states[1].name}.fasta'
+        )
     }
     assert sequences == {'0': 'G:VV:GVVV'}, 'incorrect sequence information saved'
 
     masks = {
         header: mask
-        for header, mask in FastaFile.read_iter(file=experiment_folder / f'{mixed_system.states[1].name}.mask.fasta')
+        for header, mask in FastaFile.read_iter(
+            file=experiment_folder / 'current' / f'{mixed_system.states[1].name}.mask.fasta'
+        )
     }
     assert masks == {'0': 'M:MM:MIIM'}, 'incorrect mutability mask information saved'
 
@@ -86,10 +123,10 @@ def test_system_dump_logs_folder_is_correct(mixed_system: bg.System) -> None:
 
     structures = {
         'small': get_structure(
-            CIFFile().read(file=experiment_folder / 'structures' / f'small_{oracle_name}_{mock_step}.cif')
+            CIFFile().read(file=experiment_folder / 'current' / 'folding' / f'small_{oracle_name}_{mock_step}.cif')
         )[0],
         'mixed': get_structure(
-            CIFFile().read(file=experiment_folder / 'structures' / f'mixed_{oracle_name}_{mock_step}.cif')
+            CIFFile().read(file=experiment_folder / 'current' / 'folding' / f'mixed_{oracle_name}_{mock_step}.cif')
         )[0],
     }
     correct_structures = {
@@ -97,16 +134,16 @@ def test_system_dump_logs_folder_is_correct(mixed_system: bg.System) -> None:
         'mixed': mixed_system.states[1]._oracles_result[oracle].structure,
     }
 
-    energies = pd.read_csv(experiment_folder / 'energies.csv')
+    energies = pd.read_csv(experiment_folder / 'current' / 'energies.csv')
     correct_energies = pd.DataFrame(
         {
             'step': [mock_step],
-            'small:pTM': [-0.7],
-            'small:selective_surface_area': [0.2],
-            'mixed:local_pLDDT': [-0.4],
-            'mixed:cross_PAE': [0.5],
-            'small:state_energy': [-0.5],
-            'mixed:state_energy': [0.1],
+            'small/pTM': [-0.7],
+            'small/selective_surface_area': [0.2],
+            'mixed/local_pLDDT': [-0.4],
+            'mixed/cross_PAE': [0.5],
+            'small/state_energy': [-0.5],
+            'mixed/state_energy': [0.1],
             'system_energy': [-0.4],
         }
     )
@@ -122,10 +159,10 @@ def test_system_dump_logs_folder_is_correct(mixed_system: bg.System) -> None:
     )
 
     # load the pae and plddt files
-    small_pae = np.loadtxt(experiment_folder / 'structures' / f'small_{oracle_name}_{mock_step}.pae')
-    small_plddt = np.loadtxt(experiment_folder / 'structures' / f'small_{oracle_name}_{mock_step}.plddt')
-    mixed_pae = np.loadtxt(experiment_folder / 'structures' / f'mixed_{oracle_name}_{mock_step}.pae')
-    mixed_plddt = np.loadtxt(experiment_folder / 'structures' / f'mixed_{oracle_name}_{mock_step}.plddt')
+    small_pae = np.loadtxt(experiment_folder / 'current' / 'folding' / f'small_{oracle_name}_{mock_step}.pae')
+    small_plddt = np.loadtxt(experiment_folder / 'current' / 'folding' / f'small_{oracle_name}_{mock_step}.plddt')
+    mixed_pae = np.loadtxt(experiment_folder / 'current' / 'folding' / f'mixed_{oracle_name}_{mock_step}.pae')
+    mixed_plddt = np.loadtxt(experiment_folder / 'current' / 'folding' / f'mixed_{oracle_name}_{mock_step}.plddt')
     assert np.array_equal(small_pae, mixed_system.states[0]._oracles_result[oracle].pae[0]), (
         'incorrect pae information saved'
     )
@@ -160,3 +197,53 @@ def test_system_get_total_energy_gives_correct_output(mixed_system: bg.System) -
     total_energy = mixed_system.get_total_energy()
     # state 0: energy=-0.5, state 1: energy=0.1
     assert np.isclose(total_energy, (-0.5 + 0.1))  # system energy is sum of state energies
+
+
+def test_system_get_total_energy_invalidates_cache_after_mutation(energies_system: bg.System) -> None:
+    """
+    Test that System.get_total_energy() correctly invalidates stale cache after mutations.
+
+    This test verifies the fix for the bug where deepcopy would preserve a stale total_energy
+    value that wouldn't be invalidated when chains are mutated. The fix ensures that
+    get_total_energy() always accesses state.energy, which triggers automatic cache invalidation.
+    """
+    # Compute initial energy to cache it
+    initial_energy = energies_system.get_total_energy()
+    assert energies_system.total_energy is not None, 'System energy should be cached after computation'
+
+    # Copy the system - deepcopy will copy the cached total_energy
+    copied_system = energies_system.__copy__()
+    assert copied_system.total_energy == initial_energy, 'Copied system should have same cached energy'
+
+    # Mutate the copied system's chains (this changes sequences but doesn't invalidate System.total_energy)
+    mutator = bg.mutation.Canonical(n_mutations=1)
+    chain = copied_system.states[0].chains[0]
+    original_sequence = chain.sequence
+    mutator.mutate_random_residue(chain)
+
+    # Verify the sequence actually changed
+    assert chain.sequence != original_sequence, 'Mutation should change the chain sequence'
+
+    # Call get_total_energy() - it should recompute, not return stale cached value
+    # The fix ensures state.energy is accessed, which triggers cache invalidation
+    recomputed_energy = copied_system.get_total_energy()
+
+    # The energy should be different (or at least recomputed, even if coincidentally the same)
+    # More importantly, we verify that state caches were invalidated and recomputed
+    # by checking that state._cache_key was updated
+    for state in copied_system.states:
+        assert state._cache_key is not None, 'State cache key should be set after energy computation'
+        # Verify the cache key matches current sequences (proving it was recomputed)
+        expected_key = state._current_cache_key
+        assert state._cache_key == expected_key, 'State cache key should match current sequences'
+
+    # The recomputed energy should be based on the mutated sequences
+    # (It may or may not equal initial_energy depending on the mutation, but it should be recomputed)
+    assert isinstance(recomputed_energy, (int, float)), 'Energy should be a numeric value'
+
+    # Verify that accessing state.energy triggers invalidation by checking oracle results
+    # were recomputed (if they exist)
+    for state in copied_system.states:
+        if state._oracles_result:
+            # Oracle results should exist and be based on current sequences
+            assert len(state._oracles_result) > 0, 'Oracle results should be computed'
