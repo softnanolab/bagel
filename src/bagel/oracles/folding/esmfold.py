@@ -80,7 +80,7 @@ class ESMFold(FoldingOracle):
             'position_ids_skip': 512,
         }
         # Always request these fields in the output
-        self.required_fields = ['plddt', 'predicted_aligned_error', 'ptm']
+        self.required_fields = ['plddt', 'pae', 'ptm']
         self._load(config)
 
     def _load(self, config: dict[str, Any] = {}) -> None:
@@ -122,8 +122,8 @@ class ESMFold(FoldingOracle):
         # These fields should always be present since we requested them via include_fields
         if output.plddt is None:
             raise ValueError("ESMFold output does not contain plddt (requested via include_fields)")
-        if output.predicted_aligned_error is None:
-            raise ValueError("ESMFold output does not contain predicted_aligned_error (requested via include_fields)")
+        if output.pae is None:
+            raise ValueError("ESMFold output does not contain pae (requested via include_fields)")
         if output.ptm is None:
             raise ValueError("ESMFold output does not contain ptm (requested via include_fields)")
         
@@ -135,6 +135,6 @@ class ESMFold(FoldingOracle):
             structure=atoms,
             local_plddt=local_plddt,
             ptm=output.ptm,
-            pae=output.predicted_aligned_error,
+            pae=output.pae,
         )
         return results
