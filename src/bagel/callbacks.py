@@ -442,7 +442,8 @@ class EarlyStopping(Callback):
     monitor : str
         Metric name to monitor (e.g., "system_energy", "best_system_energy").
     patience : int
-        Number of steps with no improvement before stopping.
+        Number of steps with no improvement before stopping. Ideally, this should be set as a multiple
+        of the number of Minimizer steps necessary to mutate the entire sequence (for the largest State).
     min_delta : float, default=0.0
         Minimum change in the monitored metric to be considered an improvement.
     mode : str, default="min"
