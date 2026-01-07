@@ -27,7 +27,10 @@ minimizer = bg.minimizer.SimulatedAnnealing(
     final_temperature=0.05,
     n_steps=2_000,
     experiment_name='annealing_scaffold_with_joiners',
-    callbacks=[bg.callbacks.DefaultLogger(log_interval=1)],
+    callbacks=[
+        bg.callbacks.DefaultLogger(log_interval=1),
+        bg.callbacks.FoldingLogger(folding_oracle=esmfold, log_interval=50),
+    ],
 )
 
 minimizer.minimize_system(system=bg.System([state]))

@@ -141,7 +141,10 @@ def main(
         n_cycles=optimization_params['n_cycles'],
         preserve_best_system_every_n_steps=optimization_params['n_steps_high'] + optimization_params['n_steps_low'],
         log_path=output_dir,
-        callbacks=[bg.callbacks.DefaultLogger(log_interval=1)],
+        callbacks=[
+            bg.callbacks.DefaultLogger(log_interval=1),
+            bg.callbacks.FoldingLogger(folding_oracle=esmfold, log_interval=50),
+        ],
     )
 
     # Return the best system
