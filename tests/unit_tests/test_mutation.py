@@ -179,3 +179,76 @@ def test_grand_canonical_replay_matches_sequences_and_topology(
 
     assert sequence_trajectory == replay_sequence_traj, 'Replayed sequences diverged from recorded trajectory'
     assert topology_trajectory == replay_topology_traj, 'Energy term residue groups diverged during replayed trajectory'
+
+
+@patch.object(bg.System, 'get_total_energy')
+def test_GrandCanonical_allows_insertion_and_deletion_at_chain_start_and_end(
+    mocked_calculate_method: Mock,
+    energies_system: bg.System,
+) -> None:
+    """Verify GrandCanonical allows insertion and deletion at the start and end of chains."""
+    # Test addition at start (position 0)
+    system_copy = energies_system.__copy__()
+    mutator = bg.mutation.GrandCanonical(move_probabilities={'substitution': 0.0, 'addition': 1.0, 'removal': 0.0})
+
+    with patch('numpy.random.choice') as mock_choice:
+        # Call order: choose_chain → move_type → position → amino_acid
+        target_chain = system_copy.states[0].chains[0]
+        mock_choice.side_effect = [
+            target_chain,  # choose_chain
+            'addition',  # move_type (deterministic with prob=1.0, but still called)
+            0,  # position in add_random_residue
+            list(mutator.mutation_bias.keys())[0],  # amino_acid
+        ]
+        _, mutation_record = mutator.one_step(system=system_copy)
+        assert len(mutation_record.mutations) == 1
+        assert mutation_record.mutations[0].residue_index == 0
+        assert mutation_record.mutations[0].move_type == 'addition'
+
+    # Test addition at end (position chain.length)
+    system_copy = energies_system.__copy__()
+    original_length = len(system_copy.states[0].chains[0].residues)
+
+    with patch('numpy.random.choice') as mock_choice:
+        target_chain = system_copy.states[0].chains[0]
+        mock_choice.side_effect = [
+            target_chain,
+            'addition',
+            original_length,  # end position
+            list(mutator.mutation_bias.keys())[0],
+        ]
+        _, mutation_record = mutator.one_step(system=system_copy)
+        assert mutation_record.mutations[0].residue_index == original_length
+        assert mutation_record.mutations[0].move_type == 'addition'
+
+    # Test removal at start (position 0)
+    system_copy = energies_system.__copy__()
+    mutator_removal = bg.mutation.GrandCanonical(
+        move_probabilities={'substitution': 0.0, 'addition': 0.0, 'removal': 1.0}
+    )
+
+    with patch('numpy.random.choice') as mock_choice:
+        target_chain = system_copy.states[0].chains[0]
+        mock_choice.side_effect = [
+            target_chain,  # choose_chain
+            'removal',  # move_type
+            0,  # mutable_residue_index in remove_random_residue
+        ]
+        _, mutation_record = mutator_removal.one_step(system=system_copy)
+        assert mutation_record.mutations[0].residue_index == 0
+        assert mutation_record.mutations[0].move_type == 'removal'
+
+    # Test removal at end (last position)
+    system_copy = energies_system.__copy__()
+    last_mutable_index = system_copy.states[0].chains[0].mutable_residue_indexes[-1]
+
+    with patch('numpy.random.choice') as mock_choice:
+        target_chain = system_copy.states[0].chains[0]
+        mock_choice.side_effect = [
+            target_chain,
+            'removal',
+            last_mutable_index,
+        ]
+        mutated_system, mutation_record = mutator_removal.one_step(system=system_copy)
+        assert mutation_record.mutations[0].residue_index == last_mutable_index
+        assert mutation_record.mutations[0].move_type == 'removal'
