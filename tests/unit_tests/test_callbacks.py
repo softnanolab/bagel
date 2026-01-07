@@ -53,6 +53,8 @@ def simple_system(fake_esmfold: bg.oracles.folding.ESMFold) -> bg.System:
         state.energy_terms[0].name: -1.0,  # 'pTM'
         state.energy_terms[1].name: -0.5,  # 'global_pLDDT'
     }
+    # Set cache_key to match current sequences so cache is considered valid
+    state._cache_key = state._current_cache_key
     system = bg.System(states=[state], name='simple_system')
     system.total_energy = -1.5
     return system

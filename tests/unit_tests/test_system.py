@@ -197,3 +197,53 @@ def test_system_get_total_energy_gives_correct_output(mixed_system: bg.System) -
     total_energy = mixed_system.get_total_energy()
     # state 0: energy=-0.5, state 1: energy=0.1
     assert np.isclose(total_energy, (-0.5 + 0.1))  # system energy is sum of state energies
+
+
+def test_system_get_total_energy_invalidates_cache_after_mutation(energies_system: bg.System) -> None:
+    """
+    Test that System.get_total_energy() correctly invalidates stale cache after mutations.
+
+    This test verifies the fix for the bug where deepcopy would preserve a stale total_energy
+    value that wouldn't be invalidated when chains are mutated. The fix ensures that
+    get_total_energy() always accesses state.energy, which triggers automatic cache invalidation.
+    """
+    # Compute initial energy to cache it
+    initial_energy = energies_system.get_total_energy()
+    assert energies_system.total_energy is not None, 'System energy should be cached after computation'
+
+    # Copy the system - deepcopy will copy the cached total_energy
+    copied_system = energies_system.__copy__()
+    assert copied_system.total_energy == initial_energy, 'Copied system should have same cached energy'
+
+    # Mutate the copied system's chains (this changes sequences but doesn't invalidate System.total_energy)
+    mutator = bg.mutation.Canonical(n_mutations=1)
+    chain = copied_system.states[0].chains[0]
+    original_sequence = chain.sequence
+    mutator.mutate_random_residue(chain)
+
+    # Verify the sequence actually changed
+    assert chain.sequence != original_sequence, 'Mutation should change the chain sequence'
+
+    # Call get_total_energy() - it should recompute, not return stale cached value
+    # The fix ensures state.energy is accessed, which triggers cache invalidation
+    recomputed_energy = copied_system.get_total_energy()
+
+    # The energy should be different (or at least recomputed, even if coincidentally the same)
+    # More importantly, we verify that state caches were invalidated and recomputed
+    # by checking that state._cache_key was updated
+    for state in copied_system.states:
+        assert state._cache_key is not None, 'State cache key should be set after energy computation'
+        # Verify the cache key matches current sequences (proving it was recomputed)
+        expected_key = state._current_cache_key
+        assert state._cache_key == expected_key, 'State cache key should match current sequences'
+
+    # The recomputed energy should be based on the mutated sequences
+    # (It may or may not equal initial_energy depending on the mutation, but it should be recomputed)
+    assert isinstance(recomputed_energy, (int, float)), 'Energy should be a numeric value'
+
+    # Verify that accessing state.energy triggers invalidation by checking oracle results
+    # were recomputed (if they exist)
+    for state in copied_system.states:
+        if state._oracles_result:
+            # Oracle results should exist and be based on current sequences
+            assert len(state._oracles_result) > 0, 'Oracle results should be computed'

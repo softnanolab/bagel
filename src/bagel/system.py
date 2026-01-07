@@ -37,21 +37,23 @@ class System:
         return deepcopy(self)
 
     def get_total_energy(self) -> float:
-        if self.total_energy is None:
-            state_energies = []
-            for state in self.states:
-                if not state.energy_terms:
-                    logger.warning(
-                        f"State '{state.name}' has no energy terms. Skipping from system total energy calculation."
-                    )
-                    continue
-                state_energies.append(state.energy)
+        # Always recompute by accessing state.energy, which triggers
+        # automatic cache invalidation if chains have changed.
+        state_energies = []
+        for state in self.states:
+            if not state.energy_terms:
+                logger.warning(
+                    f"State '{state.name}' has no energy terms. Skipping from system total energy calculation."
+                )
+                continue
+            state_energies.append(state.energy)
 
-            if not state_energies:
-                raise ValueError('System has no states with energy terms defined. Cannot compute system total energy.')
+        if not state_energies:
+            raise ValueError('System has no states with energy terms defined. Cannot compute system total energy.')
 
-            self.total_energy = np.sum(state_energies)
-        return self.total_energy
+        total_energy = float(np.sum(state_energies))
+        self.total_energy = total_energy
+        return total_energy
 
     def dump_config(self, path: pl.Path) -> None:
         """
