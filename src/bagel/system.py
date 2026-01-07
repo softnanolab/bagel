@@ -53,20 +53,6 @@ class System:
             self.total_energy = np.sum(state_energies)
         return self.total_energy
 
-    def reset(self) -> None:
-        """
-        Clear energy caches so system knows it must recalculate.
-
-        Note: Cache invalidation is now automatic when chains or energy_terms change,
-        so explicit reset() is optional but available for explicit clearing.
-        """
-        self.total_energy = None
-        for state in self.states:
-            state._energy = None
-            state._energy_term_values = {}
-            state._oracles_result = OraclesResultDict()
-            state._cache_key = None
-
     def dump_config(self, path: pl.Path) -> None:
         """
         Saves information about how each energy term was configured in a csv file named "config.csv". Columns include
