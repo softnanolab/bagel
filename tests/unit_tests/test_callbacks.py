@@ -30,7 +30,7 @@ def mock_minimizer(temp_log_path):
         temperature=1.0,
         n_steps=10,
         experiment_name='test_minimizer',
-        output_path=temp_log_path,
+        log_path=temp_log_path,
     )
     return minimizer
 
@@ -641,7 +641,7 @@ def test_callbacks_integrated_into_minimizer(temp_log_path, simple_system):
         temperature=1.0,
         n_steps=2,
         experiment_name='test',
-        output_path=temp_log_path,
+        log_path=temp_log_path,
         callbacks=[callback],
     )
 
@@ -681,7 +681,7 @@ def test_early_stopping_stops_optimization(temp_log_path, simple_system):
         temperature=1.0,
         n_steps=10,  # Would normally run 10 steps
         experiment_name='test',
-        output_path=temp_log_path,
+        log_path=temp_log_path,
         callbacks=[early_stop, step_counter],
     )
 
@@ -710,7 +710,7 @@ def test_no_callbacks_backward_compatibility(temp_log_path, simple_system):
         temperature=1.0,
         n_steps=2,
         experiment_name='test',
-        output_path=temp_log_path,
+        log_path=temp_log_path,
         callbacks=None,
     )
 

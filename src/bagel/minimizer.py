@@ -37,7 +37,7 @@ class Minimizer(ABC):
         mutator: MutationProtocol,
         experiment_name: str,
         log_frequency: int,
-        output_path: pl.Path | str | None,
+        log_path: pl.Path | str | None,
         callbacks: list['Callback'] | None = None,
         **kwargs: Any,
     ) -> None:
@@ -45,16 +45,6 @@ class Minimizer(ABC):
         self.experiment_name = experiment_name
         self.log_frequency = log_frequency
 
-        # Deprecation warnings for legacy logging configuration
-        if kwargs.get('log_path') is not None:
-            warnings.warn(
-                'log_path is deprecated and will be removed in a future release. '
-                'Please configure output_path and use callbacks such as DefaultLogger / '
-                'FoldingLogger for logging.',
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            output_path = kwargs.get('log_path')
         warnings.warn(
             'log_frequency is deprecated. Please control logging cadence via callback '
             'parameters (e.g. DefaultLogger(log_interval=...), FoldingLogger(log_interval=...)).',
@@ -62,8 +52,8 @@ class Minimizer(ABC):
             stacklevel=2,
         )
 
-        # Canonical output directory for this experiment
-        self.output_path: pl.Path = self.initialize_output_path(output_path)
+        # Canonical logging directory for this experiment
+        self.log_path: pl.Path = self.initialize_log_path(log_path)
 
         # Initialize callback manager (DefaultLogger is injected by callers or higher-level APIs)
         from .callbacks import CallbackManager, DefaultLogger
@@ -73,28 +63,28 @@ class Minimizer(ABC):
 
         self.callback_manager = CallbackManager(callbacks)
 
-        logger.debug(f'Logging path (output_path): {self.output_path}')
+        logger.debug(f'Logging path (log_path): {self.log_path}')
         logger.debug(f'Experiment name: {self.experiment_name}')
 
     def __post_init__(self) -> None:
         pass
 
-    def initialize_output_path(self, output_path: None | str | pl.Path) -> pl.Path:
+    def initialize_log_path(self, log_path: None | str | pl.Path) -> pl.Path:
         """
         Creates folder next to the .py script run named the <self.experiment_name>. Said folder cannot already exist.
         """
-        if isinstance(output_path, pl.Path):
-            output_path = output_path / self.experiment_name
-        elif isinstance(output_path, str):
-            output_path = pl.Path(output_path) / self.experiment_name
-        elif output_path is None:
+        if isinstance(log_path, pl.Path):
+            log_path = log_path / self.experiment_name
+        elif isinstance(log_path, str):
+            log_path = pl.Path(log_path) / self.experiment_name
+        elif log_path is None:
             executed_py_file_path = inspect.stack()[-1][1]
-            output_path = pl.Path(executed_py_file_path).resolve().parent / self.experiment_name
+            log_path = pl.Path(executed_py_file_path).resolve().parent / self.experiment_name
         else:
-            raise ValueError(f'output_path must be a Path or str, not {type(output_path)}')
-        assert isinstance(output_path, pl.Path), f'output_path must be a Path, not {type(output_path)}'
-        output_path.mkdir(parents=True, exist_ok=True)
-        return output_path
+            raise ValueError(f'log_path must be a Path or str, not {type(log_path)}')
+        assert isinstance(log_path, pl.Path), f'log_path must be a Path, not {type(log_path)}'
+        log_path.mkdir(parents=True, exist_ok=True)
+        return log_path
 
     def dump_logs(self, output_folder: pl.Path, step: int, **kwargs: Any) -> None:
         """Dumps logs to CSV file."""
@@ -111,8 +101,8 @@ class Minimizer(ABC):
 
     def log_initial_system(self, system: System, best_system: System) -> None:
         """Logs initial system state."""
-        assert isinstance(self.output_path, pl.Path), f'output_path must be a Path, not {type(self.output_path)}'
-        system.dump_config(self.output_path)
+        assert isinstance(self.log_path, pl.Path), f'log_path must be a Path, not {type(self.log_path)}'
+        system.dump_config(self.log_path)
         self.log_step(0, system, best_system, False)
 
     def log_step(self, step: int, system: System, best_system: System, new_best: bool, **kwargs: Any) -> None:
@@ -122,9 +112,9 @@ class Minimizer(ABC):
         TODO: Consider converting log_step to a callback for unified interface.
         """
         logger.info(f'Step={step} - ' + ' - '.join(f'{k}={v}' for k, v in kwargs.items()))
-        assert isinstance(self.output_path, pl.Path), f'output_path must be a Path, not {type(self.output_path)}'
+        assert isinstance(self.log_path, pl.Path), f'log_path must be a Path, not {type(self.log_path)}'
         if step > 0:
-            self.dump_logs(self.output_path, step, **kwargs)
+            self.dump_logs(self.log_path, step, **kwargs)
 
     @abstractmethod
     def minimize_system(self, system: System) -> System:
@@ -156,7 +146,7 @@ class MonteCarloMinimizer(Minimizer):
         experiment_name: str | None = None,
         log_frequency: int = 100,
         preserve_best_system_every_n_steps: int | None = None,
-        output_path: pl.Path | str | None = None,
+        log_path: pl.Path | str | None = None,
         callbacks: list['Callback'] | None = None,
         **kwargs: Any,
     ) -> None:
@@ -183,7 +173,7 @@ class MonteCarloMinimizer(Minimizer):
             mutator=mutator,
             experiment_name=experiment_name,
             log_frequency=log_frequency,
-            output_path=output_path,
+            log_path=log_path,
             callbacks=callbacks,
             **kwargs,
         )
@@ -383,7 +373,7 @@ class SimulatedAnnealing(MonteCarloMinimizer):
         experiment_name: str | None = None,
         log_frequency: int = 100,
         preserve_best_system_every_n_steps: int | None = None,
-        output_path: pl.Path | str | None = None,
+        log_path: pl.Path | str | None = None,
         callbacks: list['Callback'] | None = None,
         **kwargs: Any,
     ) -> None:
@@ -397,7 +387,7 @@ class SimulatedAnnealing(MonteCarloMinimizer):
             experiment_name=experiment_name,
             log_frequency=log_frequency,
             preserve_best_system_every_n_steps=preserve_best_system_every_n_steps,
-            output_path=output_path,
+            log_path=log_path,
             callbacks=callbacks,
             **kwargs,
         )
@@ -424,7 +414,7 @@ class SimulatedTempering(MonteCarloMinimizer):
         experiment_name: str | None = None,
         log_frequency: int = 100,
         preserve_best_system_every_n_steps: int | None = None,
-        output_path: pl.Path | str | None = None,
+        log_path: pl.Path | str | None = None,
         callbacks: list['Callback'] | None = None,
         **kwargs: Any,
     ) -> None:
@@ -439,7 +429,7 @@ class SimulatedTempering(MonteCarloMinimizer):
             experiment_name=experiment_name,
             log_frequency=log_frequency,
             preserve_best_system_every_n_steps=preserve_best_system_every_n_steps,
-            output_path=output_path,
+            log_path=log_path,
             callbacks=callbacks,
             **kwargs,
         )

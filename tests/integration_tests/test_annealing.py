@@ -11,7 +11,7 @@ def test_annealing_raises_no_errors_for_nominal_inputs(real_simple_state: bg.Sta
         final_temperature=0.001,
         n_steps=5,
         log_frequency=1,
-        output_path=test_output_path,
+        log_path=test_output_path,
     )
 
     minimizer.minimize_system(test_system)

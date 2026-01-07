@@ -13,7 +13,7 @@ def test_pLM_sampling_does_not_raise_exceptions_with_nominal_inputs(
         temperature=1.0,
         n_steps=3,
         callbacks=[bg.callbacks.DefaultLogger(log_interval=1)],
-        output_path=test_output_path,
+        log_path=test_output_path,
     )
 
     final_system = minimizer.minimize_system(system=test_system)
@@ -54,7 +54,7 @@ def test_pLM_sampling_early_stopping_stops_on_plateau(
             early_stop,
             step_counter,
         ],
-        output_path=test_output_path,
+        log_path=test_output_path,
     )
     
     final_system = minimizer.minimize_system(system=test_system)

@@ -74,10 +74,10 @@ def test_system_dump_logs_folder_is_correct(mixed_system: bg.System) -> None:
     folding_logger = FoldingLogger(folding_oracle=oracle, log_interval=1)
 
     class _DummyMinimizer:
-        def __init__(self, output_path: pl.Path) -> None:
-            self.output_path = output_path
+        def __init__(self, log_path: pl.Path) -> None:
+            self.log_path = log_path
 
-    minimizer = _DummyMinimizer(output_path=experiment_folder)
+    minimizer = _DummyMinimizer(log_path=experiment_folder)
 
     from bagel.callbacks import CallbackContext
 

@@ -33,7 +33,7 @@ def test_tempering_does_not_mutate_immutable_residues(
         n_cycles=1,
         preserve_best_system_every_n_steps=None,
         callbacks=[bg.callbacks.DefaultLogger(log_interval=1)],
-        output_path=test_output_path,
+        log_path=test_output_path,
     )
 
     best_system = minimizer.minimize_system(system=test_system)
@@ -74,7 +74,7 @@ def test_tempering_preserve_best_system_every_n_steps(
             bg.callbacks.DefaultLogger(log_interval=1),
             bg.callbacks.FoldingLogger(folding_oracle=esmfold, log_interval=1),
         ],
-        output_path=test_output_path,
+        log_path=test_output_path,
     )
 
     best_system = minimizer.minimize_system(test_system)
@@ -153,7 +153,7 @@ def test_tempering_energy_term_names_in_csv_files(
         n_cycles=2,  # Short run for testing
         preserve_best_system_every_n_steps=None,
         callbacks=[bg.callbacks.DefaultLogger(log_interval=1)],
-        output_path=test_output_path,
+        log_path=test_output_path,
     )
 
     best_system = minimizer.minimize_system(test_system)

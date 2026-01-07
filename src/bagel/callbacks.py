@@ -277,9 +277,9 @@ class DefaultLogger(Callback):
 
     Output layout
     -------------
-    Files are written under the Minimizer.output_path directory in two subtrees:
-    - <output_path>/current
-    - <output_path>/best
+    Files are written under the Minimizer.log_path directory in two subtrees:
+    - <log_path>/current
+    - <log_path>/best
 
     Parameters
     ----------
@@ -343,7 +343,7 @@ class DefaultLogger(Callback):
             file.write(','.join(str(energy) for energy in energies.values()) + '\n')
 
     def on_optimization_start(self, context: CallbackContext) -> None:
-        base_path: pl.Path = context.minimizer.output_path
+        base_path: pl.Path = context.minimizer.log_path
         base_path.mkdir(parents=True, exist_ok=True)
 
         # Write configuration once at the top level
@@ -355,7 +355,7 @@ class DefaultLogger(Callback):
         self._dump_system(step=0, system=context.best_system, path=best_path)
 
     def on_step_end(self, context: CallbackContext) -> None:
-        base_path: pl.Path = context.minimizer.output_path
+        base_path: pl.Path = context.minimizer.log_path
         current_path, best_path = self._ensure_dirs(base_path)
 
         if context.step % self.log_interval == 0:
@@ -408,14 +408,14 @@ class FoldingLogger(Callback):
                 oracle_result.save_attributes(folding_path / f'{state.name}_{oracle_name}_{step}')
 
     def on_optimization_start(self, context: CallbackContext) -> None:
-        base_path: pl.Path = context.minimizer.output_path
+        base_path: pl.Path = context.minimizer.log_path
         current_folding_path, best_folding_path = self._ensure_folding_dirs(base_path)
         # Log step 0 to both current and best
         self._dump_folding_results_for_system(step=0, system=context.system, folding_path=current_folding_path)
         self._dump_folding_results_for_system(step=0, system=context.best_system, folding_path=best_folding_path)
 
     def on_step_end(self, context: CallbackContext) -> None:
-        base_path: pl.Path = context.minimizer.output_path
+        base_path: pl.Path = context.minimizer.log_path
         current_folding_path, best_folding_path = self._ensure_folding_dirs(base_path)
 
         if context.step % self.log_interval == 0:
