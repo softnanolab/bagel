@@ -528,15 +528,20 @@ class HydrophobicEnergy(EnergyTerm):
             relevance_mask = np.full(shape=len(structure), fill_value=True)
 
         hydrophobic_mask = np.isin(structure.res_name, hydrophobic_residues)
+        combined_mask = relevance_mask & hydrophobic_mask
 
-        value = len(structure[relevance_mask & hydrophobic_mask]) / len(structure[relevance_mask])
+        # If no hydrophobic atoms in the relevant region, return 0.0
+        if not np.any(combined_mask):
+            return 0.0, 0.0
+
+        value = len(structure[combined_mask]) / len(structure[relevance_mask])
 
         if self.mode == 'surface':
             normalized_sasa = sasa(structure, probe_radius=probe_radius_water) / max_sasa_values['S']
-            value *= np.mean(normalized_sasa[relevance_mask & hydrophobic_mask])
+            value *= np.mean(normalized_sasa[combined_mask])
         elif self.mode == 'core':
             normalized_sasa = 1.0 - sasa(structure, probe_radius=probe_radius_water) / max_sasa_values['S']
-            value *= np.mean(normalized_sasa[relevance_mask & hydrophobic_mask])
+            value *= np.mean(normalized_sasa[combined_mask])
 
         return value, value * self.weight
 
