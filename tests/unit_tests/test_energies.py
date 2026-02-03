@@ -314,6 +314,44 @@ def test_HydrophobicEnergy(
     assert np.isclose(weighted_energy, value * 2), 'weighted energy is incorrect'
 
 
+@pytest.mark.parametrize('mode', ['all', 'surface', 'core'])
+@patch('bagel.energies.sasa')
+def test_HydrophobicEnergy_no_hydrophobic_residues(
+    mock_sasa: Mock,
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    mode: str,
+) -> None:
+    """Test that HydrophobicEnergy returns 0.0 when no hydrophobic residues exist."""
+    # Create structure with only non-hydrophobic residues (GLU, ASP)
+    atoms = [
+        Atom(coord=[0, 0, 0], chain_id='A', res_name='GLU', res_id=0, element='C', atom_name='C'),
+        Atom(coord=[1, 0, 0], chain_id='A', res_name='GLU', res_id=0, element='C', atom_name='C'),
+        Atom(coord=[0, 1, 0], chain_id='A', res_name='ASP', res_id=1, element='C', atom_name='C'),
+        Atom(coord=[1, 1, 0], chain_id='A', res_name='ASP', res_id=1, element='C', atom_name='C'),
+    ]
+    structure = array(atoms)
+    mock_sasa.return_value = np.array([22, 22, 22, 22])
+
+    residues = [
+        bg.Residue(name='E', chain_ID='A', index=0),
+        bg.Residue(name='D', chain_ID='A', index=1),
+    ]
+
+    energy = bg.energies.HydrophobicEnergy(
+        oracle=fake_esmfold, residues=residues, mode=mode, weight=2.0
+    )
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = structure
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
+
+    assert unweighted_energy == 0.0, f'unweighted energy should be 0.0 for mode={mode}'
+    assert weighted_energy == 0.0, f'weighted energy should be 0.0 for mode={mode}'
+    assert not np.isnan(unweighted_energy), f'unweighted energy should not be nan for mode={mode}'
+    assert not np.isnan(weighted_energy), f'weighted energy should not be nan for mode={mode}'
+
+
 def test_PAEEnergy_with_cross_term_only(
     fake_esmfold: bg.oracles.folding.ESMFold,
     mixed_structure_state: bg.State,
