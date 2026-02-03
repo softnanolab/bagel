@@ -337,9 +337,7 @@ def test_HydrophobicEnergy_no_hydrophobic_residues(
         bg.Residue(name='D', chain_ID='A', index=1),
     ]
 
-    energy = bg.energies.HydrophobicEnergy(
-        oracle=fake_esmfold, residues=residues, mode=mode, weight=2.0
-    )
+    energy = bg.energies.HydrophobicEnergy(oracle=fake_esmfold, residues=residues, mode=mode, weight=2.0)
     mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
     mock_folding_result.structure = structure
     oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
