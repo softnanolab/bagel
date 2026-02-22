@@ -176,6 +176,8 @@ class ProtenixOracle(FoldingOracle):
 
     def _load(self, config: dict[str, Any] = {}) -> None:
         """Load the Protenix model via boileroom."""
+        import json as _json
+
         logger.info("[ProtenixOracle] Importing boileroom ...")
         from boileroom import app as boileroom_app  # type: ignore
         from boileroom.models.protenix.protenix import ProtenixFold as ProtenixFoldBoiler  # type: ignore
@@ -188,7 +190,8 @@ class ProtenixOracle(FoldingOracle):
             logger.info("[ProtenixOracle] Modal app context ready.")
         config = {**self.default_config, **config}
         logger.info("[ProtenixOracle] Creating ProtenixFold instance ...")
-        self.model = ProtenixFoldBoiler(config)
+        # ProtenixFold uses modal.parameter() — config must be passed as JSON string
+        self.model = ProtenixFoldBoiler(config_json=_json.dumps(config))
         logger.info("[ProtenixOracle] Ready.")
 
     def _pre_process(self, chains: list[Chain]) -> list[str]:
