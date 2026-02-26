@@ -11,6 +11,11 @@ class SelectorCompilationError(ValueError):
     """Raised when residue selector compilation fails."""
 
 
+def _is_plain_int(value: Any) -> bool:
+    """Return True only for int values that are not booleans."""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def _select_from_dict(selector: dict[str, Any], chain_registry: dict[str, Chain], path: str) -> list[Residue]:
     chain_name = selector.get('chain')
     if not isinstance(chain_name, str) or not chain_name:
@@ -41,7 +46,7 @@ def _select_from_dict(selector: dict[str, Any], chain_registry: dict[str, Chain]
 
     if has_indices:
         indices = selector.get('indices')
-        if not isinstance(indices, list) or not all(isinstance(i, int) for i in indices):
+        if not isinstance(indices, list) or not all(_is_plain_int(i) for i in indices):
             raise SelectorCompilationError(f"{path}: 'indices' must be a list of integers")
         residues: list[Residue] = []
         for idx in indices:
@@ -60,7 +65,7 @@ def _select_from_dict(selector: dict[str, Any], chain_registry: dict[str, Chain]
     if end is None:
         end = chain_len - 1
 
-    if not isinstance(start, int) or not isinstance(end, int):
+    if not _is_plain_int(start) or not _is_plain_int(end):
         raise SelectorCompilationError(f"{path}: start/end must be integers")
     if start < 0 or end < 0:
         raise SelectorCompilationError(f"{path}: start/end must be >= 0")

@@ -95,10 +95,9 @@ class Minimizer(ABC):
             from .config.exporter import export_run_config
 
             export_run_config(log_path=self.log_path, run_config=self.run_config, system=system, minimizer=self)
+            self._config_exported = True
         except Exception as exc:  # noqa: BLE001
             logger.warning(f'Failed to export run configuration snapshot: {exc}')
-        finally:
-            self._config_exported = True
 
     def __post_init__(self) -> None:
         pass

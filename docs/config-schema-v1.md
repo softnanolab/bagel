@@ -58,8 +58,9 @@ chains:
     mutable: [true, true, true, true, true, true, true, true, true]
     chain_id: bind
   target:
-    sequence: MKT...
-    mutable: [false, false, false]
+    sequence: MKTWQPLVAGHNNRSTYQDWERTYPLMNAQ
+    mutable:
+      [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]
     chain_id: targ
 
 oracles:
