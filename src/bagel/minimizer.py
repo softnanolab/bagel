@@ -39,11 +39,14 @@ class Minimizer(ABC):
         log_frequency: int,
         log_path: pl.Path | str | None,
         callbacks: list['Callback'] | None = None,
+        run_config: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
         self.mutator = mutator
         self.experiment_name = experiment_name
         self.log_frequency = log_frequency
+        self.run_config = run_config
+        self._config_exported = False
 
         warnings.warn(
             'log_frequency is deprecated. Please control logging cadence via callback '
@@ -62,9 +65,39 @@ class Minimizer(ABC):
             callbacks = [DefaultLogger(log_interval=self.log_frequency)]
 
         self.callback_manager = CallbackManager(callbacks)
+        self._install_minimize_wrapper()
 
         logger.debug(f'Logging path (log_path): {self.log_path}')
         logger.debug(f'Experiment name: {self.experiment_name}')
+
+    def _install_minimize_wrapper(self) -> None:
+        """
+        Wrap the concrete minimize_system implementation so every run exports config once.
+        """
+        if getattr(self, '_minimize_wrapper_installed', False):
+            return
+
+        original_minimize = self.minimize_system
+
+        def wrapped_minimize(system: System) -> System:
+            self._export_run_config_if_needed(system)
+            return original_minimize(system)
+
+        self.minimize_system = wrapped_minimize  # type: ignore[method-assign]
+        self._minimize_wrapper_installed = True
+
+    def _export_run_config_if_needed(self, system: System) -> None:
+        """Export YAML/JSON run configuration snapshots before optimization starts."""
+        if self._config_exported:
+            return
+
+        try:
+            from .config.exporter import export_run_config
+
+            export_run_config(log_path=self.log_path, run_config=self.run_config, system=system, minimizer=self)
+            self._config_exported = True
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f'Failed to export run configuration snapshot: {exc}')
 
     def __post_init__(self) -> None:
         pass

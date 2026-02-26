@@ -96,6 +96,28 @@ uv sync --all-extras
 
 ## Usage
 
+### YAML Config CLI
+
+You can now define and run BAGEL runs from YAML:
+
+```bash
+bagel run path/to/config.yaml
+```
+
+Validate without running:
+
+```bash
+bagel validate path/to/config.yaml
+```
+
+Print JSON schema for config v1:
+
+```bash
+bagel schema --version 1
+```
+
+See [docs/config-schema-v1.md](docs/config-schema-v1.md) for the full schema and example.
+
 ### With PyPI Installation
 
 ```bash
