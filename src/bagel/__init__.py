@@ -28,6 +28,7 @@ __all__ = [
     'mutation',
     'oracles',
     'callbacks',
+    'config',
 ]
 
 _LAZY_ATTRS = {
@@ -44,6 +45,7 @@ _LAZY_MODULES = {
     'mutation': '.mutation',
     'oracles': '.oracles',
     'callbacks': '.callbacks',
+    'config': '.config',
 }
 
 

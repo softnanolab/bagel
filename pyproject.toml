@@ -1,6 +1,6 @@
 [project]
 name = "biobagel"
-version = "0.1.11"
+version = "0.1.12"
 authors = [
   {name = "Jakub Lála", email = "jakublala@gmail.com"},
   {name = "Ayham Al-Saffar", email = "ayham.saffar@gmail.com"},
@@ -20,7 +20,11 @@ dependencies = [
     "pandas>=2.2.3",
     "pydantic>=2.10.6",
     "matplotlib>=3.10.0",
+    "pyyaml>=6.0.2",
 ]
+
+[project.scripts]
+bagel = "bagel.cli:main"
 
 [project.optional-dependencies]
 dev = [

@@ -1,0 +1,50 @@
+schema_version: 1
+run:
+  experiment_name: custom_stack_run
+  log_path: ./tmp_out
+  seed: 7
+  wandb:
+    enabled: false
+
+chains:
+  design:
+    sequence: ACDE
+    mutable: [true, true, true, true]
+    chain_id: D
+
+oracles:
+  oracle_main:
+    type: ../plugins/custom_components.py:DummyOracle
+    params: {}
+
+mutators:
+  mut_main:
+    type: ../plugins/custom_components.py:DummyMutator
+    params:
+      n_mutations: 1
+      custom_rate: 0.33
+
+states:
+  - name: state_A
+    chains: [design]
+    energies:
+      - type: ../plugins/custom_components.py:DummyEnergy
+        oracle: "@oracles.oracle_main"
+        params:
+          bias: 1.5
+          weight: 0.2
+
+callbacks:
+  custom_cb:
+    type: ../plugins/custom_components.py:DummyCallback
+    params:
+      tag: test
+      extra_option: 9
+
+minimizer:
+  type: ../plugins/custom_components.py:DummyMinimizer
+  params:
+    mutator: "@mutators.mut_main"
+    callbacks:
+      - "@callbacks.custom_cb"
+    custom_alpha: 0.9
