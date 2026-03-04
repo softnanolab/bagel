@@ -20,6 +20,8 @@ dependencies = [
     "pandas>=2.2.3",
     "pydantic>=2.10.6",
     "matplotlib>=3.10.0",
+    "fire>=0.5.0",
+    "python-dotenv>=1.0.0",
 ]
 
 [project.optional-dependencies]
