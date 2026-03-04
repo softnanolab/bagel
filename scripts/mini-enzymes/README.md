@@ -5,7 +5,7 @@ Monte Carlo optimization scripts for generating miniaturized enzyme variants usi
 > **An Energy Landscape Approach to Miniaturizing Enzymes using Protein Language Model Embeddings**
 > Jakub Lála, Harsh Agrawal, Fanfei Dong, Jude Wells, Stefano Angioletti-Uberti (2026).
 
-Each script preserves the catalytic and functional residues (plus a buffer zone) while allowing the rest of the sequence to be mutated via grand canonical MC sampling with `EmbeddingsSimilarityEnergy` and `ChemicalPotentialEnergy`.
+Each script preserves the catalytic and functional residues (plus a buffer zone) while allowing the rest of the sequence to be mutated via grand-canonical MC sampling with `EmbeddingsSimilarityEnergy` and `ChemicalPotentialEnergy`.
 
 ## Enzymes
 

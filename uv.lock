@@ -177,7 +177,6 @@ dependencies = [
     { name = "numpy" },
     { name = "pandas" },
     { name = "pydantic" },
-    { name = "python-dotenv" },
 ]
 
 [package.optional-dependencies]
@@ -218,7 +217,6 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
     { name = "pytest-repeat", marker = "extra == 'dev'", specifier = ">=0.9.4" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.6.1" },
-    { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "python-dotenv", marker = "extra == 'dev'", specifier = ">=1.2.1" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.6" },
     { name = "sphinx", marker = "extra == 'dev'", specifier = ">=8.1.3" },

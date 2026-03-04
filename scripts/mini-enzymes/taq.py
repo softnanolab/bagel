@@ -1,12 +1,8 @@
-from dotenv import load_dotenv
-load_dotenv()
-
 import bagel as bg
 import copy
 import numpy as np
 from biotite.database.rcsb import fetch
 from bagel.utils import get_atomarray_in_residue_range, get_sequence_from_pdb_id, get_reconciled_sequence, sequence_from_atomarray
-import os
 import pathlib as pl
 import fire
 
@@ -26,7 +22,7 @@ def main(use_modal: bool = False, experiment_name: str | None = None, temperatur
         temperature: MC sampling temperature
         n_steps: Number of MC steps
     """
-    log_path = pl.Path(os.environ.get("DATA_DIR", "./logs")) / 'mini-enzymes' / 'plm' / 'taq'
+    log_path = pl.Path("./logs") / 'mini-enzymes' / 'taq'
 
     offset = 10
 
