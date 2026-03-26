@@ -15,7 +15,7 @@ import pandas as pd
 from typing import Literal, Callable
 from biotite.structure import AtomArray, sasa, annotate_sse, superimpose
 
-from .constants import hydrophobic_residues, max_sasa_values, probe_radius_water, backbone_atoms
+from .constants import hydrophobic_residues, max_sasa_values, probe_radius_water, backbone_atoms, hydropathy_index
 from .chain import Residue, Chain
 from .oracles import Oracle, OracleResult, OraclesResultDict
 from .oracles.folding import FoldingResult, FoldingOracle
@@ -537,6 +537,116 @@ class HydrophobicEnergy(EnergyTerm):
         elif self.mode == 'core':
             normalized_sasa = 1.0 - sasa(structure, probe_radius=probe_radius_water) / max_sasa_values['S']
             value *= np.mean(normalized_sasa[relevance_mask & hydrophobic_mask])
+
+        return value, value * self.weight
+
+
+class GRAVYHydrophobicEnergy(EnergyTerm):
+    """
+    Energy Proportional to the GRAVY score of hydrophobic residues present. This is calculated by taking the mean
+    GRAVY score of the relevant residues as a measure of the hydrophobicity of the structure, where the GRAVY score
+    of a residue is the sum of the hydropathy index of its amino acid divided by the number of residues in the protein sequence.
+
+    The hydropathy index is a measure of the hydrophobicity of an amino acid, with higher values indicating more
+    hydrophobic amino acids. The GRAVY score is a commonly used measure of the overall hydrophobicity of a protein,
+    with higher values indicating more hydrophobic proteins. This energy term encourages the presence of
+    hydrophobic residues in the structure, which can be important for protein folding and stability.
+
+    Ref: https://williams.chemistry.gatech.edu/course_Information/6572/papers/kytoe_hydrophobicity_1982.pdf
+
+    Note that this energy term is different from the `HydrophobicEnergy` term, which simply counts the fraction of selected
+    atoms that belong to hydrophobic residues (valine, isoleucine, leucine, phenylalanine, methionine, tryptophan).
+    """
+
+    def __init__(
+        self,
+        oracle: FoldingOracle,
+        inheritable: bool = True,
+        residues: list[Residue] | None = None,
+        mode: Literal['surface', 'core', 'all'] = 'all',
+        surface_only: bool = False,
+        core_only: bool = False,
+        weight: float = 1.0,
+        name: str | None = None,
+    ) -> None:
+        """
+        Initialises hydrophobic energy class based on GRAVY Score.
+
+        Parameters
+        ----------
+        oracle: FoldingOracle
+            The oracle to use for the energy term.
+        inheritable: bool, default=True
+            If a new residue is added next to a residue included in this energy term, this dictates whether that new
+            residue could then be added to this energy term.
+        residues: list[Residue] or None, default=None
+            Which residues to include in the calculation. If not set, simply considers **all** residues by default.
+        mode: Literal['surface', 'core', 'all'] = 'all'
+            Selection of which atoms contribute to the hydrophobicity score:
+            - 'surface': calculates GRAVY score for hydrophobic residues at the surface, weighted by normalised SASA
+            - 'core': calculates GRAVY score for hydrophobic residues in the core, weighted by 1 - normalised SASA
+            - 'all': calculates GRAVY score for all hydrophobic residues, no SASA weighting
+            Normalisation uses `max_sasa_values['S']` and the probe radius `probe_radius_water`.
+        surface_only: bool, default=False
+            Deprecated. Use `mode='surface'` instead.
+        core_only: bool, default=False
+            Deprecated. Use `mode='core'` instead.
+        weight: float = 1.0
+            The weight of the energy term.
+        name: str | None = None
+            Optional name to append to the energy term name.
+        """
+        if name is None:
+            name = 'GRAVYhydrophobic'
+        else:
+            name = f'GRAVYhydrophobic_{name}'
+
+        super().__init__(name=name, inheritable=inheritable, oracle=oracle, weight=weight)
+        self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
+
+        # Backwards compatibility for deprecated flags
+        self.surface_only = surface_only
+        self.core_only = core_only
+        if surface_only and core_only:
+            raise ValueError('Only one of surface_only or core_only can be True at the same time.')
+        if surface_only or core_only:
+            warnings.warn(
+                "Parameters 'surface_only' and 'core_only' are deprecated and will be removed in v0.2.0. "
+                "Use 'mode' instead (e.g., mode='surface' or mode='core').",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            mode = 'surface' if surface_only else 'core'
+        self.mode: Literal['surface', 'core', 'all'] = mode
+        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
+        assert 'structure' in self.oracle.result_class.model_fields, (
+            'GRAVYHydrophobicEnergy requires oracle to return structure in result_class'
+        )
+
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        structure = oracles_result.get_structure(self.oracle)
+        if len(self.residue_groups) > 0:
+            relevance_mask: npt.NDArray[np.bool_] = self.get_atom_mask(structure, residue_group_index=0)
+        else:
+            relevance_mask = np.full(shape=len(structure), fill_value=True)
+
+        # Get hydrophobicity indices of residues present in the relevant subset directly from residue names
+        gravy_values = np.array([hydropathy_index.get(res_name, 0.0) for res_name in structure.res_name])
+        relevant_gravy = gravy_values[relevance_mask]
+
+        if len(relevant_gravy) == 0:
+            # if no relevant residues, return 0 energy
+            return 0.0, 0.0
+
+        value = np.mean(relevant_gravy)
+
+        # Apply SASA weighting if in surface or core mode
+        if self.mode == 'surface':
+            normalized_sasa = sasa(structure, probe_radius=probe_radius_water) / max_sasa_values['S']
+            value = np.mean(relevant_gravy * normalized_sasa[relevance_mask])
+        elif self.mode == 'core':
+            normalized_sasa = 1.0 - sasa(structure, probe_radius=probe_radius_water) / max_sasa_values['S']
+            value = np.mean(relevant_gravy * normalized_sasa[relevance_mask])
 
         return value, value * self.weight
 

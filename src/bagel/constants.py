@@ -98,3 +98,28 @@ atom_types = [
     'OXT',
 ]
 atom_order = {atom_type: i for i, atom_type in enumerate(atom_types)}
+
+# This dictionary contains hydrophobicity values for each amino acid, based on the GRAVY (Grand Average of Hydropathy) score.
+# The values are taken from the Kyte-Doolittle scale, which is commonly used to assess the hydrophobicity of amino acids.
+hydropathy_index = {
+    'ILE': 4.5,  # Isoleucine
+    'VAL': 4.2,  # Valine
+    'LEU': 3.8,  # Leucine
+    'PHE': 2.8,  # Phenylalanine
+    'CYS': 2.5,  # Cysteine
+    'MET': 1.9,  # Methionine
+    'ALA': 1.8,  # Alanine
+    'GLY': -0.4,  # Glycine
+    'THR': -0.7,  # Threonine
+    'TRP': -0.9,  # Tryptophan
+    'SER': -0.8,  # Serine
+    'TYR': -1.3,  # Tyrosine
+    'PRO': -1.6,  # Proline
+    'HIS': -3.2,  # Histidine
+    'GLU': -3.5,  # Glutamic acid
+    'GLN': -3.5,  # Glutamine
+    'ASP': -3.5,  # Aspartic acid
+    'ASN': -3.5,  # Asparagine
+    'LYS': -3.9,  # Lysine
+    'ARG': -4.5,  # Arginine
+}
