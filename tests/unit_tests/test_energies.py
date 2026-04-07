@@ -949,7 +949,6 @@ def test_GRAVYHydrophobicEnergy_all_mode(
 
     # Compute expected manually using hydropathy index
     from bagel.constants import hydropathy_index
-    import pandas as pd
 
     # Get unique residues (chain_id, res_id pairs) while preserving order
     unique_indices = []
@@ -996,7 +995,6 @@ def test_GRAVYHydrophobicEnergy_surface_mode(
     max_sasa = np.array([max_theoretical_sasa_for_residues[res] for res in residues])
     normalized_sasa = residue_sasa / max_sasa
     hydropathy = np.array([hydropathy_index[res] for res in residues])
-    hydropathy = np.array([hydropathy_index[res] for res in residues])
 
     expected_value = np.mean(hydropathy) * np.mean(normalized_sasa)
 
@@ -1033,13 +1031,6 @@ def test_GRAVYHydrophobicEnergy_core_mode(
     # With SASA=0, normalized weight is 1.0
     from bagel.constants import hydropathy_index
 
-    expected_value = np.mean(
-        [
-            hydropathy_index['GLY'],
-            hydropathy_index['VAL'],
-            hydropathy_index['VAL'],
-        ]
-    )
     # Small_structure has 3 residues, two of which are VAL (4.2) and one is Glycine (-0.4)
     # expected_value = (-0.4 + 4.2 + 4.2) / 3
     expected_value = np.mean(
@@ -1080,7 +1071,7 @@ def test_GRAVYHydrophobicEnergy_with_selected_residues(
 def test_GRAVYHydrophobicEnergy_unknown_residue_handling(
     fake_esmfold: bg.oracles.folding.ESMFold,
 ) -> None:
-    """Test that unknown residues use fallback value of 0.0 by mocking structure."""
+    """Test that unknown residues are filtered out by mocking structure."""
     from biotite.structure import Atom, array
     from bagel.constants import hydropathy_index
 
@@ -1105,7 +1096,7 @@ def test_GRAVYHydrophobicEnergy_unknown_residue_handling(
     with pytest.warns(UserWarning, match='Unknown residues encountered:'):
         unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
 
-    # Unknown residue gets 0.0, so: (0.0 + 4.2 + 4.2) / 3
+    # Unknown residue gets removed from calculation, so only the two VAL residues contribute
     expected_value = np.mean([0.0 + hydropathy_index['VAL'], hydropathy_index['VAL']])
 
     assert np.isclose(unweighted_energy, expected_value), 'energy with unknown residue should use fallback 0.0'
