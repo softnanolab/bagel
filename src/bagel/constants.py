@@ -123,3 +123,33 @@ hydropathy_index = {
     'LYS': -3.9,  # Lysine
     'ARG': -4.5,  # Arginine
 }
+
+# This maximum value possible for a residue calculated theoretically, could be used for normalization
+# The value is based on the largest amino acid (Tryptophan) and assumes all its atoms are fully exposed to solvent,
+# which is a theoretical upper bound for SASA of a residue.
+# Ref: Tein et al, 2013 https://pmc.ncbi.nlm.nih.gov/articles/PMC3836772/ for max SASA values of amino acids
+max_residue_sasa = 285.0 * angstrom**2
+
+# This dictionary contains the maximum theoretical SASA values for each amino acid, used for normalization.
+max_theoretical_sasa_for_residues = {
+    'TRP': 285.0 * angstrom**2,  # Tryptophan
+    'ARG': 274.0 * angstrom**2,  # Arginine
+    'TYR': 263.0 * angstrom**2,  # Tyrosine
+    'PHE': 240.0 * angstrom**2,  # Phenylalanine
+    'LYS': 236.0 * angstrom**2,  # Lysine
+    'GLN': 225.0 * angstrom**2,  # Glutamine
+    'HIS': 224.0 * angstrom**2,  # Histidine
+    'MET': 224.0 * angstrom**2,  # Methionine
+    'GLU': 223.0 * angstrom**2,  # Glutamate
+    'LEU': 201.0 * angstrom**2,  # Leucine
+    'ILE': 197.0 * angstrom**2,  # Isoleucine
+    'ASN': 195.0 * angstrom**2,  # Asparagine
+    'ASP': 193.0 * angstrom**2,  # Aspartate
+    'VAL': 174.0 * angstrom**2,  # Valine
+    'THR': 172.0 * angstrom**2,  # Threonine
+    'CYS': 167.0 * angstrom**2,  # Cysteine
+    'PRO': 159.0 * angstrom**2,  # Proline
+    'SER': 155.0 * angstrom**2,  # Serine
+    'ALA': 129.0 * angstrom**2,  # Alanine
+    'GLY': 104.0 * angstrom**2,  # Glycine
+}

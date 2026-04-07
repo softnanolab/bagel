@@ -12,10 +12,10 @@ import warnings
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
-from typing import Literal, Callable
+from typing import Literal, Callable, Any
 from biotite.structure import AtomArray, sasa, annotate_sse, superimpose
 
-from .constants import hydrophobic_residues, max_sasa_values, probe_radius_water, backbone_atoms, hydropathy_index
+from .constants import hydrophobic_residues, max_sasa_values, probe_radius_water, backbone_atoms
 from .chain import Residue, Chain
 from .oracles import Oracle, OracleResult, OraclesResultDict
 from .oracles.folding import FoldingResult, FoldingOracle
@@ -586,7 +586,8 @@ class GRAVYHydrophobicEnergy(EnergyTerm):
             - 'surface': calculates GRAVY score for hydrophobic residues at the surface, weighted by normalised SASA
             - 'core': calculates GRAVY score for hydrophobic residues in the core, weighted by 1 - normalised SASA
             - 'all': calculates GRAVY score for all hydrophobic residues, no SASA weighting
-            Normalisation uses `max_sasa_values['S']` and the probe radius `probe_radius_water`.
+            Normalisation uses 'max_theoretical_sasa_for_residues' specific to each residue and the probe radius
+            `probe_radius_water`.
         surface_only: bool, default=False
             Deprecated. Use `mode='surface'` instead.
         core_only: bool, default=False
@@ -618,37 +619,149 @@ class GRAVYHydrophobicEnergy(EnergyTerm):
             )
             mode = 'surface' if surface_only else 'core'
         self.mode: Literal['surface', 'core', 'all'] = mode
+        if self.mode not in ['surface', 'core', 'all']:
+            raise ValueError(f"Invalid mode: {mode}. Expected one of: 'surface', 'core', 'all'.")
         assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
         assert 'structure' in self.oracle.result_class.model_fields, (
             'GRAVYHydrophobicEnergy requires oracle to return structure in result_class'
         )
 
     def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        # TODO: optimize this function, as it can be quite slow for large structures due to the for loop over residues.
+        # - By vectorizing the calculation of residue GRAVY values and SASA values, rather than using a for loop over residues
+
+        # Importing hydropathy_index, max_sasa values here, as they are only needed for this energy term
+        from .constants import hydropathy_index, max_theoretical_sasa_for_residues, max_residue_sasa
+
         structure = oracles_result.get_structure(self.oracle)
+
+        # Handling empty structure early
+        if len(structure) == 0:
+            return 0.0, 0.0
+
+        # Handling unknown residues early by checking if any residues in the structure are not
+        # in the hydropathy index, and if so, warning and returning 0 energy
+        # (as we cannot calculate GRAVY score or SASA for unknown residues)
+
+        res_names = structure.res_name
+        # Check: is each residue in hydropathy index (i.e., is it a known amino acid)
+        # Ccheck: is each residue in hydropathy index (i.e., is it a known amino acid)
+        valid_mask = np.isin(res_names, list(hydropathy_index.keys()))
+        unknown_mask = ~valid_mask
+
+        # Warn if unknown residues exist
+        if np.any(unknown_mask):
+            unknown_residues = np.unique(res_names[unknown_mask])
+            warnings.warn(
+                f'Unknown residues encountered: {set(unknown_residues)} (count={len(unknown_residues)}).', UserWarning
+            )
+            warnings.warn(
+                'Unknown residues were found in the structure. These residues will be removed from the structure before calculating the energy. '
+                'This may affect the energy calculation if any of the user-specified residues were unknown.',
+                UserWarning,
+            )
+
+        # Filter structure BEFORE any calculations
+        structure = structure[valid_mask]
+
+        # Get residue-level information: chain_ids and res_ids for the relevant residues.
         if len(self.residue_groups) > 0:
-            relevance_mask: npt.NDArray[np.bool_] = self.get_atom_mask(structure, residue_group_index=0)
+            # Residues are selected, so only consider those residues for the energy calculation
+            # Filter residues that still exist in the structure (some may have been removed if unknown)
+            chain_ids_orig, res_ids_orig = self.residue_groups[0]
+            if np.any(unknown_mask):
+                # Keep only residues that exist in the filtered structure
+                valid_residues_mask = np.zeros(len(chain_ids_orig), dtype=bool)
+                for i, (chain_id, res_id) in enumerate(zip(chain_ids_orig, res_ids_orig)):
+                    atom_mask = (structure.chain_id == chain_id) & (structure.res_id == res_id)
+                    valid_residues_mask[i] = np.any(atom_mask)
+
+                # Warn if any user-specified residues were filtered out
+                if not np.all(valid_residues_mask):
+                    removed_residues = list(
+                        zip(chain_ids_orig[~valid_residues_mask], res_ids_orig[~valid_residues_mask])
+                    )
+                    warnings.warn(
+                        f'User-specified residues were removed due to unknown residues: {removed_residues}', UserWarning
+                    )
+                chain_ids = chain_ids_orig[valid_residues_mask]
+                res_ids = res_ids_orig[valid_residues_mask]
+
+            else:
+                chain_ids = chain_ids_orig
+                res_ids = res_ids_orig
+
         else:
-            relevance_mask = np.full(shape=len(structure), fill_value=True)
+            # All residues are relevant if no specific group is selected
+            # Use numpy to get unique chain_id and res_id pairs
+            unique_residue_indices = np.unique(
+                np.column_stack((structure.chain_id, structure.res_id)), axis=0, return_index=True
+            )[1]
+            unique_residue_indices = np.sort(unique_residue_indices)  # preserve order as they appear in structure
 
-        # Get hydrophobicity indices of residues present in the relevant subset directly from residue names
-        gravy_values = np.array([hydropathy_index.get(res_name, 0.0) for res_name in structure.res_name])
-        relevant_gravy = gravy_values[relevance_mask]
+            chain_ids = structure.chain_id[unique_residue_indices]
+            res_ids = structure.res_id[unique_residue_indices]
 
-        if len(relevant_gravy) == 0:
+            # Ensure that the chain_ids and res_ids arrays are aligned and 1D
+            assert len(chain_ids) == len(res_ids), 'ResidueGroup arrays must be aligned'
+        # Compute atom-level SASA values once on the filtered structure, as they will be reused for each residue
+        atom_sasa_values = sasa(structure, probe_radius=probe_radius_water)
+        # Unknown residues have already been removed above, before this SASA calculation
+        # This should be done before SASA calculation as Unknown residues raises KeyError and stops the code
+        # Filtering the structure for unknown residues (those not in the hydropathy index)
+        # This should be done before SASA calculation as Unkown residues raises KeyError and stops the code
+        # Initialize containers for GRAVY values, unknown residues, and residue SASA values
+        residue_gravy_values = []
+        normalized_residue_sasa_values = []
+
+        # Iterate over each residue in the group (or all residues if no group specified) and calculate its GRAVY value and mean SASA
+        for chain_id, res_id in zip(chain_ids, res_ids):
+            # find the indices of atoms that belong to this res_id and chain_id
+            atom_mask = (structure.chain_id == chain_id) & (structure.res_id == res_id)
+            atom_indices = np.where(atom_mask)[0]
+
+            # Warn if residue not found (safety)
+            if len(atom_indices) == 0:
+                warnings.warn(f'Residue ({chain_id}, {res_id}) not found in structure', UserWarning)
+                continue
+
+            # Get residue name (same for all atoms in residue)
+            res_name = structure.res_name[atom_indices[0]]
+            # Get GRAVY value for this residue (unknown residues have been already removed)
+
+            # Get GRAVY value for this residue (unkown residues have been already removed)
+            residue_gravy_values.append(hydropathy_index[res_name])
+
+            # Calculate total SASA for this residue by summing the SASA values of its atoms
+            # this makes more sense than averaging the SASA values, as larger residues will
+            # naturally have higher SASA and should contribute more to the energy
+            res_sasa = np.sum(atom_sasa_values[atom_indices])
+
+            # fallback to max_residue_sasa (Tryptophan) if unknown residue
+            max_sasa = max_theoretical_sasa_for_residues.get(res_name, max_residue_sasa)
+            norm_res_sasa = res_sasa / max_sasa
+            normalized_residue_sasa_values.append(norm_res_sasa)
+
+        # Convert to numpy arrays for efficient indexing
+        residue_gravy_values_arr: npt.NDArray[np.floating[Any]] = np.array(residue_gravy_values)
+        normalized_residue_sasa_values_arr: npt.NDArray[np.floating[Any]] = np.array(normalized_residue_sasa_values)
+
+        if len(residue_gravy_values_arr) == 0:
             # if no relevant residues, return 0 energy
             return 0.0, 0.0
 
-        value = np.mean(relevant_gravy)
+        # Compute energy based on mode
+        value: float = float(np.mean(residue_gravy_values_arr))
 
-        # Apply SASA weighting if in surface or core mode
+        # Apply SASA weighting if in surface or core mode, normalized by theoretical max of Tryptophan
         if self.mode == 'surface':
-            normalized_sasa = sasa(structure, probe_radius=probe_radius_water) / max_sasa_values['S']
-            value = np.mean(relevant_gravy * normalized_sasa[relevance_mask])
+            normalized_sasa = normalized_residue_sasa_values_arr
+            value *= float(np.mean(normalized_sasa))
         elif self.mode == 'core':
-            normalized_sasa = 1.0 - sasa(structure, probe_radius=probe_radius_water) / max_sasa_values['S']
-            value = np.mean(relevant_gravy * normalized_sasa[relevance_mask])
+            normalized_sasa = 1.0 - normalized_residue_sasa_values_arr
+            value *= float(np.mean(normalized_sasa))
 
-        return value, value * self.weight
+        return float(value), float(value * self.weight)
 
 
 class PAEEnergy(EnergyTerm):

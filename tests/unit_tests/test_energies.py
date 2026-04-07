@@ -928,3 +928,262 @@ def test_LISEnergy(
     assert np.isclose(weighted_energy, 2.0 * expected), (
         f'weighted energy is incorrect, expected {2.0 * expected}, found {weighted_energy}'
     )
+
+
+def test_GRAVYHydrophobicEnergy_all_mode(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    small_structure: AtomArray,
+) -> None:
+    """Test GRAVYHydrophobicEnergy computation in 'all' mode with correct values."""
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = small_structure
+
+    energy = bg.energies.GRAVYHydrophobicEnergy(
+        oracle=fake_esmfold,
+        mode='all',
+        weight=2.0,
+    )
+
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
+
+    # Compute expected manually using hydropathy index
+    from bagel.constants import hydropathy_index
+    import pandas as pd
+
+    # Get unique residues (chain_id, res_id pairs) while preserving order
+    unique_indices = []
+    seen = set()
+    for i, (chain, res) in enumerate(zip(small_structure.chain_id, small_structure.res_id)):
+        pair = (chain, res)
+        if pair not in seen:
+            seen.add(pair)
+            unique_indices.append(i)
+
+    expected_values = []
+    for idx in unique_indices:
+        res_name = small_structure.res_name[idx]
+        expected_values.append(hydropathy_index.get(res_name, 0.0))
+
+    expected = np.mean(expected_values)
+
+    assert np.isclose(unweighted_energy, expected), 'unweighted energy is incorrect'
+    assert np.isclose(weighted_energy, expected * 2.0), 'weighted energy is incorrect'
+
+
+@patch('bagel.energies.sasa')
+def test_GRAVYHydrophobicEnergy_surface_mode(
+    mock_sasa: Mock,
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    small_structure: AtomArray,
+) -> None:
+    """Test GRAVYHydrophobicEnergy computation in 'surface' mode with SASA weighting."""
+    mock_sasa.return_value = np.array([22, 22, 22, 22, 0])  # atoms of first 2 residues are given max sasa
+
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = small_structure
+
+    energy = bg.energies.GRAVYHydrophobicEnergy(
+        oracle=fake_esmfold,
+        mode='surface',
+        weight=2.0,
+    )
+
+    from bagel.constants import hydropathy_index, max_theoretical_sasa_for_residues
+
+    residues = ['GLY', 'VAL', 'VAL']
+    residue_sasa = np.array([44, 44, 0])  # SASA for each residue by summing atomic SASA values
+    max_sasa = np.array([max_theoretical_sasa_for_residues[res] for res in residues])
+    normalized_sasa = residue_sasa / max_sasa
+    hydropathy = np.array([hydropathy_index[res] for res in residues])
+    hydropathy = np.array([hydropathy_index[res] for res in residues])
+
+    expected_value = np.mean(hydropathy) * np.mean(normalized_sasa)
+
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
+
+    # Verify weight is applied correctly
+    assert np.isfinite(unweighted_energy), 'energy should be finite'
+    assert np.isclose(unweighted_energy, expected_value), 'unweighted energy is incorrect'
+    assert np.isclose(weighted_energy, expected_value * 2.0), 'weight should be applied correctly'
+
+
+@patch('bagel.energies.sasa')
+def test_GRAVYHydrophobicEnergy_core_mode(
+    mock_sasa: Mock,
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    small_structure: AtomArray,
+) -> None:
+    """Test GRAVYHydrophobicEnergy computation in 'core' mode with inverted SASA weighting."""
+    mock_sasa.return_value = np.zeros(len(small_structure))
+
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = small_structure
+
+    energy = bg.energies.GRAVYHydrophobicEnergy(
+        oracle=fake_esmfold,
+        mode='core',
+        weight=2.0,
+    )
+
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
+
+    # With SASA=0, normalized weight is 1.0
+    from bagel.constants import hydropathy_index
+
+    expected_value = np.mean(
+        [
+            hydropathy_index['GLY'],
+            hydropathy_index['VAL'],
+            hydropathy_index['VAL'],
+        ]
+    )
+    # Small_structure has 3 residues, two of which are VAL (4.2) and one is Glycine (-0.4)
+    # expected_value = (-0.4 + 4.2 + 4.2) / 3
+    expected_value = np.mean(
+        [
+            hydropathy_index['GLY'],
+            hydropathy_index['VAL'],
+            hydropathy_index['VAL'],
+        ]
+    )
+
+    assert np.isfinite(unweighted_energy), 'energy should be finite'
+    assert np.isclose(unweighted_energy, expected_value), 'unweighted energy is incorrect'
+    assert np.isclose(weighted_energy, expected_value * 2.0), 'weighted energy is incorrect'
+
+
+def test_GRAVYHydrophobicEnergy_with_selected_residues(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    small_structure_residues: list[bg.Residue],
+    small_structure: AtomArray,
+) -> None:
+    """Test GRAVYHydrophobicEnergy computation with selected residues subset."""
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = small_structure
+
+    energy = bg.energies.GRAVYHydrophobicEnergy(
+        oracle=fake_esmfold,
+        residues=small_structure_residues[:1],
+        weight=2.0,
+    )
+
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
+
+    assert np.isfinite(unweighted_energy), 'energy should be finite'
+    assert np.isclose(weighted_energy, unweighted_energy * 2.0), 'weight applied correctly'
+
+
+def test_GRAVYHydrophobicEnergy_unknown_residue_handling(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+) -> None:
+    """Test that unknown residues use fallback value of 0.0 by mocking structure."""
+    from biotite.structure import Atom, array
+    from bagel.constants import hydropathy_index
+
+    # Create a small structure with an unknown residue
+    atoms = [
+        Atom(coord=[0, 0, 0], chain_id='A', res_id=0, res_name='XXX', element='C', atom_name='CA'),  # Unknown
+        Atom(coord=[1, 0, 0], chain_id='A', res_id=1, res_name='VAL', element='C', atom_name='CA'),  # Known
+        Atom(coord=[2, 0, 0], chain_id='A', res_id=2, res_name='VAL', element='C', atom_name='CA'),  # Known
+    ]
+    structure = array(atoms)
+
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = structure
+
+    energy = bg.energies.GRAVYHydrophobicEnergy(
+        oracle=fake_esmfold,
+        weight=1.0,
+    )
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+
+    # Should issue a warning about unknown residue
+    with pytest.warns(UserWarning, match='Unknown residues encountered:'):
+        unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
+
+    # Unknown residue gets 0.0, so: (0.0 + 4.2 + 4.2) / 3
+    expected_value = np.mean([0.0 + hydropathy_index['VAL'], hydropathy_index['VAL']])
+
+    assert np.isclose(unweighted_energy, expected_value), 'energy with unknown residue should use fallback 0.0'
+    assert np.isclose(weighted_energy, expected_value * 1.0), 'weighted energy should match'
+
+
+def test_GRAVYHydrophobicEnergy_missing_residue_warning(
+    fake_esmfold,
+    small_structure,
+) -> None:
+    """Test that selecting residues not present in structure should warn and skip them."""
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = small_structure
+
+    # Residue that does NOT exist
+    fake_residues = [
+        bg.Residue(name='A', chain_ID='Z', index=999),
+    ]
+
+    energy = bg.energies.GRAVYHydrophobicEnergy(
+        oracle=fake_esmfold,
+        residues=fake_residues,
+        weight=1.0,
+    )
+
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+
+    with pytest.warns(UserWarning, match='not found in structure'):
+        value, weighted = energy.compute(oracles_result)
+
+    assert value == 0.0
+    assert weighted == 0.0
+
+
+def test_GRAVYHydrophobicEnergy_empty_residue_selection(
+    fake_esmfold,
+    small_structure,
+) -> None:
+    """If selected residues exist but none match structure → return 0."""
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = small_structure
+
+    # Residue group that won't match anything
+    energy = bg.energies.GRAVYHydrophobicEnergy(
+        oracle=fake_esmfold,
+        residues=[bg.Residue(name='A', chain_ID='Z', index=999)],
+        weight=1.0,
+    )
+
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+
+    # Warning for missing residues
+    with pytest.warns(UserWarning):
+        value, weighted = energy.compute(oracles_result)
+
+    assert value == 0.0
+    assert weighted == 0.0
+
+
+def test_GRAVYHydrophobicEnergy_empty_structure_returns_zero(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+) -> None:
+    """Test that empty structure returns zero energy."""
+    from biotite.structure import AtomArray
+
+    # Create truly empty structure
+    empty_structure = AtomArray(0)
+
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = empty_structure
+
+    energy = bg.energies.GRAVYHydrophobicEnergy(
+        oracle=fake_esmfold,
+        weight=2.0,
+    )
+
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
+
+    assert unweighted_energy == 0.0, 'unweighted energy should be 0 for empty structure'
+    assert weighted_energy == 0.0, 'weighted energy should be 0 for empty structure'
