@@ -11,9 +11,7 @@ BAGEL is a model-agnostic, modular, fully customizable Python framework for prog
 
 The package formalizes the protein design task as an optimization (sampling) over an energy landscape.
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/softnanolab/bagel/main/docs/demo.gif" alt="BAGEL demo" width="600"/>
-</p>
+[![BAGEL demo](docs/demo.mp4)](docs/demo.mp4)
 
 The BAGEL package is made up of several components that need to be specified to form a protein engineering task:
 
