@@ -930,15 +930,15 @@ def test_LISEnergy(
     )
 
 
-def test_GRAVYHydrophobicEnergy_all_mode(
+def test_HydropathyEnergy_all_mode(
     fake_esmfold: bg.oracles.folding.ESMFold,
     small_structure: AtomArray,
 ) -> None:
-    """Test GRAVYHydrophobicEnergy computation in 'all' mode with correct values."""
+    """Test HydropathyEnergy computation in 'all' mode with correct values."""
     mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
     mock_folding_result.structure = small_structure
 
-    energy = bg.energies.GRAVYHydrophobicEnergy(
+    energy = bg.energies.HydropathyEnergy(
         oracle=fake_esmfold,
         mode='all',
         weight=2.0,
@@ -971,18 +971,18 @@ def test_GRAVYHydrophobicEnergy_all_mode(
 
 
 @patch('bagel.energies.sasa')
-def test_GRAVYHydrophobicEnergy_surface_mode(
+def test_HydropathyEnergy_surface_mode(
     mock_sasa: Mock,
     fake_esmfold: bg.oracles.folding.ESMFold,
     small_structure: AtomArray,
 ) -> None:
-    """Test GRAVYHydrophobicEnergy computation in 'surface' mode with SASA weighting."""
+    """Test HydropathyEnergy computation in 'surface' mode with SASA weighting."""
     mock_sasa.return_value = np.array([22, 22, 22, 22, 0])  # atoms of first 2 residues are given max sasa
 
     mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
     mock_folding_result.structure = small_structure
 
-    energy = bg.energies.GRAVYHydrophobicEnergy(
+    energy = bg.energies.HydropathyEnergy(
         oracle=fake_esmfold,
         mode='surface',
         weight=2.0,
@@ -993,10 +993,11 @@ def test_GRAVYHydrophobicEnergy_surface_mode(
     residues = ['GLY', 'VAL', 'VAL']
     residue_sasa = np.array([44, 44, 0])  # SASA for each residue by summing atomic SASA values
     max_sasa = np.array([max_theoretical_sasa_for_residues[res] for res in residues])
-    normalized_sasa = residue_sasa / max_sasa
+    normalized_sasa = np.clip(residue_sasa / max_sasa, 0.0, 1.0)
     hydropathy = np.array([hydropathy_index[res] for res in residues])
 
-    expected_value = np.mean(hydropathy) * np.mean(normalized_sasa)
+    # Weighted mean: sum(h_i * rel_sasa_i) / sum(rel_sasa_i)
+    expected_value = np.sum(hydropathy * normalized_sasa) / np.sum(normalized_sasa)
 
     oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
     unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
@@ -1008,18 +1009,18 @@ def test_GRAVYHydrophobicEnergy_surface_mode(
 
 
 @patch('bagel.energies.sasa')
-def test_GRAVYHydrophobicEnergy_core_mode(
+def test_HydropathyEnergy_core_mode(
     mock_sasa: Mock,
     fake_esmfold: bg.oracles.folding.ESMFold,
     small_structure: AtomArray,
 ) -> None:
-    """Test GRAVYHydrophobicEnergy computation in 'core' mode with inverted SASA weighting."""
+    """Test HydropathyEnergy computation in 'core' mode with inverted SASA weighting."""
     mock_sasa.return_value = np.zeros(len(small_structure))
 
     mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
     mock_folding_result.structure = small_structure
 
-    energy = bg.energies.GRAVYHydrophobicEnergy(
+    energy = bg.energies.HydropathyEnergy(
         oracle=fake_esmfold,
         mode='core',
         weight=2.0,
@@ -1028,34 +1029,39 @@ def test_GRAVYHydrophobicEnergy_core_mode(
     oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
     unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
 
-    # With SASA=0, normalized weight is 1.0
+    # With SASA=0, normalized weight for core mode is 1.0 (1.0 - 0.0)
     from bagel.constants import hydropathy_index
 
-    # Small_structure has 3 residues, two of which are VAL (4.2) and one is Glycine (-0.4)
-    # expected_value = (-0.4 + 4.2 + 4.2) / 3
-    expected_value = np.mean(
+    # Small_structure has 3 residues: GLY (-0.4), VAL (4.2), VAL (4.2)
+    # For core mode with all SASA=0: weight = 1.0 - 0.0 = 1.0 for all
+    # expected_value = sum(h_i * 1.0) / sum(1.0) = (-0.4 + 4.2 + 4.2) / 3
+    hydropathy = np.array(
         [
             hydropathy_index['GLY'],
             hydropathy_index['VAL'],
             hydropathy_index['VAL'],
         ]
     )
+    core_weights = np.ones(3)  # 1.0 - 0.0 for all
+    expected_value = np.sum(hydropathy * core_weights) / np.sum(core_weights)
 
     assert np.isfinite(unweighted_energy), 'energy should be finite'
     assert np.isclose(unweighted_energy, expected_value), 'unweighted energy is incorrect'
     assert np.isclose(weighted_energy, expected_value * 2.0), 'weighted energy is incorrect'
 
 
-def test_GRAVYHydrophobicEnergy_with_selected_residues(
+def test_HydropathyEnergy_with_selected_residues(
     fake_esmfold: bg.oracles.folding.ESMFold,
     small_structure_residues: list[bg.Residue],
     small_structure: AtomArray,
 ) -> None:
-    """Test GRAVYHydrophobicEnergy computation with selected residues subset."""
+    """Test HydropathyEnergy computation with selected residues subset."""
+    from bagel.constants import hydropathy_index
+
     mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
     mock_folding_result.structure = small_structure
 
-    energy = bg.energies.GRAVYHydrophobicEnergy(
+    energy = bg.energies.HydropathyEnergy(
         oracle=fake_esmfold,
         residues=small_structure_residues[:1],
         weight=2.0,
@@ -1064,11 +1070,15 @@ def test_GRAVYHydrophobicEnergy_with_selected_residues(
     oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
     unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
 
+    # Expected energy is the GRAVY value of the single selected residue (GLY) in mode='all' (no SASA weighting)
+    expected_value = hydropathy_index['GLY']
+
     assert np.isfinite(unweighted_energy), 'energy should be finite'
-    assert np.isclose(weighted_energy, unweighted_energy * 2.0), 'weight applied correctly'
+    assert np.isclose(unweighted_energy, expected_value), 'unweighted energy is incorrect'
+    assert np.isclose(weighted_energy, expected_value * 2.0), 'weight applied correctly'
 
 
-def test_GRAVYHydrophobicEnergy_unknown_residue_handling(
+def test_HydropathyEnergy_unknown_residue_handling(
     fake_esmfold: bg.oracles.folding.ESMFold,
 ) -> None:
     """Test that unknown residues are filtered out by mocking structure."""
@@ -1086,7 +1096,7 @@ def test_GRAVYHydrophobicEnergy_unknown_residue_handling(
     mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
     mock_folding_result.structure = structure
 
-    energy = bg.energies.GRAVYHydrophobicEnergy(
+    energy = bg.energies.HydropathyEnergy(
         oracle=fake_esmfold,
         weight=1.0,
     )
@@ -1097,13 +1107,16 @@ def test_GRAVYHydrophobicEnergy_unknown_residue_handling(
         unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
 
     # Unknown residue gets removed from calculation, so only the two VAL residues contribute
-    expected_value = np.mean([0.0 + hydropathy_index['VAL'], hydropathy_index['VAL']])
+    # Mean of two identical GRAVY values is just that value
+    expected_value = hydropathy_index['VAL']
 
-    assert np.isclose(unweighted_energy, expected_value), 'energy with unknown residue should use fallback 0.0'
+    assert np.isclose(unweighted_energy, expected_value), (
+        'energy with unknown residue should exclude it from calculation'
+    )
     assert np.isclose(weighted_energy, expected_value * 1.0), 'weighted energy should match'
 
 
-def test_GRAVYHydrophobicEnergy_missing_residue_warning(
+def test_HydropathyEnergy_missing_residue_warning(
     fake_esmfold,
     small_structure,
 ) -> None:
@@ -1116,7 +1129,7 @@ def test_GRAVYHydrophobicEnergy_missing_residue_warning(
         bg.Residue(name='A', chain_ID='Z', index=999),
     ]
 
-    energy = bg.energies.GRAVYHydrophobicEnergy(
+    energy = bg.energies.HydropathyEnergy(
         oracle=fake_esmfold,
         residues=fake_residues,
         weight=1.0,
@@ -1131,7 +1144,7 @@ def test_GRAVYHydrophobicEnergy_missing_residue_warning(
     assert weighted == 0.0
 
 
-def test_GRAVYHydrophobicEnergy_empty_residue_selection(
+def test_HydropathyEnergy_empty_residue_selection(
     fake_esmfold,
     small_structure,
 ) -> None:
@@ -1140,7 +1153,7 @@ def test_GRAVYHydrophobicEnergy_empty_residue_selection(
     mock_folding_result.structure = small_structure
 
     # Residue group that won't match anything
-    energy = bg.energies.GRAVYHydrophobicEnergy(
+    energy = bg.energies.HydropathyEnergy(
         oracle=fake_esmfold,
         residues=[bg.Residue(name='A', chain_ID='Z', index=999)],
         weight=1.0,
@@ -1156,7 +1169,7 @@ def test_GRAVYHydrophobicEnergy_empty_residue_selection(
     assert weighted == 0.0
 
 
-def test_GRAVYHydrophobicEnergy_empty_structure_returns_zero(
+def test_HydropathyEnergy_empty_structure_returns_zero(
     fake_esmfold: bg.oracles.folding.ESMFold,
 ) -> None:
     """Test that empty structure returns zero energy."""
@@ -1168,7 +1181,7 @@ def test_GRAVYHydrophobicEnergy_empty_structure_returns_zero(
     mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
     mock_folding_result.structure = empty_structure
 
-    energy = bg.energies.GRAVYHydrophobicEnergy(
+    energy = bg.energies.HydropathyEnergy(
         oracle=fake_esmfold,
         weight=2.0,
     )

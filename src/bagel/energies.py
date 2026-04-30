@@ -1,5 +1,5 @@
 """
-Standard template and objects for calculating structural or propery losses.
+Standard template and objects for calculating structural or property losses.
 
 MIT License
 
@@ -14,8 +14,15 @@ import numpy.typing as npt
 import pandas as pd
 from typing import Literal, Callable, Any
 from biotite.structure import AtomArray, sasa, annotate_sse, superimpose
-
-from .constants import hydrophobic_residues, max_sasa_values, probe_radius_water, backbone_atoms
+from .constants import (
+    hydrophobic_residues,
+    max_sasa_values,
+    probe_radius_water,
+    backbone_atoms,
+    hydropathy_index,
+    max_theoretical_sasa_for_residues,
+    max_residue_sasa,
+)
 from .chain import Residue, Chain
 from .oracles import Oracle, OracleResult, OraclesResultDict
 from .oracles.folding import FoldingResult, FoldingOracle
@@ -541,16 +548,17 @@ class HydrophobicEnergy(EnergyTerm):
         return value, value * self.weight
 
 
-class GRAVYHydrophobicEnergy(EnergyTerm):
+class HydropathyEnergy(EnergyTerm):
     """
-    Energy Proportional to the GRAVY score of hydrophobic residues present. This is calculated by taking the mean
-    GRAVY score of the relevant residues as a measure of the hydrophobicity of the structure, where the GRAVY score
-    of a residue is the sum of the hydropathy index of its amino acid divided by the number of residues in the protein sequence.
+    Energy based on the Kyte-Doolittle hydropathy values. If the selected mode is 'all', then this is calculated by taking the
+    GRAVY score (arithmetic mean of the Kyte-Doolittle hydropathy values) of the relevant residues as a measure of the
+    hydrophobicity of the structure. If the selected mode is 'core' or 'surface', then the weighted mean of Kyte-Doolittle hydropathy
+    values (also called hydropathy indices) of the residues is taken as a measure of the hydrophobicity of the structure,
+    where the weights are the normalised SASA of the residues. This is done to retain the residue-level correlation between hydropathy and exposure.
 
     The hydropathy index is a measure of the hydrophobicity of an amino acid, with higher values indicating more
-    hydrophobic amino acids. The GRAVY score is a commonly used measure of the overall hydrophobicity of a protein,
-    with higher values indicating more hydrophobic proteins. This energy term encourages the presence of
-    hydrophobic residues in the structure, which can be important for protein folding and stability.
+    hydrophobic amino acids. This energy term encourages the presence of hydrophobic residues in the structure,
+    which can be important for protein folding and stability.
 
     Ref: https://williams.chemistry.gatech.edu/course_Information/6572/papers/kytoe_hydrophobicity_1982.pdf
 
@@ -564,13 +572,11 @@ class GRAVYHydrophobicEnergy(EnergyTerm):
         inheritable: bool = True,
         residues: list[Residue] | None = None,
         mode: Literal['surface', 'core', 'all'] = 'all',
-        surface_only: bool = False,
-        core_only: bool = False,
         weight: float = 1.0,
         name: str | None = None,
     ) -> None:
         """
-        Initialises hydrophobic energy class based on GRAVY Score.
+        Initialises hydropathy energy class based on Kyte-Doolittle hydropathy values.
 
         Parameters
         ----------
@@ -583,55 +589,34 @@ class GRAVYHydrophobicEnergy(EnergyTerm):
             Which residues to include in the calculation. If not set, simply considers **all** residues by default.
         mode: Literal['surface', 'core', 'all'] = 'all'
             Selection of which atoms contribute to the hydrophobicity score:
-            - 'surface': calculates GRAVY score for hydrophobic residues at the surface, weighted by normalised SASA
-            - 'core': calculates GRAVY score for hydrophobic residues in the core, weighted by 1 - normalised SASA
-            - 'all': calculates GRAVY score for all hydrophobic residues, no SASA weighting
+            - 'surface': calculates weighted mean of hydropathic indices for the residues at the surface, weighted by normalised SASA
+            - 'core': calculates weighted mean of hydropathic indices for the residues in the core, weighted by 1 - normalised SASA
+            - 'all': calculates GRAVY score (arithmetic mean of hydropathic indices) for all hydropathic residues, no SASA weighting
             Normalisation uses 'max_theoretical_sasa_for_residues' specific to each residue and the probe radius
             `probe_radius_water`.
-        surface_only: bool, default=False
-            Deprecated. Use `mode='surface'` instead.
-        core_only: bool, default=False
-            Deprecated. Use `mode='core'` instead.
         weight: float = 1.0
             The weight of the energy term.
         name: str | None = None
             Optional name to append to the energy term name.
         """
         if name is None:
-            name = 'GRAVYhydrophobic'
+            name = 'hydropathic'
         else:
-            name = f'GRAVYhydrophobic_{name}'
+            name = f'hydropathic_{name}'
 
         super().__init__(name=name, inheritable=inheritable, oracle=oracle, weight=weight)
         self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
-
-        # Backwards compatibility for deprecated flags
-        self.surface_only = surface_only
-        self.core_only = core_only
-        if surface_only and core_only:
-            raise ValueError('Only one of surface_only or core_only can be True at the same time.')
-        if surface_only or core_only:
-            warnings.warn(
-                "Parameters 'surface_only' and 'core_only' are deprecated and will be removed in v0.2.0. "
-                "Use 'mode' instead (e.g., mode='surface' or mode='core').",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            mode = 'surface' if surface_only else 'core'
         self.mode: Literal['surface', 'core', 'all'] = mode
         if self.mode not in ['surface', 'core', 'all']:
             raise ValueError(f"Invalid mode: {mode}. Expected one of: 'surface', 'core', 'all'.")
         assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
         assert 'structure' in self.oracle.result_class.model_fields, (
-            'GRAVYHydrophobicEnergy requires oracle to return structure in result_class'
+            'HydropathyEnergy requires oracle to return structure in result_class'
         )
 
     def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
         # TODO: optimize this function, as it can be quite slow for large structures due to the for loop over residues.
-        # - By vectorizing the calculation of residue GRAVY values and SASA values, rather than using a for loop over residues
-
-        # Importing hydropathy_index, max_sasa values here, as they are only needed for this energy term
-        from .constants import hydropathy_index, max_theoretical_sasa_for_residues, max_residue_sasa
+        # - By vectorizing the calculation of residue hydropathy index and SASA values, rather than using a for loop over residues
 
         structure = oracles_result.get_structure(self.oracle)
 
@@ -641,11 +626,10 @@ class GRAVYHydrophobicEnergy(EnergyTerm):
 
         # Handling unknown residues early by checking if any residues in the structure are not
         # in the hydropathy index, and if so, warning and returning 0 energy
-        # (as we cannot calculate GRAVY score or SASA for unknown residues)
+        # (as we cannot calculate hydropathy index or SASA for unknown residues)
 
         res_names = structure.res_name
         # Check: is each residue in hydropathy index (i.e., is it a known amino acid)
-        # Ccheck: is each residue in hydropathy index (i.e., is it a known amino acid)
         valid_mask = np.isin(res_names, list(hydropathy_index.keys()))
         unknown_mask = ~valid_mask
 
@@ -653,10 +637,8 @@ class GRAVYHydrophobicEnergy(EnergyTerm):
         if np.any(unknown_mask):
             unknown_residues = np.unique(res_names[unknown_mask])
             warnings.warn(
-                f'Unknown residues encountered: {set(unknown_residues)} (count={len(unknown_residues)}).', UserWarning
-            )
-            warnings.warn(
-                'Unknown residues were found in the structure. These residues will be removed from the structure before calculating the energy. '
+                f'Unknown residues encountered: {set(unknown_residues)} (count={len(unknown_residues)}). '
+                'These residues will be removed from the structure before calculating the energy. '
                 'This may affect the energy calculation if any of the user-specified residues were unknown.',
                 UserWarning,
             )
@@ -667,29 +649,23 @@ class GRAVYHydrophobicEnergy(EnergyTerm):
         # Get residue-level information: chain_ids and res_ids for the relevant residues.
         if len(self.residue_groups) > 0:
             # Residues are selected, so only consider those residues for the energy calculation
-            # Filter residues that still exist in the structure (some may have been removed if unknown)
+            # Validate that all user-specified residues exist in the structure
             chain_ids_orig, res_ids_orig = self.residue_groups[0]
-            if np.any(unknown_mask):
-                # Keep only residues that exist in the filtered structure
-                valid_residues_mask = np.zeros(len(chain_ids_orig), dtype=bool)
-                for i, (chain_id, res_id) in enumerate(zip(chain_ids_orig, res_ids_orig)):
-                    atom_mask = (structure.chain_id == chain_id) & (structure.res_id == res_id)
-                    valid_residues_mask[i] = np.any(atom_mask)
+            valid_residues_mask = np.zeros(len(chain_ids_orig), dtype=bool)
+            for i, (chain_id, res_id) in enumerate(zip(chain_ids_orig, res_ids_orig)):
+                atom_mask = (structure.chain_id == chain_id) & (structure.res_id == res_id)
+                valid_residues_mask[i] = np.any(atom_mask)
 
-                # Warn if any user-specified residues were filtered out
-                if not np.all(valid_residues_mask):
-                    removed_residues = list(
-                        zip(chain_ids_orig[~valid_residues_mask], res_ids_orig[~valid_residues_mask])
-                    )
-                    warnings.warn(
-                        f'User-specified residues were removed due to unknown residues: {removed_residues}', UserWarning
-                    )
-                chain_ids = chain_ids_orig[valid_residues_mask]
-                res_ids = res_ids_orig[valid_residues_mask]
-
-            else:
-                chain_ids = chain_ids_orig
-                res_ids = res_ids_orig
+            # Warn if any user-specified residues were not found
+            if not np.all(valid_residues_mask):
+                removed_residues = list(zip(chain_ids_orig[~valid_residues_mask], res_ids_orig[~valid_residues_mask]))
+                warnings.warn(
+                    f'User-specified residues not found in structure: {removed_residues}. '
+                    'These residues will be skipped in the energy calculation.',
+                    UserWarning,
+                )
+            chain_ids = chain_ids_orig[valid_residues_mask]
+            res_ids = res_ids_orig[valid_residues_mask]
 
         else:
             # All residues are relevant if no specific group is selected
@@ -704,63 +680,74 @@ class GRAVYHydrophobicEnergy(EnergyTerm):
 
             # Ensure that the chain_ids and res_ids arrays are aligned and 1D
             assert len(chain_ids) == len(res_ids), 'ResidueGroup arrays must be aligned'
+
         # Compute atom-level SASA values once on the filtered structure, as they will be reused for each residue
-        atom_sasa_values = sasa(structure, probe_radius=probe_radius_water)
         # Unknown residues have already been removed above, before this SASA calculation
-        # This should be done before SASA calculation as Unknown residues raises KeyError and stops the code
-        # Filtering the structure for unknown residues (those not in the hydropathy index)
-        # This should be done before SASA calculation as Unkown residues raises KeyError and stops the code
-        # Initialize containers for GRAVY values, unknown residues, and residue SASA values
-        residue_gravy_values = []
+        atom_sasa_values = sasa(structure, probe_radius=probe_radius_water)
+
+        # Initialize containers for hydropathy indices and residue SASA values
+        residue_hydropathy_indices = []
         normalized_residue_sasa_values = []
 
-        # Iterate over each residue in the group (or all residues if no group specified) and calculate its GRAVY value and mean SASA
+        # Iterate over each residue in the group (or all residues if no group specified) and calculate its hydropathic value and mean SASA
         for chain_id, res_id in zip(chain_ids, res_ids):
             # find the indices of atoms that belong to this res_id and chain_id
             atom_mask = (structure.chain_id == chain_id) & (structure.res_id == res_id)
             atom_indices = np.where(atom_mask)[0]
 
-            # Warn if residue not found (safety)
+            # Skip if residue not found (already validated above for user-specified residues)
             if len(atom_indices) == 0:
-                warnings.warn(f'Residue ({chain_id}, {res_id}) not found in structure', UserWarning)
                 continue
 
             # Get residue name (same for all atoms in residue)
             res_name = structure.res_name[atom_indices[0]]
-            # Get GRAVY value for this residue (unknown residues have been already removed)
 
-            # Get GRAVY value for this residue (unkown residues have been already removed)
-            residue_gravy_values.append(hydropathy_index[res_name])
+            # Get hydropathic value for this residue (unknown residues have been already removed)
+            residue_hydropathy_indices.append(hydropathy_index[res_name])
 
             # Calculate total SASA for this residue by summing the SASA values of its atoms
             # this makes more sense than averaging the SASA values, as larger residues will
             # naturally have higher SASA and should contribute more to the energy
             res_sasa = np.sum(atom_sasa_values[atom_indices])
 
-            # fallback to max_residue_sasa (Tryptophan) if unknown residue
             max_sasa = max_theoretical_sasa_for_residues.get(res_name, max_residue_sasa)
-            norm_res_sasa = res_sasa / max_sasa
+            if max_sasa > 0:
+                norm_res_sasa = res_sasa / max_sasa
+            else:
+                norm_res_sasa = 0.0
+            # Clamp to [0, 1] as real protein SASA can exceed theoretical per-residue maximums
+            norm_res_sasa = float(np.clip(norm_res_sasa, 0.0, 1.0))
             normalized_residue_sasa_values.append(norm_res_sasa)
 
         # Convert to numpy arrays for efficient indexing
-        residue_gravy_values_arr: npt.NDArray[np.floating[Any]] = np.array(residue_gravy_values)
+        residue_hydropathy_indices_arr: npt.NDArray[np.floating[Any]] = np.array(residue_hydropathy_indices)
         normalized_residue_sasa_values_arr: npt.NDArray[np.floating[Any]] = np.array(normalized_residue_sasa_values)
 
-        if len(residue_gravy_values_arr) == 0:
+        if len(residue_hydropathy_indices_arr) == 0:
             # if no relevant residues, return 0 energy
             return 0.0, 0.0
 
         # Compute energy based on mode
-        value: float = float(np.mean(residue_gravy_values_arr))
+        value: float = float(np.mean(residue_hydropathy_indices_arr))
 
-        # Apply SASA weighting if in surface or core mode, normalized by theoretical max of Tryptophan
+        # Apply SASA weighting if in surface or core mode
+        # NOTE: the following code calculates the weighted mean of the hydropathy indices of the residues for the 'surface' and 'core' modes,
+        # where the weights are the normalised SASA values of the residues. This is different from canonical GRAVY energy calculation,
+        # where the GRAVY score is simply the mean of the hydropathy indices of the residues, without any weighting.
         if self.mode == 'surface':
             normalized_sasa = normalized_residue_sasa_values_arr
-            value *= float(np.mean(normalized_sasa))
+            sum_of_weights = np.sum(normalized_sasa)
+            if sum_of_weights > 0:
+                value = float(np.sum(residue_hydropathy_indices_arr * normalized_sasa) / sum_of_weights)
+            else:
+                value = 0.0  # if all residues are fully buried, then surface contribution is 0
         elif self.mode == 'core':
             normalized_sasa = 1.0 - normalized_residue_sasa_values_arr
-            value *= float(np.mean(normalized_sasa))
-
+            sum_of_weights = np.sum(normalized_sasa)
+            if sum_of_weights > 0:
+                value = float(np.sum(residue_hydropathy_indices_arr * normalized_sasa) / sum_of_weights)
+            else:
+                value = 0.0  # if all residues are fully exposed, then core contribution is 0
         return float(value), float(value * self.weight)
 
 

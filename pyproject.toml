@@ -1,6 +1,6 @@
 [project]
 name = "biobagel"
-version = "0.1.12"
+version = "0.1.13"
 authors = [
   {name = "Jakub Lála", email = "jakublala@gmail.com"},
   {name = "Ayham Al-Saffar", email = "ayham.saffar@gmail.com"},
