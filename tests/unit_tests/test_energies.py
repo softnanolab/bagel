@@ -1102,9 +1102,11 @@ def test_HydropathyEnergy_unknown_residue_handling(
     )
     oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
 
-    # Should issue a warning about unknown residue
-    with pytest.warns(UserWarning, match='Unknown residues encountered:'):
+    # Should issue a deterministic warning about unknown residue
+    with pytest.warns(UserWarning, match=r"Unknown residues encountered: \('XXX',\) \(count=1\)") as warning_record:
         unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
+
+    assert len(warning_record) == 1
 
     # Unknown residue gets removed from calculation, so only the two VAL residues contribute
     # Mean of two identical GRAVY values is just that value

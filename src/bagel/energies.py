@@ -636,8 +636,9 @@ class HydropathyEnergy(EnergyTerm):
         # Warn if unknown residues exist
         if np.any(unknown_mask):
             unknown_residues = np.unique(res_names[unknown_mask])
+            unknown_residue_names = tuple(sorted(map(str, unknown_residues)))
             warnings.warn(
-                f'Unknown residues encountered: {set(unknown_residues)} (count={len(unknown_residues)}). '
+                f'Unknown residues encountered: {unknown_residue_names} (count={len(unknown_residues)}). '
                 'These residues will be removed from the structure before calculating the energy. '
                 'This may affect the energy calculation if any of the user-specified residues were unknown.',
                 UserWarning,
@@ -669,14 +670,18 @@ class HydropathyEnergy(EnergyTerm):
 
         else:
             # All residues are relevant if no specific group is selected
-            # Use numpy to get unique chain_id and res_id pairs
-            unique_residue_indices = np.unique(
-                np.column_stack((structure.chain_id, structure.res_id)), axis=0, return_index=True
-            )[1]
+            # Use structured arrays to get unique chain_id and res_id pairs while preserving res_id dtype.
+            residue_ids = np.empty(
+                len(structure),
+                dtype=[('chain_id', structure.chain_id.dtype), ('res_id', structure.res_id.dtype)],
+            )
+            residue_ids['chain_id'] = structure.chain_id
+            residue_ids['res_id'] = structure.res_id
+            unique_residue_indices = np.unique(residue_ids, return_index=True)[1]
             unique_residue_indices = np.sort(unique_residue_indices)  # preserve order as they appear in structure
 
-            chain_ids = structure.chain_id[unique_residue_indices]
-            res_ids = structure.res_id[unique_residue_indices]
+            chain_ids = residue_ids['chain_id'][unique_residue_indices]
+            res_ids = residue_ids['res_id'][unique_residue_indices]
 
             # Ensure that the chain_ids and res_ids arrays are aligned and 1D
             assert len(chain_ids) == len(res_ids), 'ResidueGroup arrays must be aligned'
