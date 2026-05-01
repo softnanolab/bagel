@@ -1,5 +1,5 @@
 """
-Standard template and objects for calculating structural or propery losses.
+Standard template and objects for calculating structural or property losses.
 
 MIT License
 
@@ -12,10 +12,17 @@ import warnings
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
-from typing import Literal, Callable
+from typing import Literal, Callable, Any
 from biotite.structure import AtomArray, sasa, annotate_sse, superimpose
-
-from .constants import hydrophobic_residues, max_sasa_values, probe_radius_water, backbone_atoms
+from .constants import (
+    hydrophobic_residues,
+    max_sasa_values,
+    probe_radius_water,
+    backbone_atoms,
+    hydropathy_index,
+    max_theoretical_sasa_for_residues,
+    max_residue_sasa,
+)
 from .chain import Residue, Chain
 from .oracles import Oracle, OracleResult, OraclesResultDict
 from .oracles.folding import FoldingResult, FoldingOracle
@@ -539,6 +546,214 @@ class HydrophobicEnergy(EnergyTerm):
             value *= np.mean(normalized_sasa[relevance_mask & hydrophobic_mask])
 
         return value, value * self.weight
+
+
+class HydropathyEnergy(EnergyTerm):
+    """
+    Energy based on the Kyte-Doolittle hydropathy values. If the selected mode is 'all', then this is calculated by taking the
+    GRAVY score (arithmetic mean of the Kyte-Doolittle hydropathy values) of the relevant residues as a measure of the
+    hydrophobicity of the structure. If the selected mode is 'core' or 'surface', then the weighted mean of Kyte-Doolittle hydropathy
+    values (also called hydropathy indices) of the residues is taken as a measure of the hydrophobicity of the structure,
+    where the weights are the normalised SASA of the residues. This is done to retain the residue-level correlation between hydropathy and exposure.
+
+    The hydropathy index is a measure of the hydrophobicity of an amino acid, with higher values indicating more
+    hydrophobic amino acids. This energy term encourages the presence of hydrophobic residues in the structure,
+    which can be important for protein folding and stability.
+
+    Ref: https://williams.chemistry.gatech.edu/course_Information/6572/papers/kytoe_hydrophobicity_1982.pdf
+
+    Note that this energy term is different from the `HydrophobicEnergy` term, which simply counts the fraction of selected
+    atoms that belong to hydrophobic residues (valine, isoleucine, leucine, phenylalanine, methionine, tryptophan).
+    """
+
+    def __init__(
+        self,
+        oracle: FoldingOracle,
+        inheritable: bool = True,
+        residues: list[Residue] | None = None,
+        mode: Literal['surface', 'core', 'all'] = 'all',
+        weight: float = 1.0,
+        name: str | None = None,
+    ) -> None:
+        """
+        Initialises hydropathy energy class based on Kyte-Doolittle hydropathy values.
+
+        Parameters
+        ----------
+        oracle: FoldingOracle
+            The oracle to use for the energy term.
+        inheritable: bool, default=True
+            If a new residue is added next to a residue included in this energy term, this dictates whether that new
+            residue could then be added to this energy term.
+        residues: list[Residue] or None, default=None
+            Which residues to include in the calculation. If not set, simply considers **all** residues by default.
+        mode: Literal['surface', 'core', 'all'] = 'all'
+            Selection of which atoms contribute to the hydrophobicity score:
+            - 'surface': calculates weighted mean of hydropathic indices for the residues at the surface, weighted by normalised SASA
+            - 'core': calculates weighted mean of hydropathic indices for the residues in the core, weighted by 1 - normalised SASA
+            - 'all': calculates GRAVY score (arithmetic mean of hydropathic indices) for all hydropathic residues, no SASA weighting
+            Normalisation uses 'max_theoretical_sasa_for_residues' specific to each residue and the probe radius
+            `probe_radius_water`.
+        weight: float = 1.0
+            The weight of the energy term.
+        name: str | None = None
+            Optional name to append to the energy term name.
+        """
+        if name is None:
+            name = 'hydropathic'
+        else:
+            name = f'hydropathic_{name}'
+
+        super().__init__(name=name, inheritable=inheritable, oracle=oracle, weight=weight)
+        self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
+        self.mode: Literal['surface', 'core', 'all'] = mode
+        if self.mode not in ['surface', 'core', 'all']:
+            raise ValueError(f"Invalid mode: {mode}. Expected one of: 'surface', 'core', 'all'.")
+        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
+        assert 'structure' in self.oracle.result_class.model_fields, (
+            'HydropathyEnergy requires oracle to return structure in result_class'
+        )
+
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        # TODO: optimize this function, as it can be quite slow for large structures due to the for loop over residues.
+        # - By vectorizing the calculation of residue hydropathy index and SASA values, rather than using a for loop over residues
+
+        structure = oracles_result.get_structure(self.oracle)
+
+        # Handling empty structure early
+        if len(structure) == 0:
+            return 0.0, 0.0
+
+        # Handling unknown residues early by checking if any residues in the structure are not
+        # in the hydropathy index, and if so, warning and returning 0 energy
+        # (as we cannot calculate hydropathy index or SASA for unknown residues)
+
+        res_names = structure.res_name
+        # Check: is each residue in hydropathy index (i.e., is it a known amino acid)
+        valid_mask = np.isin(res_names, list(hydropathy_index.keys()))
+        unknown_mask = ~valid_mask
+
+        # Warn if unknown residues exist
+        if np.any(unknown_mask):
+            unknown_residues = np.unique(res_names[unknown_mask])
+            unknown_residue_names = tuple(sorted(map(str, unknown_residues)))
+            warnings.warn(
+                f'Unknown residues encountered: {unknown_residue_names} (count={len(unknown_residues)}). '
+                'These residues will be removed from the structure before calculating the energy. '
+                'This may affect the energy calculation if any of the user-specified residues were unknown.',
+                UserWarning,
+            )
+
+        # Filter structure BEFORE any calculations
+        structure = structure[valid_mask]
+
+        # Get residue-level information: chain_ids and res_ids for the relevant residues.
+        if len(self.residue_groups) > 0:
+            # Residues are selected, so only consider those residues for the energy calculation
+            # Validate that all user-specified residues exist in the structure
+            chain_ids_orig, res_ids_orig = self.residue_groups[0]
+            valid_residues_mask = np.zeros(len(chain_ids_orig), dtype=bool)
+            for i, (chain_id, res_id) in enumerate(zip(chain_ids_orig, res_ids_orig)):
+                atom_mask = (structure.chain_id == chain_id) & (structure.res_id == res_id)
+                valid_residues_mask[i] = np.any(atom_mask)
+
+            # Warn if any user-specified residues were not found
+            if not np.all(valid_residues_mask):
+                removed_residues = list(zip(chain_ids_orig[~valid_residues_mask], res_ids_orig[~valid_residues_mask]))
+                warnings.warn(
+                    f'User-specified residues not found in structure: {removed_residues}. '
+                    'These residues will be skipped in the energy calculation.',
+                    UserWarning,
+                )
+            chain_ids = chain_ids_orig[valid_residues_mask]
+            res_ids = res_ids_orig[valid_residues_mask]
+
+        else:
+            # All residues are relevant if no specific group is selected
+            # Use structured arrays to get unique chain_id and res_id pairs while preserving res_id dtype.
+            residue_ids = np.empty(
+                len(structure),
+                dtype=[('chain_id', structure.chain_id.dtype), ('res_id', structure.res_id.dtype)],
+            )
+            residue_ids['chain_id'] = structure.chain_id
+            residue_ids['res_id'] = structure.res_id
+            unique_residue_indices = np.unique(residue_ids, return_index=True)[1]
+            unique_residue_indices = np.sort(unique_residue_indices)  # preserve order as they appear in structure
+
+            chain_ids = residue_ids['chain_id'][unique_residue_indices]
+            res_ids = residue_ids['res_id'][unique_residue_indices]
+
+            # Ensure that the chain_ids and res_ids arrays are aligned and 1D
+            assert len(chain_ids) == len(res_ids), 'ResidueGroup arrays must be aligned'
+
+        # Compute atom-level SASA values once on the filtered structure, as they will be reused for each residue
+        # Unknown residues have already been removed above, before this SASA calculation
+        atom_sasa_values = sasa(structure, probe_radius=probe_radius_water)
+
+        # Initialize containers for hydropathy indices and residue SASA values
+        residue_hydropathy_indices = []
+        normalized_residue_sasa_values = []
+
+        # Iterate over each residue in the group (or all residues if no group specified) and calculate its hydropathic value and mean SASA
+        for chain_id, res_id in zip(chain_ids, res_ids):
+            # find the indices of atoms that belong to this res_id and chain_id
+            atom_mask = (structure.chain_id == chain_id) & (structure.res_id == res_id)
+            atom_indices = np.where(atom_mask)[0]
+
+            # Skip if residue not found (already validated above for user-specified residues)
+            if len(atom_indices) == 0:
+                continue
+
+            # Get residue name (same for all atoms in residue)
+            res_name = structure.res_name[atom_indices[0]]
+
+            # Get hydropathic value for this residue (unknown residues have been already removed)
+            residue_hydropathy_indices.append(hydropathy_index[res_name])
+
+            # Calculate total SASA for this residue by summing the SASA values of its atoms
+            # this makes more sense than averaging the SASA values, as larger residues will
+            # naturally have higher SASA and should contribute more to the energy
+            res_sasa = np.sum(atom_sasa_values[atom_indices])
+
+            max_sasa = max_theoretical_sasa_for_residues.get(res_name, max_residue_sasa)
+            if max_sasa > 0:
+                norm_res_sasa = res_sasa / max_sasa
+            else:
+                norm_res_sasa = 0.0
+            # Clamp to [0, 1] as real protein SASA can exceed theoretical per-residue maximums
+            norm_res_sasa = float(np.clip(norm_res_sasa, 0.0, 1.0))
+            normalized_residue_sasa_values.append(norm_res_sasa)
+
+        # Convert to numpy arrays for efficient indexing
+        residue_hydropathy_indices_arr: npt.NDArray[np.floating[Any]] = np.array(residue_hydropathy_indices)
+        normalized_residue_sasa_values_arr: npt.NDArray[np.floating[Any]] = np.array(normalized_residue_sasa_values)
+
+        if len(residue_hydropathy_indices_arr) == 0:
+            # if no relevant residues, return 0 energy
+            return 0.0, 0.0
+
+        # Compute energy based on mode
+        value: float = float(np.mean(residue_hydropathy_indices_arr))
+
+        # Apply SASA weighting if in surface or core mode
+        # NOTE: the following code calculates the weighted mean of the hydropathy indices of the residues for the 'surface' and 'core' modes,
+        # where the weights are the normalised SASA values of the residues. This is different from canonical GRAVY energy calculation,
+        # where the GRAVY score is simply the mean of the hydropathy indices of the residues, without any weighting.
+        if self.mode == 'surface':
+            normalized_sasa = normalized_residue_sasa_values_arr
+            sum_of_weights = np.sum(normalized_sasa)
+            if sum_of_weights > 0:
+                value = float(np.sum(residue_hydropathy_indices_arr * normalized_sasa) / sum_of_weights)
+            else:
+                value = 0.0  # if all residues are fully buried, then surface contribution is 0
+        elif self.mode == 'core':
+            normalized_sasa = 1.0 - normalized_residue_sasa_values_arr
+            sum_of_weights = np.sum(normalized_sasa)
+            if sum_of_weights > 0:
+                value = float(np.sum(residue_hydropathy_indices_arr * normalized_sasa) / sum_of_weights)
+            else:
+                value = 0.0  # if all residues are fully exposed, then core contribution is 0
+        return float(value), float(value * self.weight)
 
 
 class PAEEnergy(EnergyTerm):
