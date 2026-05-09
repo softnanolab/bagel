@@ -1193,3 +1193,221 @@ def test_HydropathyEnergy_empty_structure_returns_zero(
 
     assert unweighted_energy == 0.0, 'unweighted energy should be 0 for empty structure'
     assert weighted_energy == 0.0, 'weighted energy should be 0 for empty structure'
+
+
+def test_HydrogenBondEnergy_instantiation(fake_esmfold: bg.oracles.folding.ESMFold) -> None:
+    """Test that HydrogenBondEnergy can be instantiated with default parameters."""
+    energy = bg.energies.HydrogenBondEnergy(oracle=fake_esmfold)
+    assert energy.name == 'hbond', 'Expected default name for HydrogenBondEnergy'
+    assert energy.weight == 1.0, 'Expected default weight for HydrogenBondEnergy'
+    assert energy.inheritable is True, 'Expected inheritable to be True for HydrogenBondEnergy'
+    assert energy.cutoff_dist == 2.5, 'Expected default cutoff distance for HydrogenBondEnergy'
+    assert energy.cutoff_angle == 120, 'Expected default cutoff angle for HydrogenBondEnergy'
+
+
+def test_HydrogenBondEnergy_with_residues(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    residues: list[bg.Residue],
+) -> None:
+    """Test that HydrogenBondEnergy can be instantiated with specific residues."""
+    energy = bg.energies.HydrogenBondEnergy(oracle=fake_esmfold, residues=residues)
+    assert len(energy.residue_groups) == 1, 'Expected one group of residues in HydrogenBondEnergy'
+    chain_ids, res_ids = energy.residue_groups[0]
+    assert np.array_equal(chain_ids, np.array(['A'] * 5 + ['B'])), 'Expected chain IDs to match input residues'
+    assert np.array_equal(res_ids, np.array(list(range(5)) + [0])), 'Expected residue IDs to match input residues'
+
+
+def test_HydrogenBondEnergy_with_custom_parameters(fake_esmfold: bg.oracles.folding.ESMFold) -> None:
+    """Test that HydrogenBondEnergy accepts custom cutoff parameters."""
+    energy = bg.energies.HydrogenBondEnergy(
+        oracle=fake_esmfold,
+        cutoff_dist=3.0,
+        cutoff_angle=130,
+        weight=2.0,
+        name='custom',
+    )
+    assert energy.cutoff_dist == 3.0, 'Expected custom cutoff distance for HydrogenBondEnergy'
+    assert energy.cutoff_angle == 130, 'Expected custom cutoff angle for HydrogenBondEnergy'
+    assert energy.weight == 2.0, 'Expected custom weight for HydrogenBondEnergy'
+    assert energy.name == 'hbond_custom', 'Expected custom name for HydrogenBondEnergy'
+
+
+def test_HydrogenBondEnergy_no_hbonds_in_structure(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    small_structure: AtomArray,
+) -> None:
+    """Test HydrogenBondEnergy with a structure that has no hydrogen atoms (thus no hydrogen bonds)."""
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = small_structure
+
+    energy = bg.energies.HydrogenBondEnergy(oracle=fake_esmfold, weight=1.0)
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result)
+
+    # No hydrogen atoms = no hydrogen bonds, so energy should be 0
+    assert unweighted_energy == 0.0, 'unweighted energy should be 0 when no hydrogen bonds are present'
+    assert weighted_energy == 0.0, 'weighted energy should be 0 when no hydrogen bonds are present'
+
+
+def test_HydrogenBondEnergy_empty_structure(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+) -> None:
+    """Test HydrogenBondEnergy with an empty structure."""
+    from biotite.structure import AtomArray
+
+    empty_structure = AtomArray(0)
+
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = empty_structure
+
+    energy = bg.energies.HydrogenBondEnergy(oracle=fake_esmfold, weight=1.0)
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result)
+
+    # Empty structure = 0 residues, 0 hydrogen bonds, avoid division by zero
+    assert unweighted_energy == 0.0, 'unweighted energy should be 0 for empty structure'
+    assert weighted_energy == 0.0, 'weighted energy should be 0 for empty structure'
+
+
+def test_HydrogenBondEnergy_weight_applied(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    small_structure: AtomArray,
+) -> None:
+    """Test that the weight is correctly applied to the energy."""
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = small_structure
+
+    weight = 3.0
+    energy = bg.energies.HydrogenBondEnergy(oracle=fake_esmfold, weight=weight)
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result)
+
+    # Weighted energy should be unweighted energy * weight
+    assert weighted_energy == unweighted_energy * weight, 'Weighted energy should be unweighted energy * weight'
+
+
+def test_HydrogenBondEnergy_residue_selection(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    small_structure: AtomArray,
+    small_structure_residues: list[bg.Residue],
+) -> None:
+    """Test that HydrogenBondEnergy respects residue selection."""
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = small_structure
+
+    energy = bg.energies.HydrogenBondEnergy(
+        oracle=fake_esmfold,
+        residues=small_structure_residues[:2],
+    )
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result)
+
+    # Should compute without error
+    assert isinstance(unweighted_energy, (float, np.floating)), 'unweighted energy should be a float'
+    assert isinstance(weighted_energy, (float, np.floating)), 'weighted energy should be a float'
+
+
+@patch('bagel.energies.hbond')
+def test_HydrogenBondEnergy_energy_values(
+    mock_hbond: Mock,
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    small_structure: AtomArray,
+) -> None:
+    """Test that HydrogenBondEnergy computes correct energy values."""
+    # Mock hbond to return 4 hydrogen bonds in the small_structure (3 residues)
+    # triplets are (donor_idx, hydrogen_idx, acceptor_idx)
+    mock_hbond.return_value = np.array(
+        [
+            [0, 1, 2],
+            [1, 2, 3],
+            [2, 3, 4],
+            [3, 4, 0],
+        ]
+    )
+
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = small_structure
+
+    weight = 2.0
+    energy = bg.energies.HydrogenBondEnergy(oracle=fake_esmfold, weight=weight)
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result)
+
+    # Expected: small_structure has 3 unique residues
+    # hbond_count = 4 (from mock)
+    # n_residues = 3
+    # value = -4 / 3 ≈ -1.333...
+    expected_value = -4.0 / 3.0
+
+    assert np.isfinite(unweighted_energy), 'energy should be finite'
+    assert np.isclose(unweighted_energy, expected_value), 'unweighted energy is incorrect'
+    assert np.isclose(weighted_energy, expected_value * weight), 'weighted energy is incorrect'
+
+
+@patch('bagel.energies.hbond')
+def test_HydrogenBondEnergy_energy_values_with_residue_selection(
+    mock_hbond: Mock,
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    small_structure: AtomArray,
+    small_structure_residues: list[bg.Residue],
+) -> None:
+    """Test that HydrogenBondEnergy normalizes by selected residue count."""
+    # Mock hbond to return 2 hydrogen bonds
+    # Both involve atoms from the selected residues (first 2)
+    mock_hbond.return_value = np.array(
+        [
+            [0, 1, 2],
+            [2, 3, 4],
+        ]
+    )
+
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = small_structure
+
+    weight = 1.5
+    energy = bg.energies.HydrogenBondEnergy(
+        oracle=fake_esmfold,
+        residues=small_structure_residues[:2],  # Select first 2 residues
+        weight=weight,
+    )
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result)
+
+    # Expected: only 2 residues selected
+    # Both hbonds involve atoms in those 2 residues: hbond_count = 2
+    # n_residues = 2 (selected count, not total)
+    # value = -2 / 2 = -1.0
+    expected_value = -2.0 / 2.0
+
+    assert np.isfinite(unweighted_energy), 'energy should be finite'
+    assert np.isclose(unweighted_energy, expected_value), 'unweighted energy is incorrect'
+    assert np.isclose(weighted_energy, expected_value * weight), 'weighted energy is incorrect'
+
+
+@patch('bagel.energies.hbond')
+def test_HydrogenBondEnergy_zero_hbonds(
+    mock_hbond: Mock,
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    small_structure: AtomArray,
+) -> None:
+    """Test HydrogenBondEnergy returns zero when no hydrogen bonds are found."""
+    # Mock hbond to return empty array (no hydrogen bonds)
+    mock_hbond.return_value = np.empty((0, 3), dtype=int)
+
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = small_structure
+
+    weight = 2.0
+    energy = bg.energies.HydrogenBondEnergy(oracle=fake_esmfold, weight=weight)
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    unweighted_energy, weighted_energy = energy.compute(oracles_result)
+
+    # Expected: 0 hydrogen bonds
+    # hbond_count = 0
+    # n_residues = 3
+    # value = -0 / 3 = 0.0
+    expected_value = 0.0
+
+    assert np.isfinite(unweighted_energy), 'energy should be finite'
+    assert np.isclose(unweighted_energy, expected_value), 'unweighted energy is incorrect'
+    assert np.isclose(weighted_energy, expected_value * weight), 'weighted energy is incorrect'
