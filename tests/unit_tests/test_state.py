@@ -156,7 +156,7 @@ def test_state_get_energy(fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch)
     )
 
     ptm_state = bg.State(name='ptm_test_state', chains=[chain], energy_terms=[ptm_term1, ptm_term2])
-    ptm_energy = float(ptm_state.get_energy())  # Why is the energy output as an array?
+    ptm_energy = ptm_state.get_energy()
     assert np.round(ptm_energy, 1) == -3.5  # -0.7 * 2.0 + -0.7 * 3.0
 
     # Test 7: Test with multiple oracles

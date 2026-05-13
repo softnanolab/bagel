@@ -12,10 +12,10 @@ license = "MIT"
 license_files = "LICENSE"
 keywords = ["protein", "protein design", "optimization", "monte carlo", "sampling", "energy landscape"]
 
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "biotite>=1.0.1",
-    "boileroom",
+    "boileroom>=0.3.0",
     "numpy>=2.2.0",
     "pandas>=2.2.3",
     "pydantic>=2.10.6",

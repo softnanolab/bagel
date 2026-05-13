@@ -90,7 +90,7 @@ class State:
             self._energy_terms_value[term.name] = unweighted_energy
             logger.debug(f'Energy term {term.name} has value {unweighted_energy}')
 
-        self._energy = total_energy
+        self._energy = float(np.asarray(total_energy).item())
 
         logger.debug(f'**Weighted** energy for state {self.name} is {self._energy}')
 
