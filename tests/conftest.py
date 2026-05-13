@@ -57,6 +57,46 @@ def esmfold(request) -> bg.oracles.folding.ESMFold:
 
 
 @pytest.fixture(scope='session')
+def boltz2(request) -> bg.oracles.folding.Boltz2:
+    """
+    Fixture that must be called in tests that require the Boltz-2 oracle.
+    Behaviour is based on the --oracles flag of the original pytest call.
+    """
+    flag = request.config.getoption('--oracles')
+    if flag == 'skip':
+        pytest.skip(reason='--oracles flag of the original pytest call set to skip')
+    elif flag == 'local':
+        pytest.skip(reason='Boltz-2 does not support the local backend; use --oracles modal')
+    elif flag == 'modal':
+        with modal.enable_output():
+            model = bg.oracles.folding.Boltz2(backend="modal")
+            yield model
+            del model
+    else:
+        raise ValueError(f'Unknown --oracles flag: {flag}')
+
+
+@pytest.fixture(scope='session')
+def chai1(request) -> bg.oracles.folding.Chai1:
+    """
+    Fixture that must be called in tests that require the Chai-1 oracle.
+    Behaviour is based on the --oracles flag of the original pytest call.
+    """
+    flag = request.config.getoption('--oracles')
+    if flag == 'skip':
+        pytest.skip(reason='--oracles flag of the original pytest call set to skip')
+    elif flag == 'local':
+        pytest.skip(reason='Chai-1 does not support the local backend; use --oracles modal')
+    elif flag == 'modal':
+        with modal.enable_output():
+            model = bg.oracles.folding.Chai1(backend="modal")
+            yield model
+            del model
+    else:
+        raise ValueError(f'Unknown --oracles flag: {flag}')
+
+
+@pytest.fixture(scope='session')
 def esm2(request) -> bg.oracles.embedding.ESM2:
     """Fixture that returns an ESM2 object."""
     flag = request.config.getoption('--oracles')

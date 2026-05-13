@@ -8,7 +8,7 @@ import numpy as np
 import numpy.typing as npt
 from ...chain import Chain
 from ...constants import atom_order
-from .utils import reindex_chains, validate_array_range
+from .utils import reindex_chains, reindex_residues, validate_array_range
 from pydantic import field_validator
 from .base import FoldingOracle, FoldingResult
 from typing import List, Any, Type
@@ -118,18 +118,19 @@ class ESMFold(FoldingOracle):
             raise ValueError("ESMFold output does not contain atom_array")
         atoms = output.atom_array
         atoms = reindex_chains(atoms, [chain.chain_ID for chain in chains])
-        
+        atoms = reindex_residues(atoms, chains)
+
         # These fields should always be present since we requested them via include_fields
-        if output.plddt is None:
+        if output.plddt is None or np.size(output.plddt) == 0:
             raise ValueError("ESMFold output does not contain plddt (requested via include_fields)")
-        if output.pae is None:
+        if output.pae is None or np.size(output.pae) == 0:
             raise ValueError("ESMFold output does not contain pae (requested via include_fields)")
-        if output.ptm is None:
+        if output.ptm is None or np.size(output.ptm) == 0:
             raise ValueError("ESMFold output does not contain ptm (requested via include_fields)")
-        
+
         # Extract plddt for CA atoms
         local_plddt = output.plddt[..., atom_order['CA']]
-        
+
         results = self.result_class(
             input_chains=chains,
             structure=atoms,

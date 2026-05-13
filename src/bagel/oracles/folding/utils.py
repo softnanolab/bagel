@@ -10,6 +10,7 @@ from biotite.structure import AtomArray
 from biotite.structure.io.pdb import PDBFile
 
 from bagel.constants import atom_order, aa_dict
+from bagel.chain import Chain
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,25 @@ def reindex_chains(atomarray: AtomArray, custom_chain_idx: List[str]) -> AtomArr
         current_id = atoms.chain_id[i]
         new_id = id_conversion[current_id]
         atoms.chain_id[i] = new_id
+    return atoms
+
+
+def reindex_residues(atoms: AtomArray, chains: list[Chain]) -> AtomArray:
+    """
+    Reindex output residues to match the input Chain residue indices.
+    """
+    atoms = atoms.copy()
+    original_res_ids = atoms.res_id.copy()
+    for chain in chains:
+        chain_mask = atoms.chain_id == chain.chain_ID
+        output_residue_ids = pd.unique(original_res_ids[chain_mask])
+        input_residue_ids = [residue.index for residue in chain.residues]
+        assert len(output_residue_ids) == len(input_residue_ids), (
+            f'number of residues in output chain {chain.chain_ID} does not match input chain'
+        )
+        id_conversion = dict(zip(output_residue_ids, input_residue_ids))
+        for old_id, new_id in id_conversion.items():
+            atoms.res_id[chain_mask & (original_res_ids == old_id)] = new_id
     return atoms
 
 

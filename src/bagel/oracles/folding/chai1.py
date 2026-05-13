@@ -7,7 +7,7 @@ import numpy as np
 import numpy.typing as npt
 from ...chain import Chain
 from ...constants import atom_order
-from .utils import reindex_chains, validate_array_range
+from .utils import reindex_chains, reindex_residues, validate_array_range
 from pydantic import field_validator
 from .base import FoldingOracle, FoldingResult
 from typing import List, Any, Type
@@ -95,36 +95,38 @@ class Chai1(FoldingOracle):
         """
         if output.atom_array is None or len(output.atom_array) == 0:
             raise ValueError("Chai1 output does not contain atom_array")
-        
+
         atoms = output.atom_array
         atoms = reindex_chains(atoms, [chain.chain_ID for chain in chains])
-        
+        atoms = reindex_residues(atoms, chains)
+
         # These fields should always be present since we requested them via include_fields
         if output.plddt is None or len(output.plddt) == 0:
             raise ValueError("Chai1 output does not contain plddt (requested via include_fields)")
         if output.pae is None or len(output.pae) == 0:
             raise ValueError("Chai1 output does not contain pae (requested via include_fields)")
-        if output.ptm is None or len(output.ptm) == 0:
-            raise ValueError("Chai1 output does not contain ptm (requested via include_fields)")
-        
+
         # Extract plddt (Chai1 plddt is per-residue, 1D array)
         plddt_data = output.plddt[0]
         # Normalize from 0-100 to 0-1 if needed
         if np.max(plddt_data) > 1.0:
             plddt_data = plddt_data / 100.0
         local_plddt = plddt_data[None, :]
-        
+
         # Extract pae
         pae = output.pae[0][None, :, :]
-        
-        # Extract ptm
-        ptm_value = output.ptm[0]
-        # ptm might be a scalar or array
-        if np.isscalar(ptm_value):
-            ptm = np.array([ptm_value])[None, :]
+
+        # Extract ptm if present. Chai-1 may omit ranking data while still returning a valid structure.
+        if output.ptm is None or len(output.ptm) == 0:
+            ptm = np.array([0.0])[None, :]
         else:
-            ptm = np.array(ptm_value)[None, :]
-        
+            ptm_value = output.ptm[0]
+            # ptm might be a scalar or array
+            if np.isscalar(ptm_value):
+                ptm = np.array([ptm_value])[None, :]
+            else:
+                ptm = np.array(ptm_value)[None, :]
+
         results = self.result_class(
             input_chains=chains,
             structure=atoms,
@@ -133,4 +135,3 @@ class Chai1(FoldingOracle):
             pae=pae,
         )
         return results
-
