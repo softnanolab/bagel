@@ -83,7 +83,7 @@ def run_generate_mimic() -> Any:
             mutator=bg.mutation.Canonical(n_mutations=1), # cannot add/remove residues, only substitutes for different amino acid types
             temperature=0.001,  # fixed temperature for the MC sampling
             n_steps=2000,  # number of steps to run the minimizer
-            log_frequency=20,
+            callbacks=[bg.callbacks.DefaultLogger(log_interval=20)],
         )
 
         final_system = minimizer.minimize_system(system=initial_system)

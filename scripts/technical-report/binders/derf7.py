@@ -12,7 +12,7 @@ def main(
     use_modal: bool = False,
     binder_sequence: str = None,
     optimization_params: dict = None,
-    output_dir: str = 'data/DERF7-binder'
+    output_dir: str = 'data/DERF7-binder',
 ):
 
     # Check
@@ -123,7 +123,9 @@ def main(
             'n_cycles': 100,
         }
 
-
+    output_dir_path = pl.Path(output_dir)
+    experiment_name = output_dir_path.name
+    output_path = pl.Path(current_dir) / output_dir_path.parent if output_dir_path.parent.parts else pl.Path(current_dir)
     minimizer = bg.minimizer.SimulatedTempering(
         mutator=mutator,
         high_temperature=optimization_params['high_temperature'],
@@ -132,8 +134,11 @@ def main(
         n_steps_low=optimization_params['n_steps_low'],
         n_cycles=optimization_params['n_cycles'],
         preserve_best_system_every_n_steps=optimization_params['n_steps_high'] + optimization_params['n_steps_low'],
-        log_frequency=1,
-        log_path=pl.Path(os.path.join(current_dir, output_dir)),
+        log_path=output_dir,
+        callbacks=[
+            bg.callbacks.DefaultLogger(log_interval=1),
+            bg.callbacks.FoldingLogger(folding_oracle=esmfold, log_interval=50),
+        ],
     )
 
     # Run optimization and return the best system

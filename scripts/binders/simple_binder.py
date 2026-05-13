@@ -96,7 +96,10 @@ def run_simple_binder() -> Any:
         n_cycles=10,
         n_steps_low=100,
         n_steps_high=20,
-        log_frequency=50,
+        callbacks=[
+            bg.callbacks.DefaultLogger(log_interval=1),
+            bg.callbacks.FoldingLogger(folding_oracle=esmfold, log_interval=50),
+        ],
     )
 
     best_system = minimizer.minimize_system(system=initial_system)
