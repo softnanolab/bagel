@@ -2,7 +2,6 @@
 standard template and objects for structure prediction
 """
 
-import os
 import pathlib as pl
 import numpy as np
 import numpy.typing as npt
@@ -16,9 +15,6 @@ from boileroom.models.esm.esmfold import ESMFoldOutput  # type: ignore
 from boileroom.models.esm.esmfold import ESMFold as ESMFoldBoiler
 
 from biotite.structure import AtomArray
-import logging
-
-logger = logging.getLogger(__name__)
 
 
 class ESMFoldResult(FoldingResult):
@@ -57,19 +53,20 @@ class ESMFold(FoldingOracle):
 
     result_class: Type[ESMFoldResult] = ESMFoldResult
 
-    def __init__(self, backend: str = "modal", device: str | None = None, config: dict[str, Any] = {}):
+    def __init__(self, backend: str = 'modal', device: str | None = None, config: dict[str, Any] = {}):
         """
         Initialize ESMFold oracle.
 
         Parameters
         ----------
         backend : str
-            Backend to use. Supported values: "modal", "local", "apptainer"
+            Backend to use. Supported values: "modal", "apptainer", "apptainer:<image-tag>".
         device : str | None
             Device to use (e.g., "cuda:0", "cuda:1").
         config : dict[str, Any]
             Configuration dictionary passed to the model
         """
+        self._validate_backend(backend)
         self.backend = backend
         self.device = device
         self.default_config = {
@@ -100,9 +97,6 @@ class ESMFold(FoldingOracle):
         """
         Fold a list of chains using ESMFold.
         """
-        if self.backend == "local":
-            logger.debug('Folding with ESMFold locally...')
-            assert os.environ.get('MODEL_DIR'), 'MODEL_DIR must be set when using ESMFold locally'
         sequences = self._pre_process(chains)
         options = {'include_fields': self.required_fields}
         output = self.model.fold(sequences, options=options)
@@ -115,18 +109,18 @@ class ESMFold(FoldingOracle):
         For instance, one could pass the distogram_logits to create an EnergyTerm related to that.
         """
         if output.atom_array is None or len(output.atom_array) == 0:
-            raise ValueError("ESMFold output does not contain atom_array")
+            raise ValueError('ESMFold output does not contain atom_array')
         atoms = output.atom_array
         atoms = reindex_chains(atoms, [chain.chain_ID for chain in chains])
         atoms = reindex_residues(atoms, chains)
 
         # These fields should always be present since we requested them via include_fields
         if output.plddt is None or np.size(output.plddt) == 0:
-            raise ValueError("ESMFold output does not contain plddt (requested via include_fields)")
+            raise ValueError('ESMFold output does not contain plddt (requested via include_fields)')
         if output.pae is None or np.size(output.pae) == 0:
-            raise ValueError("ESMFold output does not contain pae (requested via include_fields)")
+            raise ValueError('ESMFold output does not contain pae (requested via include_fields)')
         if output.ptm is None or np.size(output.ptm) == 0:
-            raise ValueError("ESMFold output does not contain ptm (requested via include_fields)")
+            raise ValueError('ESMFold output does not contain ptm (requested via include_fields)')
 
         # Extract plddt for CA atoms
         local_plddt = output.plddt[..., atom_order['CA']]

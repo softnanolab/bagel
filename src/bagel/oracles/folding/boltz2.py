@@ -48,24 +48,25 @@ class Boltz2(FoldingOracle):
 
     result_class: Type[Boltz2Result] = Boltz2Result
 
-    def __init__(self, backend: str = "modal", device: str | None = None, config: dict[str, Any] = {}):
+    def __init__(self, backend: str = 'modal', device: str | None = None, config: dict[str, Any] = {}):
         """
         Initialize Boltz2 oracle.
 
         Parameters
         ----------
         backend : str
-            Backend to use. Supported values: "modal", "apptainer"
+            Backend to use. Supported values: "modal", "apptainer", "apptainer:<image-tag>".
         device : str | None
             Device to use (e.g., "cuda:0", "cuda:1").
         config : dict[str, Any]
             Configuration dictionary passed to the model
         """
+        self._validate_backend(backend)
         self.backend = backend
         self.device = device
         self.default_config = {}
-        # Always request these fields in the output
-        self.required_fields = ['plddt', 'pae']
+        # 'confidence' carries pTM/ipTM in a per-sample dict (see boileroom boltz/core.py).
+        self.required_fields = ['plddt', 'pae', 'confidence']
         self._load(config)
 
     def _load(self, config: dict[str, Any] = {}) -> None:
@@ -94,7 +95,7 @@ class Boltz2(FoldingOracle):
         Reduce Boltz2Output (from boileroom.boltz2) to a Boltz2Result object.
         """
         if output.atom_array is None or len(output.atom_array) == 0:
-            raise ValueError("Boltz2 output does not contain atom_array")
+            raise ValueError('Boltz2 output does not contain atom_array')
 
         atoms = output.atom_array
         atoms = reindex_chains(atoms, [chain.chain_ID for chain in chains])
@@ -102,9 +103,9 @@ class Boltz2(FoldingOracle):
 
         # These fields should always be present since we requested them via include_fields
         if output.plddt is None or len(output.plddt) == 0:
-            raise ValueError("Boltz2 output does not contain plddt (requested via include_fields)")
+            raise ValueError('Boltz2 output does not contain plddt (requested via include_fields)')
         if output.pae is None or len(output.pae) == 0:
-            raise ValueError("Boltz2 output does not contain pae (requested via include_fields)")
+            raise ValueError('Boltz2 output does not contain pae (requested via include_fields)')
 
         # Extract plddt (Boltz2 plddt is per-residue, 1D array)
         plddt_data = output.plddt[0]
@@ -120,8 +121,15 @@ class Boltz2(FoldingOracle):
         # Extract pae
         pae = output.pae[0][None, :, :]
 
-        # Boltz2 may not have ptm, so we set it to a default value
-        ptm = np.array([0.0])[None, :]
+        # TODO: decide fallback policy if `confidence` or `ptm` is missing (raise vs. log+0
+        # vs. drop ptm from Boltz2Result.model_fields). For now we raise to avoid silently
+        # neutralising PTMEnergy with a constant 0.
+        if output.confidence is None or output.confidence[0] is None:
+            raise ValueError('Boltz2 output does not contain confidence (requested via include_fields)')
+        ptm_value = output.confidence[0].get('ptm')
+        if ptm_value is None:
+            raise ValueError("Boltz2 confidence dict does not contain 'ptm'")
+        ptm = np.array([[float(ptm_value)]])
 
         results = self.result_class(
             input_chains=chains,

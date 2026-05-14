@@ -16,8 +16,8 @@ def pytest_addoption(parser):
         '--oracles',
         required=True,
         action='store',
-        help='What do do with tests that require oracles. options: skip or local or modal',
-        choices=('skip', 'local', 'modal'),
+        help='What to do with tests that require oracles. options: skip, apptainer, or modal',
+        choices=('skip', 'apptainer', 'modal'),
     )
 
 
@@ -43,13 +43,13 @@ def esmfold(request) -> bg.oracles.folding.ESMFold:
     flag = request.config.getoption('--oracles')
     if flag == 'skip':
         pytest.skip(reason='--oracles flag of the origional pytest call set to skip')
-    elif flag == 'local':
-        model = bg.oracles.folding.ESMFold(backend="local")
+    elif flag == 'apptainer':
+        model = bg.oracles.folding.ESMFold(backend='apptainer')
         yield model
         del model
     elif flag == 'modal':
         with modal.enable_output():
-            model = bg.oracles.folding.ESMFold(backend="modal")
+            model = bg.oracles.folding.ESMFold(backend='modal')
             yield model
             del model
     else:
@@ -65,11 +65,11 @@ def boltz2(request) -> bg.oracles.folding.Boltz2:
     flag = request.config.getoption('--oracles')
     if flag == 'skip':
         pytest.skip(reason='--oracles flag of the original pytest call set to skip')
-    elif flag == 'local':
-        pytest.skip(reason='Boltz-2 does not support the local backend; use --oracles modal')
+    elif flag == 'apptainer':
+        pytest.skip(reason='Boltz-2 apptainer backend not yet exercised in CI; use --oracles modal')
     elif flag == 'modal':
         with modal.enable_output():
-            model = bg.oracles.folding.Boltz2(backend="modal")
+            model = bg.oracles.folding.Boltz2(backend='modal')
             yield model
             del model
     else:
@@ -85,11 +85,11 @@ def chai1(request) -> bg.oracles.folding.Chai1:
     flag = request.config.getoption('--oracles')
     if flag == 'skip':
         pytest.skip(reason='--oracles flag of the original pytest call set to skip')
-    elif flag == 'local':
-        pytest.skip(reason='Chai-1 does not support the local backend; use --oracles modal')
+    elif flag == 'apptainer':
+        pytest.skip(reason='Chai-1 apptainer backend not yet exercised in CI; use --oracles modal')
     elif flag == 'modal':
         with modal.enable_output():
-            model = bg.oracles.folding.Chai1(backend="modal")
+            model = bg.oracles.folding.Chai1(backend='modal')
             yield model
             del model
     else:
@@ -102,13 +102,13 @@ def esm2(request) -> bg.oracles.embedding.ESM2:
     flag = request.config.getoption('--oracles')
     if flag == 'skip':
         pytest.skip(reason='--oracles flag of the origional pytest call set to skip')
-    elif flag == 'local':
-        model = bg.oracles.embedding.ESM2(backend="local")
+    elif flag == 'apptainer':
+        model = bg.oracles.embedding.ESM2(backend='apptainer')
         yield model
         del model
     elif flag == 'modal':
         with modal.enable_output():
-            model = bg.oracles.embedding.ESM2(backend="modal")
+            model = bg.oracles.embedding.ESM2(backend='modal')
             yield model
             del model
     else:
@@ -131,7 +131,7 @@ def fake_esm2(request, monkeypatch) -> bg.oracles.embedding.ESM2:
     monkeypatch.setattr(bg.oracles.embedding.ESM2, '_load', mock_load)
 
     # Now create the actual instance - _load will be patched
-    return bg.oracles.embedding.ESM2(backend="local")
+    return bg.oracles.embedding.ESM2(backend='modal')
 
 
 @pytest.fixture
@@ -182,7 +182,7 @@ def fake_esmfold(request, monkeypatch) -> bg.oracles.folding.ESMFold:
     monkeypatch.setattr(bg.oracles.folding.ESMFold, 'fold', mock_fold)
 
     # Now create the actual instance - _load will be patched
-    return bg.oracles.folding.ESMFold(backend="local")
+    return bg.oracles.folding.ESMFold(backend='modal')
 
 
 @pytest.fixture

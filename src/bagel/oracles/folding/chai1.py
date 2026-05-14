@@ -48,19 +48,20 @@ class Chai1(FoldingOracle):
 
     result_class: Type[Chai1Result] = Chai1Result
 
-    def __init__(self, backend: str = "modal", device: str | None = None, config: dict[str, Any] = {}):
+    def __init__(self, backend: str = 'modal', device: str | None = None, config: dict[str, Any] = {}):
         """
         Initialize Chai1 oracle.
 
         Parameters
         ----------
         backend : str
-            Backend to use. Supported values: "modal", "apptainer"
+            Backend to use. Supported values: "modal", "apptainer", "apptainer:<image-tag>".
         device : str | None
             Device to use (e.g., "cuda:0", "cuda:1").
         config : dict[str, Any]
             Configuration dictionary passed to the model
         """
+        self._validate_backend(backend)
         self.backend = backend
         self.device = device
         self.default_config = {}
@@ -94,7 +95,7 @@ class Chai1(FoldingOracle):
         Reduce Chai1Output (from boileroom.chai1) to a Chai1Result object.
         """
         if output.atom_array is None or len(output.atom_array) == 0:
-            raise ValueError("Chai1 output does not contain atom_array")
+            raise ValueError('Chai1 output does not contain atom_array')
 
         atoms = output.atom_array
         atoms = reindex_chains(atoms, [chain.chain_ID for chain in chains])
@@ -102,9 +103,9 @@ class Chai1(FoldingOracle):
 
         # These fields should always be present since we requested them via include_fields
         if output.plddt is None or len(output.plddt) == 0:
-            raise ValueError("Chai1 output does not contain plddt (requested via include_fields)")
+            raise ValueError('Chai1 output does not contain plddt (requested via include_fields)')
         if output.pae is None or len(output.pae) == 0:
-            raise ValueError("Chai1 output does not contain pae (requested via include_fields)")
+            raise ValueError('Chai1 output does not contain pae (requested via include_fields)')
 
         # Extract plddt (Chai1 plddt is per-residue, 1D array)
         plddt_data = output.plddt[0]
@@ -116,16 +117,13 @@ class Chai1(FoldingOracle):
         # Extract pae
         pae = output.pae[0][None, :, :]
 
-        # Extract ptm if present. Chai-1 may omit ranking data while still returning a valid structure.
+        # Chai-1 may omit ranking data while still returning a valid structure; default ptm to 0.
+        # When present, output.ptm[0] is often a 0-d ndarray (from np.asarray of a scalar tensor),
+        # so we go through float() to coerce any shape to a single value.
         if output.ptm is None or len(output.ptm) == 0:
-            ptm = np.array([0.0])[None, :]
+            ptm = np.array([[0.0]])
         else:
-            ptm_value = output.ptm[0]
-            # ptm might be a scalar or array
-            if np.isscalar(ptm_value):
-                ptm = np.array([ptm_value])[None, :]
-            else:
-                ptm = np.array(ptm_value)[None, :]
+            ptm = np.array([[float(np.asarray(output.ptm[0]).reshape(-1)[0])]])
 
         results = self.result_class(
             input_chains=chains,

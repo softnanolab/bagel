@@ -2,7 +2,6 @@
 standard template and objects for structure prediction
 """
 
-import os
 import pathlib as pl
 import numpy as np
 import numpy.typing as npt
@@ -11,9 +10,6 @@ from .base import EmbeddingResult, EmbeddingOracle
 from typing import List, Any
 from boileroom.models.esm.types import ESM2Output  # type: ignore
 from boileroom.models.esm.esm2 import ESM2 as ESM2Boiler
-import logging
-
-logger = logging.getLogger(__name__)
 
 
 class ESM2Result(EmbeddingResult):
@@ -36,17 +32,18 @@ class ESM2(EmbeddingOracle):
 
     result_class = ESM2Result
 
-    def __init__(self, backend: str = "modal", config: dict[str, Any] = {}) -> None:
+    def __init__(self, backend: str = 'modal', config: dict[str, Any] = {}) -> None:
         """
         Initialize ESM2 oracle.
 
         Parameters
         ----------
         backend : str
-            Backend to use. Supported values: "modal", "local"
+            Backend to use. Supported values: "modal", "apptainer", "apptainer:<image-tag>".
         config : dict[str, Any]
             Configuration dictionary passed to the model
         """
+        self._validate_backend(backend)
         self.backend = backend
         self.default_config = {
             'output_hidden_states': False,
@@ -71,11 +68,6 @@ class ESM2(EmbeddingOracle):
         """
         self.input_chains = chains
         processed_chains = self._pre_process(chains)
-
-        if self.backend == "local":
-            logger.debug('Embedding with ESM-2 locally...')
-            assert os.environ.get('MODEL_DIR'), 'MODEL_DIR must be set when using ESM-2 locally'
-        
         output = self.model.embed(processed_chains)
         return self._post_process(output)
 

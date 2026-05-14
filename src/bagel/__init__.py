@@ -7,13 +7,9 @@ criteria.
 """
 
 import importlib
-import os
 from typing import Any
 
-from .utils import get_version_from_pyproject, resolve_and_set_model_dir
-
-if os.environ.get('BAGEL_SKIP_MODEL_SETUP') != '1':
-    resolve_and_set_model_dir()
+from .utils import get_version_from_pyproject
 
 __version__ = get_version_from_pyproject()
 
