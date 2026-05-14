@@ -9,14 +9,14 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 def main(
-    use_modal: bool = False,
+    backend: str = 'modal',
     binder_sequence: str = None,
     optimization_params: dict = None,
     output_dir: str = 'data/CD28-binder'
 ):
 
     # Check
-    print(f'Whether to use modal: {use_modal}')
+    print(f'Backend: {backend}')
 
     # PART 1: Define the target protein
     # UniProt P10747
@@ -65,7 +65,7 @@ def main(
     }
 
     esmfold = bg.oracles.ESMFold(
-        use_modal=use_modal, config=config
+        backend=backend, config=config
     )
 
     # Now define the energy terms to be applied to the chain. In this example, all terms apply to all residues

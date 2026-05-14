@@ -16,8 +16,8 @@ def pytest_addoption(parser):
         '--oracles',
         required=True,
         action='store',
-        help='What do do with tests that require oracles. options: skip or local or modal',
-        choices=('skip', 'local', 'modal'),
+        help='What to do with tests that require oracles. options: skip, apptainer, or modal',
+        choices=('skip', 'apptainer', 'modal'),
     )
 
 
@@ -32,23 +32,10 @@ This was leading to test breaking exceptions.
 """
 
 import modal
-from boileroom import app
-
-
-@pytest.fixture(scope='session')
-def modal_app_context(request) -> modal.App:
-    flag = request.config.getoption('--oracles')
-    if flag == 'modal':
-        modal_app_context = app.run()
-        modal_app_context.__enter__()
-        yield modal_app_context
-        modal_app_context.__exit__(None, None, None)
-    else:
-        yield None
 
 
 @pytest.fixture(scope='session')  # ensures only 1 Modal App is requested per process
-def esmfold(request, modal_app_context) -> bg.oracles.folding.ESMFold:
+def esmfold(request) -> bg.oracles.folding.ESMFold:
     """
     Fixture that must be called in tests that require oracles.
     Behaviour based on  the --oracles flag of the origional pytest call.
@@ -56,13 +43,13 @@ def esmfold(request, modal_app_context) -> bg.oracles.folding.ESMFold:
     flag = request.config.getoption('--oracles')
     if flag == 'skip':
         pytest.skip(reason='--oracles flag of the origional pytest call set to skip')
-    elif flag == 'local':
-        model = bg.oracles.folding.ESMFold(use_modal=False)
+    elif flag == 'apptainer':
+        model = bg.oracles.folding.ESMFold(backend='apptainer')
         yield model
         del model
     elif flag == 'modal':
         with modal.enable_output():
-            model = bg.oracles.folding.ESMFold(use_modal=True, modal_app_context=modal_app_context)
+            model = bg.oracles.folding.ESMFold(backend='modal')
             yield model
             del model
     else:
@@ -70,18 +57,58 @@ def esmfold(request, modal_app_context) -> bg.oracles.folding.ESMFold:
 
 
 @pytest.fixture(scope='session')
-def esm2(request, modal_app_context) -> bg.oracles.embedding.ESM2:
+def boltz2(request) -> bg.oracles.folding.Boltz2:
+    """
+    Fixture that must be called in tests that require the Boltz-2 oracle.
+    Behaviour is based on the --oracles flag of the original pytest call.
+    """
+    flag = request.config.getoption('--oracles')
+    if flag == 'skip':
+        pytest.skip(reason='--oracles flag of the original pytest call set to skip')
+    elif flag == 'apptainer':
+        pytest.skip(reason='Boltz-2 apptainer backend not yet exercised in CI; use --oracles modal')
+    elif flag == 'modal':
+        with modal.enable_output():
+            model = bg.oracles.folding.Boltz2(backend='modal')
+            yield model
+            del model
+    else:
+        raise ValueError(f'Unknown --oracles flag: {flag}')
+
+
+@pytest.fixture(scope='session')
+def chai1(request) -> bg.oracles.folding.Chai1:
+    """
+    Fixture that must be called in tests that require the Chai-1 oracle.
+    Behaviour is based on the --oracles flag of the original pytest call.
+    """
+    flag = request.config.getoption('--oracles')
+    if flag == 'skip':
+        pytest.skip(reason='--oracles flag of the original pytest call set to skip')
+    elif flag == 'apptainer':
+        pytest.skip(reason='Chai-1 apptainer backend not yet exercised in CI; use --oracles modal')
+    elif flag == 'modal':
+        with modal.enable_output():
+            model = bg.oracles.folding.Chai1(backend='modal')
+            yield model
+            del model
+    else:
+        raise ValueError(f'Unknown --oracles flag: {flag}')
+
+
+@pytest.fixture(scope='session')
+def esm2(request) -> bg.oracles.embedding.ESM2:
     """Fixture that returns an ESM2 object."""
     flag = request.config.getoption('--oracles')
     if flag == 'skip':
         pytest.skip(reason='--oracles flag of the origional pytest call set to skip')
-    elif flag == 'local':
-        model = bg.oracles.embedding.ESM2(use_modal=False)
+    elif flag == 'apptainer':
+        model = bg.oracles.embedding.ESM2(backend='apptainer')
         yield model
         del model
     elif flag == 'modal':
         with modal.enable_output():
-            model = bg.oracles.embedding.ESM2(use_modal=True, modal_app_context=modal_app_context)
+            model = bg.oracles.embedding.ESM2(backend='modal')
             yield model
             del model
     else:
@@ -104,7 +131,7 @@ def fake_esm2(request, monkeypatch) -> bg.oracles.embedding.ESM2:
     monkeypatch.setattr(bg.oracles.embedding.ESM2, '_load', mock_load)
 
     # Now create the actual instance - _load will be patched
-    return bg.oracles.embedding.ESM2(use_modal=False)
+    return bg.oracles.embedding.ESM2(backend='modal')
 
 
 @pytest.fixture
@@ -154,8 +181,8 @@ def fake_esmfold(request, monkeypatch) -> bg.oracles.folding.ESMFold:
     monkeypatch.setattr(bg.oracles.folding.ESMFold, '_load', mock_load)
     monkeypatch.setattr(bg.oracles.folding.ESMFold, 'fold', mock_fold)
 
-    # Now create the actual instance
-    return bg.oracles.folding.ESMFold(use_modal=False)
+    # Now create the actual instance - _load will be patched
+    return bg.oracles.folding.ESMFold(backend='modal')
 
 
 @pytest.fixture

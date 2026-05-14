@@ -11,15 +11,15 @@ from .utils import reindex_chains, reindex_residues, validate_array_range
 from pydantic import field_validator
 from .base import FoldingOracle, FoldingResult
 from typing import List, Any, Type
-from boileroom.models.esm.esmfold import ESMFoldOutput  # type: ignore
-from boileroom.models.esm.esmfold import ESMFold as ESMFoldBoiler
+from boileroom.models.chai.chai1 import Chai1Output  # type: ignore
+from boileroom.models.chai.chai1 import Chai1 as Chai1Boiler
 
 from biotite.structure import AtomArray
 
 
-class ESMFoldResult(FoldingResult):
+class Chai1Result(FoldingResult):
     """
-    Stores statistics from the ESMFold folding algorithm.
+    Stores statistics from the Chai-1 folding algorithm.
     """
 
     input_chains: list[Chain]
@@ -27,9 +27,6 @@ class ESMFoldResult(FoldingResult):
     local_plddt: npt.NDArray[np.float64]  # local ( per residue ) predicted LDDT score (0 to 1)
     ptm: npt.NDArray[np.float64]  # (global) predicted template modelling score (0 to 1)
     pae: npt.NDArray[np.float64]  # pairwise predicted alignment error
-
-    # for ptm: see Zhang Y and Skolnick J (2004). "Scoring function for automated assessment of
-    # protein structure template quality". Proteins. 57 (4): 702–710. doi:10.1002/prot.20264
 
     @field_validator('local_plddt')
     def validate_local_plddt(cls, v: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
@@ -44,18 +41,16 @@ class ESMFoldResult(FoldingResult):
         np.savetxt(filepath.with_suffix('.pae'), self.pae[0], fmt='%.6f', header='pae')
 
 
-class ESMFold(FoldingOracle):
+class Chai1(FoldingOracle):
     """
-    Object that uses ESMFold to predict structure of proteins from sequence.
-
-    WIP: For now we will be using ModalFold to do this reliably without much env issues.
+    Object that uses Chai-1 to predict structure of proteins from sequence.
     """
 
-    result_class: Type[ESMFoldResult] = ESMFoldResult
+    result_class: Type[Chai1Result] = Chai1Result
 
     def __init__(self, backend: str = 'modal', device: str | None = None, config: dict[str, Any] = {}):
         """
-        Initialize ESMFold oracle.
+        Initialize Chai1 oracle.
 
         Parameters
         ----------
@@ -69,67 +64,72 @@ class ESMFold(FoldingOracle):
         self._validate_backend(backend)
         self.backend = backend
         self.device = device
-        self.default_config = {
-            'output_pdb': False,
-            'output_cif': False,
-            'output_atomarray': True,
-            'glycine_linker': '',
-            'position_ids_skip': 512,
-        }
+        self.default_config = {}
         # Always request these fields in the output
         self.required_fields = ['plddt', 'pae', 'ptm']
         self._load(config)
 
     def _load(self, config: dict[str, Any] = {}) -> None:
         config = {**self.default_config, **config}
-        self.model = ESMFoldBoiler(backend=self.backend, device=self.device, config=config)
+        self.model = Chai1Boiler(backend=self.backend, device=self.device, config=config)
 
     def _pre_process(self, chains: list[Chain]) -> list[str]:
         """
         Pre-process the sequence to be passed to the model for folding.
-        Here, we assume, that we are using HuggingFace's implementation of ESMFold.
-        Therefore, individual chains are separated by a ":" character.
+        Individual chains are separated by a ":" character.
         """
         monomers = [chain.sequence for chain in chains]
         return [':'.join(monomers)]
 
-    def fold(self, chains: List[Chain]) -> ESMFoldResult:
+    def fold(self, chains: List[Chain]) -> Chai1Result:
         """
-        Fold a list of chains using ESMFold.
+        Fold a list of chains using Chai-1.
         """
         sequences = self._pre_process(chains)
         options = {'include_fields': self.required_fields}
         output = self.model.fold(sequences, options=options)
         return self._reduce_output(output, chains)
 
-    def _reduce_output(self, output: ESMFoldOutput, chains: List[Chain]) -> ESMFoldResult:
+    def _reduce_output(self, output: Chai1Output, chains: List[Chain]) -> Chai1Result:
         """
-        Reduce ESMFoldOutput (from boileroom.esmfold) to a ESMFoldResult object.
-        In principle, any other metric from ESMFoldOutput can be passed down into the ESMFoldResult object.
-        For instance, one could pass the distogram_logits to create an EnergyTerm related to that.
+        Reduce Chai1Output (from boileroom.chai1) to a Chai1Result object.
         """
         if output.atom_array is None or len(output.atom_array) == 0:
-            raise ValueError('ESMFold output does not contain atom_array')
+            raise ValueError('Chai1 output does not contain atom_array')
+
         atoms = output.atom_array
         atoms = reindex_chains(atoms, [chain.chain_ID for chain in chains])
         atoms = reindex_residues(atoms, chains)
 
         # These fields should always be present since we requested them via include_fields
-        if output.plddt is None or np.size(output.plddt) == 0:
-            raise ValueError('ESMFold output does not contain plddt (requested via include_fields)')
-        if output.pae is None or np.size(output.pae) == 0:
-            raise ValueError('ESMFold output does not contain pae (requested via include_fields)')
-        if output.ptm is None or np.size(output.ptm) == 0:
-            raise ValueError('ESMFold output does not contain ptm (requested via include_fields)')
+        if output.plddt is None or len(output.plddt) == 0:
+            raise ValueError('Chai1 output does not contain plddt (requested via include_fields)')
+        if output.pae is None or len(output.pae) == 0:
+            raise ValueError('Chai1 output does not contain pae (requested via include_fields)')
 
-        # Extract plddt for CA atoms
-        local_plddt = output.plddt[..., atom_order['CA']]
+        # Extract plddt (Chai1 plddt is per-residue, 1D array)
+        plddt_data = output.plddt[0]
+        # Normalize from 0-100 to 0-1 if needed
+        if np.max(plddt_data) > 1.0:
+            plddt_data = plddt_data / 100.0
+        local_plddt = plddt_data[None, :]
+
+        # Extract pae
+        pae = output.pae[0][None, :, :]
+
+        # Chai-1 may omit ranking data while still returning a valid structure; default ptm to 0.
+        # When present, output.ptm[0] is often a 0-d ndarray (from np.asarray of a scalar tensor),
+        # so we go through float() to coerce any shape to a single value.
+        if output.ptm is None or len(output.ptm) == 0:
+            ptm = np.array([[0.0]])
+        else:
+            ptm = np.array([[float(np.asarray(output.ptm[0]).reshape(-1)[0])]])
 
         results = self.result_class(
             input_chains=chains,
             structure=atoms,
             local_plddt=local_plddt,
-            ptm=output.ptm,
-            pae=output.pae,
+            ptm=ptm,
+            pae=pae,
         )
         return results

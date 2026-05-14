@@ -1,18 +1,12 @@
 import re
 import pathlib
 import os
-import tempfile
 import logging
 import numpy as np
-from typing import Optional, Callable
+from typing import Optional
 
 from biotite.structure import AtomArray
 from .constants import aa_dict
-
-try:
-    from dotenv import load_dotenv
-except ImportError:
-    load_dotenv: Optional[Callable[..., bool]] = None  # type: ignore
 
 import biotite.database.rcsb as rcsb
 import biotite.sequence.io.fasta as fasta
@@ -140,55 +134,6 @@ def get_sequence_from_pdb_id(pdb_id: str, sequence_index: int = 0) -> str:
     )
 
     return output_sequences[sequence_index]
-
-
-def resolve_and_set_model_dir() -> pathlib.Path:
-    """
-    Resolve and set the MODEL_DIR environment variable to a user-writable cache
-    location following XDG conventions.
-
-    This function first attempts to load MODEL_DIR from a .env file (if python-dotenv
-    is installed), then follows the precedence below.
-
-    Precedence:
-    1) Load .env file if it exists (if python-dotenv is available).
-    2) Respect existing MODEL_DIR if set (from environment or .env).
-    3) Use XDG_CACHE_HOME if defined; otherwise default to ~/.cache.
-    4) Append "bagel/models" and create the directory if it does not exist.
-
-    Returns
-    -------
-    pathlib.Path
-        Absolute path to the resolved model directory.
-    """
-    # Load .env file if python-dotenv is available
-    if load_dotenv is not None:
-        load_dotenv(override=True)
-
-    try:
-        if os.environ.get('MODEL_DIR'):
-            resolved = pathlib.Path(os.environ['MODEL_DIR']).expanduser().resolve()
-        else:
-            xdg_cache_home = os.getenv('XDG_CACHE_HOME')
-            if xdg_cache_home:
-                base_cache_dir = pathlib.Path(xdg_cache_home).expanduser().resolve()
-            else:
-                base_cache_dir = pathlib.Path.home() / '.cache'
-            resolved = (base_cache_dir / 'bagel' / 'models').resolve()
-
-        resolved.mkdir(parents=True, exist_ok=True)
-        os.environ['MODEL_DIR'] = str(resolved)
-        return resolved
-    except (OSError, PermissionError) as exc:
-        logger.warning(f'Falling back to a temporary model cache due to filesystem error: {str(exc)}')
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(f'Falling back to a temporary model cache due to unexpected error: {str(exc)}')
-
-    # Fallback to a user-writable temporary directory; ensure directory exists
-    fallback_base = pathlib.Path(tempfile.gettempdir()) / 'bagel' / 'models'
-    fallback_base.mkdir(parents=True, exist_ok=True)
-    os.environ['MODEL_DIR'] = str(fallback_base)
-    return fallback_base
 
 
 def get_reconciled_sequence(atoms: AtomArray, fasta_sequence: str | None) -> tuple[str, bool]:

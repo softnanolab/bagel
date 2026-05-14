@@ -36,6 +36,28 @@ class Oracle(ABC):
 
     result_class: Type[OracleResult] = OracleResult  # holds class, not instance
 
+    _ALLOWED_BACKENDS: frozenset[str] = frozenset({'modal', 'apptainer'})
+
+    @classmethod
+    def _validate_backend(cls, backend: str) -> None:
+        """Accepts ``modal``, ``apptainer``, and ``apptainer:<tag>``.
+
+        Rejects ``modal:<tag>`` because boileroom locks the Modal image tag at
+        import time; set ``BOILEROOM_IMAGE_TAG`` before importing instead.
+        """
+        backend_type, sep, _tag = backend.partition(':')
+        if backend_type not in cls._ALLOWED_BACKENDS:
+            allowed = ', '.join(sorted(cls._ALLOWED_BACKENDS))
+            raise ValueError(
+                f'Unsupported backend {backend!r}. Allowed: {allowed} '
+                '(apptainer accepts an optional ":<image-tag>" suffix).'
+            )
+        if sep and backend_type == 'modal':
+            raise ValueError(
+                f'Tag suffix is only supported for apptainer, not modal (got {backend!r}). '
+                'For Modal image pinning, set BOILEROOM_IMAGE_TAG before importing bagel/boileroom.'
+            )
+
     def __post_init__(self) -> None:
         """Sanity check."""
         return

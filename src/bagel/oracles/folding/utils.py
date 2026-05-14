@@ -5,10 +5,12 @@ from io import StringIO
 
 import pandas as pd  # This is necessary because its "unique" method does not sort elements and leaves them as they are
 import numpy as np
+import numpy.typing as npt
 from biotite.structure import AtomArray
 from biotite.structure.io.pdb import PDBFile
 
 from bagel.constants import atom_order, aa_dict
+from bagel.chain import Chain
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +60,25 @@ def reindex_chains(atomarray: AtomArray, custom_chain_idx: List[str]) -> AtomArr
     return atoms
 
 
+def reindex_residues(atoms: AtomArray, chains: list[Chain]) -> AtomArray:
+    """
+    Reindex output residues to match the input Chain residue indices.
+    """
+    atoms = atoms.copy()
+    original_res_ids = atoms.res_id.copy()
+    for chain in chains:
+        chain_mask = atoms.chain_id == chain.chain_ID
+        output_residue_ids = pd.unique(original_res_ids[chain_mask])
+        input_residue_ids = [residue.index for residue in chain.residues]
+        assert len(output_residue_ids) == len(input_residue_ids), (
+            f'number of residues in output chain {chain.chain_ID} does not match input chain'
+        )
+        id_conversion = dict(zip(output_residue_ids, input_residue_ids))
+        for old_id, new_id in id_conversion.items():
+            atoms.res_id[chain_mask & (original_res_ids == old_id)] = new_id
+    return atoms
+
+
 def get_unique_residues(atom_array: AtomArray):
     residues, seen = [], set()
     for i in range(len(atom_array)):
@@ -96,3 +117,37 @@ def reorder_atoms_in_template(atom_array: AtomArray) -> AtomArray:
         reordered_indices.extend(sorted_indices)
 
     return atom_array[reordered_indices]
+
+
+def validate_array_range(
+    array: npt.NDArray[np.float64], field_name: str, min_val: float = 0, max_val: float = 1
+) -> npt.NDArray[np.float64]:
+    """
+    Validates that an array is a numpy array and its values fall within the specified range.
+
+    Parameters
+    ----------
+    array : npt.NDArray[np.float64]
+        Array to validate
+    field_name : str
+        Name of the field for error messages
+    min_val : float
+        Minimum allowed value (inclusive), default 0
+    max_val : float
+        Maximum allowed value (inclusive), default 1
+
+    Returns
+    -------
+    npt.NDArray[np.float64]
+        The validated array
+
+    Raises
+    ------
+    ValueError
+        If array is not a numpy array or values are outside the specified range
+    """
+    if not isinstance(array, np.ndarray):
+        raise ValueError(f'{field_name} must be a numpy array')
+    if not np.all((array >= min_val) & (array <= max_val)):
+        raise ValueError(f'All values in {field_name} must be between {min_val} and {max_val}')
+    return array

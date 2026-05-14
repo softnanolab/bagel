@@ -40,20 +40,18 @@ uv run pydoclint src/bagel/* --style=sphinx
 
 ## Testing
 
-To run the tests, you must specify how to handle Oracles, i.e. whether to run remotely or not.
+To run the tests, you must specify how to handle Oracles, i.e. whether to run remotely or locally.
 
 ```bash
 # Run tests while skipping Oracle execution
 uv run pytest --oracles skip
 
 # Alternative options:
-# --oracles modal   # Use remote execution via Modal
-# --oracles local   # Use local GPU-based execution
+# --oracles modal      # Run oracles remotely via Modal (requires `modal token new`)
+# --oracles apptainer  # Run oracles locally via Apptainer (requires `apptainer` on the host + a GPU)
 ```
 
-When using `--oracles local`, the `MODEL_DIR` environment variable must be set. You can either:
-- Set it in a `.env` file (copy `.env.example` to `.env` and update the path), or
-- Set it as an environment variable. If not set, it will default to an XDG-compliant location (`~/.cache/bagel/models` or `$XDG_CACHE_HOME/bagel/models`).
+Boltz-2 and Chai-1 fixtures currently skip under `--oracles apptainer` until the apptainer path is validated in CI; use `--oracles modal` to exercise them.
 
 ## Commit Checking
 

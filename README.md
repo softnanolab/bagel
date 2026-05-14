@@ -109,22 +109,12 @@ uv run python scripts/binders/simple_binder.py
 To execute templates reproducibly from the [published paper](https://doi.org/10.1371/journal.pcbi.1013774) (within statistical noise due to the nature of Monte Carlo sampling), follow release v0.1.0, also stored on Zenodo [![DOI](https://zenodo.org/badge/968747892.svg)](https://doi.org/10.5281/zenodo.15812348). Otherwise, use the most recent `biobagel` distribution.
 
 ## Oracles
-One can either run Oracles locally, or remotely.
+Oracles are powered by [boileroom](https://pypi.org/project/boileroom) and selected via a `backend` keyword on each oracle constructor (`ESMFold`, `ESM2`, `Chai1`, `Boltz2`).
 
-- `use_modal=True`: Run Oracles on [Modal](https://www.modal.com). Using the [boileroom](https://pypi.org/project/boileroom) package, running remotely is made seamless and does not require installing any dependencies. However, you need to have credits to use Modal.
-- `use_modal=False`: Run Oracles locally through [boileroom](https://pypi.org/project/boileroom). You need a GPU with suitable memory requirements.
+- `backend="modal"` (default): Run on [Modal](https://www.modal.com). No local GPU required, but a Modal account with credits is needed. Authenticate via `modal token new`. Pin a specific image release via the `BOILEROOM_IMAGE_TAG` environment variable set **before** importing bagel/boileroom.
+- `backend="apptainer"`: Run locally via an [Apptainer](https://apptainer.org) image pulled by boileroom. Requires `apptainer` on the host machine and a GPU with enough memory for the chosen model. Optionally pin the image tag inline: `backend="apptainer:<image-tag>"`.
 
-To use Modal, one needs to create an account and authenticate through:
-
-```bash
-modal token new
-```
-
-You also need to set `MODEL_DIR` to an accessible folder, where deep learning models will be stored (i.e. cached).
-
-Note on cache location and persistence:
-- By default, examples may resolve `MODEL_DIR` to an XDG-compliant cache directory such as `~/.cache/bagel/models` (or the path in `$XDG_CACHE_HOME`). This directory is user-writable and persists across runs.
-- The cache is not automatically cleaned by the application. If you wish to reclaim disk space, remove models manually (e.g., `rm -rf ~/.cache/bagel/models`) or configure your own housekeeping policy. Advanced users on Linux can use `systemd-tmpfiles` rules per their environment.
+Boltz-2 and Chai-1 only support `modal` and `apptainer`; ESMFold and ESM-2 likewise (the previous `use_modal=False`/local-Python backend was removed in boileroom 0.3).
 
 ### Google Colab
 A prototyping, but unscalable alternative is to run BAGEL in Google Colab, having access to a T4 processing unit for free. See this [notebook](https://colab.research.google.com/drive/1dtX8j6t5VhSed4iiqSrjM35DyPSFE1yF?usp=sharing), which includes the installation, and the template script for [simple binder](scripts/binders/simple_binder.py).

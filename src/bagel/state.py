@@ -124,7 +124,7 @@ class State:
                 self._energy_term_values[term.name] = unweighted_energy
                 logger.debug(f'Energy term {term.name} has value {unweighted_energy}')
 
-            self._energy = total_energy
+            self._energy = float(np.asarray(total_energy).item())
             # Store cache key after successful computation
             self._cache_key = self._current_cache_key
 

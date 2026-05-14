@@ -1,9 +1,11 @@
 import os
 import pytest
-from biotite.structure import AtomArray
+import bagel as bg
+import numpy as np
+from biotite.structure import Atom, AtomArray, array
 from biotite.structure.io import load_structure
 from bagel.constants import atom_order
-from bagel.oracles.folding.utils import reorder_atoms_in_template, get_unique_residues
+from bagel.oracles.folding.utils import reorder_atoms_in_template, get_unique_residues, reindex_residues
 
 
 def test_reorder_atoms_in_template(formolase_structure: AtomArray) -> None:
@@ -67,3 +69,18 @@ def test_reorder_skips_non_protein_residues() -> None:
         assert indices == sorted(indices), (
             f'Residue ({chain_id}, {res_id}) atoms {list(atom_names)} not correctly reordered'
         )
+
+
+def test_reindex_residues_uses_original_ids_for_overlapping_remaps() -> None:
+    atoms = array(
+        [
+            Atom(coord=[0, 0, 0], chain_id='A', res_id=0, res_name='GLY', atom_name='CA', element='C'),
+            Atom(coord=[1, 0, 0], chain_id='A', res_id=1, res_name='GLY', atom_name='CA', element='C'),
+            Atom(coord=[2, 0, 0], chain_id='A', res_id=2, res_name='GLY', atom_name='CA', element='C'),
+        ]
+    )
+    chain = bg.Chain([bg.Residue(name='G', chain_ID='A', index=i) for i in [1, 2, 3]])
+
+    reindexed = reindex_residues(atoms, [chain])
+
+    assert np.array_equal(reindexed.res_id, np.array([1, 2, 3]))
