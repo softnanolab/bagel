@@ -2,6 +2,7 @@ name: Require Version Bump
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited]
     branches:
       - main
 
