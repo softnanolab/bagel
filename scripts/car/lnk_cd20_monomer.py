@@ -54,6 +54,8 @@ def main(
         ('n_mutations', n_mutations),
         ('log_frequency', log_frequency),
     ):
+        if not isinstance(value, int):
+            raise TypeError(f'{name} must be an integer')
         if value < 1:
             raise ValueError(f'{name} must be a positive integer')
 
@@ -69,13 +71,18 @@ def main(
 
     # -- Binder chain (20 residues, fully mutable) --------------------------
     binder_length = 20
+    allowed_residues = set(AMINO_ACIDS_NO_CYSTEINE)
     if binder_sequence is None:
         binder_sequence = ''.join(random.choice(AMINO_ACIDS_NO_CYSTEINE) for _ in range(binder_length))
     else:
         if len(binder_sequence) != binder_length:
-            raise ValueError('Binder sequence must be 20 residues')
-        if 'C' in binder_sequence:
-            raise ValueError('Historical initialization excluded cysteine')
+            raise ValueError(f'binder_sequence must be {binder_length} residues, got {len(binder_sequence)}')
+        invalid = set(binder_sequence) - allowed_residues
+        if invalid:
+            raise ValueError(
+                f'binder_sequence contains invalid residues {sorted(invalid)!r}; '
+                f'allowed (uppercase, cysteine excluded): {sorted(allowed_residues)!r}'
+            )
     residues_binder = [
         bg.Residue(name=aa, chain_ID='BIND', index=i, mutable=True) for i, aa in enumerate(binder_sequence)
     ]
