@@ -49,6 +49,23 @@ class ESMC(EmbeddingOracle):
     config : dict
         Configuration options. Supported keys:
         - model_name: ESM-C model variant (default: "esmc_600m")
+
+    Notes
+    -----
+    Multimers are encoded **jointly**, not per chain. ``_pre_process`` joins the
+    chains with ``':'`` into a single string, which boileroom turns into one
+    ``SEQ1|SEQ2`` sequence (``'|'`` is ESM-C's chain-break token) and runs through
+    a **single forward pass**. Self-attention therefore spans all chains, so a
+    residue's embedding reflects the other chains and differs from the embedding
+    it would get in isolation.
+
+    This also makes the embeddings **order-sensitive**: they are *not* permutation
+    invariant across chain order. ESM-C uses rotary (RoPE) positions assigned over
+    the whole concatenated stream with no per-chain reset, so cross-chain relative
+    positions — and hence attention — change if the chain order changes. Concretely,
+    ``embed([chain_A, chain_B]) != permute(embed([chain_B, chain_A]))``. Treat the
+    order of ``chains`` as meaningful and stable. To obtain isolated per-chain
+    embeddings instead, embed each chain in a separate call.
     """
 
     result_class = ESMCResult
