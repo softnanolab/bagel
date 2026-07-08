@@ -78,20 +78,28 @@ class ESMFold2Result(FoldingResult):
 class ESMFold2(FoldingOracle):
     """Oracle that uses ESMFold2 to predict protein structures from sequence.
 
-    ESMFold2 is a diffusion-based structure prediction model from
-    EvolutionaryScale. It uses the Biohub Forge API for inference.
-    Set the ``ESM_API_KEY`` environment variable to authenticate.
+    ESMFold2 is a diffusion-based all-atom structure prediction model from
+    EvolutionaryScale. The boileroom wrapper runs it **locally** on the selected
+    backend (Modal GPU or Apptainer): model weights are loaded from Hugging Face
+    (``biohub/ESMFold2``) and inference runs in-process. No inference API or API
+    token is involved.
+
+    Multimers are handled **natively** as separate chains — ESMFold2 does not use
+    a glycine linker or a positional-id skip. ``_pre_process`` serializes the
+    chains as a ``':'``-delimited string, which the boileroom wrapper parses back
+    into distinct per-chain entities.
 
     Parameters
     ----------
     use_modal : bool
-        Whether to run the boileroom wrapper via Modal.
+        Whether to run the boileroom wrapper via the Modal backend (otherwise
+        Apptainer).
     config : dict
-        Configuration options. Supported keys:
-        - model_name: ESMFold2 model variant (default: "esmfold2-fast-2026-05")
-        - api_token: Biohub API token (or set ESM_API_KEY env var)
-        - num_sampling_steps: Diffusion steps (default: 100)
-        - num_loops: Refinement loops (default: 20)
+        Configuration options forwarded to the boileroom ESMFold2 wrapper.
+        Supported keys include:
+        - model_name: ESMFold2 weights to load (e.g. "biohub/ESMFold2")
+        - num_sampling_steps: Diffusion sampling steps
+        - num_loops: Refinement loops
     """
 
     result_class: Type[ESMFold2Result] = ESMFold2Result
