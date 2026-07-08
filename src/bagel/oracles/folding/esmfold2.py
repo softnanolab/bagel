@@ -85,9 +85,10 @@ class ESMFold2(FoldingOracle):
     token is involved.
 
     Multimers are handled **natively** as separate chains — ESMFold2 does not use
-    a glycine linker or a positional-id skip. ``_pre_process`` serializes the
-    chains as a ``':'``-delimited string, which the boileroom wrapper parses back
-    into distinct per-chain entities.
+    a glycine linker or a positional-id skip. ``_pre_process`` builds a structured
+    boileroom fold input (one protein entity per chain) so ESMFold2 receives
+    bagel's own ``chain_ID``s directly, rather than the auto-assigned ``A``/``B``/
+    ``C`` labels produced by the ``':'``-delimited string shortcut.
 
     Parameters
     ----------
@@ -131,10 +132,23 @@ class ESMFold2(FoldingOracle):
         backend = 'modal' if self.use_modal else 'apptainer'
         self.model = ESMFold2Boiler(backend=backend, config=merged_config)
 
-    def _pre_process(self, chains: list[Chain]) -> list[str]:
-        """Join chains with ':' for multimers."""
-        monomers = [chain.sequence for chain in chains]
-        return [':'.join(monomers)]
+    def _pre_process(self, chains: list[Chain]) -> dict[str, Any]:
+        """Build a structured ESMFold2 fold input that preserves each ``chain_ID``.
+
+        Returns a single ``StructurePredictionInput``-shaped dict describing one
+        complex, with one protein entity per chain keyed by the chain's own
+        ``chain_ID``. Using structured input (instead of a ``':'``-joined string)
+        makes ESMFold2 fold the chains as a single complex while receiving bagel's
+        chain IDs directly, and leaves room for non-protein entities later.
+
+        It is emitted as a plain dict — boileroom's public ``dict`` fold input — so
+        no boileroom 0.3.x type import is required here. A *single* mapping is one
+        complex; a list of mappings would instead be treated as a batch of separate
+        structures, which is why the chains are nested under one ``sequences`` key.
+        """
+        return {
+            'sequences': [{'kind': 'protein', 'id': chain.chain_ID, 'sequence': chain.sequence} for chain in chains]
+        }
 
     def fold(self, chains: list[Chain]) -> ESMFold2Result:
         """Fold a list of chains using ESMFold2.
