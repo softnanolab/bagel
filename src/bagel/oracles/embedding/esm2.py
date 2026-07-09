@@ -26,9 +26,8 @@ class ESM2Result(EmbeddingResult):
     input_chains: list[Chain]
     embeddings: npt.NDArray[np.float64]
 
-    @classmethod
-    def save_attributes(cls, filepath: pl.Path) -> None:
-        np.savetxt(filepath.with_suffix('.embeddings'), cls.embeddings, fmt='%.6f', header='embeddings')
+    def save_attributes(self, filepath: pl.Path) -> None:
+        np.savetxt(filepath.with_suffix('.embeddings'), self.embeddings, fmt='%.6f', header='embeddings')
 
 
 class ESM2(EmbeddingOracle):
