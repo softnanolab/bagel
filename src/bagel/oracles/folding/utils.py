@@ -5,6 +5,7 @@ from io import StringIO
 
 import pandas as pd  # This is necessary because its "unique" method does not sort elements and leaves them as they are
 import numpy as np
+import numpy.typing as npt
 from biotite.structure import AtomArray
 from biotite.structure.io.pdb import PDBFile
 
@@ -96,3 +97,22 @@ def reorder_atoms_in_template(atom_array: AtomArray) -> AtomArray:
         reordered_indices.extend(sorted_indices)
 
     return atom_array[reordered_indices]
+
+
+def validate_array_range(
+    array: npt.NDArray[np.float64], field_name: str, min_val: float = 0, max_val: float = 1
+) -> npt.NDArray[np.float64]:
+    """
+    Validates that an array is a numpy array and its values fall within the specified range.
+
+    Args:
+        array: Array to validate
+        field_name: Name of the field for error messages
+        min_val: Minimum allowed value (inclusive)
+        max_val: Maximum allowed value (inclusive)
+    """
+    if not isinstance(array, np.ndarray):
+        raise ValueError(f'{field_name} must be a numpy array')
+    if not np.all((array >= min_val) & (array <= max_val)):
+        raise ValueError(f'All values in {field_name} must be between {min_val} and {max_val}')
+    return array
