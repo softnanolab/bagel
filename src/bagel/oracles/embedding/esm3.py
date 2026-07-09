@@ -73,7 +73,7 @@ def decode_sasa(sasa_logits: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]
     return probabilities @ _SASA_BIN_MIDPOINTS
 
 
-def decode_secondary_structure(ss_logits: npt.NDArray[np.float64]) -> Any:
+def decode_secondary_structure(ss_logits: npt.NDArray[np.float64]) -> str | npt.NDArray[np.str_]:
     """Decode SS8 logits to per-residue secondary-structure letters (argmax).
 
     Uses the last ``len(_SS8_VOCAB)`` classes (``GHITEBSC``). For a single sequence
@@ -103,9 +103,8 @@ class ESM3Result(EmbeddingResult):
     function_logits: npt.NDArray[np.float64] | None = None
     residue_annotation_logits: npt.NDArray[np.float64] | None = None
 
-    @classmethod
-    def save_attributes(cls, filepath: pl.Path) -> None:
-        np.savetxt(filepath.with_suffix('.embeddings'), cls.embeddings, fmt='%.6f', header='embeddings')
+    def save_attributes(self, filepath: pl.Path) -> None:
+        np.savetxt(filepath.with_suffix('.embeddings'), self.embeddings, fmt='%.6f', header='embeddings')
 
 
 class ESM3(EmbeddingOracle):
@@ -174,7 +173,7 @@ class ESM3(EmbeddingOracle):
         return self._post_process(output)
 
     def _post_process(self, output: 'ESM3Output') -> ESM3Result:
-        embeddings = output.embeddings[0, :, :]
+        embeddings = np.asarray(output.embeddings[0, :, :], dtype=np.float64)
         assert len(embeddings.shape) == 2, (
             f'Embeddings is expected to be a 2D tensor, not shape: {embeddings.shape}. '
             'The ESM3 Oracle does not support batches.'
@@ -184,6 +183,7 @@ class ESM3(EmbeddingOracle):
             field, attribute, decoder = self._TRACKS[track]
             logits = getattr(output, field, None)
             if logits is None:
+                logger.warning('ESM3 track %r requested but %s not found in output; leaving as None', track, field)
                 continue
             per_residue = np.asarray(logits)[0]  # drop batch -> (residues, vocab)
             if decoder == 'sasa':

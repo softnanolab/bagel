@@ -115,3 +115,4 @@ class TestESM3Oracle:
         assert np.allclose(result.sasa, [_SASA_BIN_MIDPOINTS[2], _SASA_BIN_MIDPOINTS[7]])
         assert result.secondary_structure == 'HE'
         assert result.function_logits is None
+        assert result.residue_annotation_logits is None
