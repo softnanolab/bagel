@@ -99,6 +99,34 @@ def fake_esmc(request, monkeypatch) -> bg.oracles.embedding.ESMC:
     return bg.oracles.embedding.ESMC()
 
 
+def _build_mock_fold_result(result_class, chains):
+    """Build a mock folding result (CA-only structure + zeroed confidence arrays) for ``chains``."""
+    atoms_list = []
+    for chain in chains:
+        for residue in chain.residues:
+            atoms_list.append(
+                Atom(
+                    coord=[0.0, 0.0, 0.0],
+                    chain_id=chain.chain_ID,
+                    res_id=residue.index,
+                    res_name=bg.constants.aa_dict.get(residue.name, 'GLY'),
+                    atom_name='CA',
+                    element='C',
+                )
+            )
+
+    mock_structure = array(atoms_list) if atoms_list else AtomArray(0)
+    num_residues = sum(len(chain.residues) for chain in chains) if chains else 0
+
+    return result_class(
+        input_chains=chains,
+        structure=mock_structure,
+        local_plddt=np.zeros((1, num_residues)) if num_residues > 0 else np.array([]).reshape(1, 0),
+        ptm=np.array([0.5])[None, :],
+        pae=np.zeros((1, num_residues, num_residues)) if num_residues > 0 else np.zeros((1, 0, 0)),
+    )
+
+
 @pytest.fixture
 def fake_esmfold2(request, monkeypatch) -> bg.oracles.folding.ESMFold2:
     """Fixture that returns an ESMFold2 object that doesn't load any model."""
@@ -107,29 +135,7 @@ def fake_esmfold2(request, monkeypatch) -> bg.oracles.folding.ESMFold2:
         pass
 
     def mock_fold(self, chains):
-        atoms_list = []
-        for chain in chains:
-            for residue in chain.residues:
-                atom = Atom(
-                    coord=[0.0, 0.0, 0.0],
-                    chain_id=chain.chain_ID,
-                    res_id=residue.index,
-                    res_name=bg.constants.aa_dict.get(residue.name, 'GLY'),
-                    atom_name='CA',
-                    element='C',
-                )
-                atoms_list.append(atom)
-
-        mock_structure = array(atoms_list) if atoms_list else AtomArray(0)
-        num_residues = sum(len(chain.residues) for chain in chains) if chains else 0
-
-        return bg.oracles.folding.ESMFold2Result(
-            input_chains=chains,
-            structure=mock_structure,
-            local_plddt=np.zeros((1, num_residues)) if num_residues > 0 else np.array([]).reshape(1, 0),
-            ptm=np.array([0.5])[None, :],
-            pae=np.zeros((1, num_residues, num_residues)) if num_residues > 0 else np.zeros((1, 0, 0)),
-        )
+        return _build_mock_fold_result(bg.oracles.folding.ESMFold2Result, chains)
 
     monkeypatch.setattr(bg.oracles.folding.ESMFold2, '_load', mock_load)
     monkeypatch.setattr(bg.oracles.folding.ESMFold2, 'fold', mock_fold)
@@ -170,34 +176,7 @@ def fake_esmfold(request, monkeypatch) -> bg.oracles.folding.ESMFold:
 
     # Mock the fold method to return a proper ESMFoldResult based on input chains
     def mock_fold(self, chains):
-        # Create an AtomArray with atoms for each residue in each chain
-        atoms_list = []
-        for chain in chains:
-            for residue in chain.residues:
-                # Create at least one atom (CA) per residue with correct chain_id and res_id
-                atom = Atom(
-                    coord=[0.0, 0.0, 0.0],
-                    chain_id=chain.chain_ID,
-                    res_id=residue.index,
-                    res_name=bg.constants.aa_dict.get(residue.name, 'GLY'),
-                    atom_name='CA',
-                    element='C',
-                )
-                atoms_list.append(atom)
-
-        mock_structure = array(atoms_list) if atoms_list else AtomArray(0)
-
-        # Calculate number of residues across all chains
-        num_residues = sum(len(chain.residues) for chain in chains) if chains else 0
-
-        # Return ESMFoldResult with proper structure
-        return bg.oracles.folding.ESMFoldResult(
-            input_chains=chains,
-            structure=mock_structure,
-            local_plddt=np.zeros((1, num_residues)) if num_residues > 0 else np.array([]).reshape(1, 0),
-            ptm=np.array([0.5])[None, :],
-            pae=np.zeros((1, num_residues, num_residues)) if num_residues > 0 else np.zeros((1, 0, 0)),
-        )
+        return _build_mock_fold_result(bg.oracles.folding.ESMFoldResult, chains)
 
     # Patch both methods
     monkeypatch.setattr(bg.oracles.folding.ESMFold, '_load', mock_load)

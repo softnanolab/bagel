@@ -16,7 +16,7 @@ import numpy as np
 import numpy.typing as npt
 
 from ...chain import Chain
-from .utils import reindex_chains
+from .utils import reindex_chains, validate_array_range
 from pydantic import field_validator
 from .base import FoldingOracle, FoldingResult
 
@@ -26,17 +26,6 @@ if TYPE_CHECKING:
     from boileroom.models.esmfold2.types import ESMFold2Output  # type: ignore
 
 logger = logging.getLogger(__name__)
-
-
-def validate_array_range(
-    array: npt.NDArray[np.float64], field_name: str, min_val: float = 0, max_val: float = 1
-) -> npt.NDArray[np.float64]:
-    """Validate that an array's values fall within a specified range."""
-    if not isinstance(array, np.ndarray):
-        raise ValueError(f'{field_name} must be a numpy array')
-    if not np.all((array >= min_val) & (array <= max_val)):
-        raise ValueError(f'All values in {field_name} must be between {min_val} and {max_val}')
-    return array
 
 
 class ESMFold2Result(FoldingResult):
@@ -186,7 +175,7 @@ class ESMFold2(FoldingOracle):
         atoms = reindex_chains(atoms, [chain.chain_ID for chain in chains])
 
         # Extract pLDDT - ESMFold2 returns per-residue pLDDT directly
-        local_plddt = np.array([0.0])  # default
+        local_plddt = np.array([[0.0]])  # default (1, N) to match ptm/pae and save_attributes
         if output.plddt is not None and len(output.plddt) > 0 and output.plddt[0] is not None:
             local_plddt = output.plddt[0]
             if local_plddt.ndim == 1:
