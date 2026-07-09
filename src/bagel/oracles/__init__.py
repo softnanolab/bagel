@@ -1,5 +1,6 @@
 from .base import Oracle, OracleResult, OraclesResultDict
-from .embedding import EmbeddingOracle, ESM2, ESM2Result, ESMC, ESMCResult
+
+from .embedding import EmbeddingOracle, ESM2, ESM2Result, ESM3, ESM3Result, ESMC, ESMCResult
 from .folding import FoldingOracle, ESMFold, ESMFoldResult, ESMFold2, ESMFold2Result
 
 __all__ = [
@@ -8,6 +9,8 @@ __all__ = [
     'OraclesResultDict',
     'ESM2',
     'ESM2Result',
+    'ESM3',
+    'ESM3Result',
     'ESMC',
     'ESMCResult',
     'ESMFold',
