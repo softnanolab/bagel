@@ -14,6 +14,7 @@ import numpy.typing as npt
 import pandas as pd
 from typing import Literal, Callable, Any
 from biotite.structure import AtomArray, sasa, annotate_sse, superimpose
+from biotite.structure.hbond import hbond
 from .constants import (
     hydrophobic_residues,
     max_sasa_values,
@@ -1525,3 +1526,112 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
             global_index_list.append(chain_res_to_global[(str(chain_id), int(res_id))])
 
         return global_index_list
+
+
+class HydrogenBondEnergy(EnergyTerm):
+    """
+    Energy term based on the count of hydrogen bonds in the structure.
+    Uses the Baker-Hubbard algorithm to detect hydrogen bonds.
+    The energy is proportional to the negative number of hydrogen bonds,
+    encouraging the formation of hydrogen bonds.
+    """
+
+    def __init__(
+        self,
+        oracle: FoldingOracle,
+        inheritable: bool = True,
+        residues: list[Residue] | None = None,
+        cutoff_dist: float = 2.5,
+        cutoff_angle: float = 120,
+        weight: float = 1.0,
+        name: str | None = None,
+    ) -> None:
+        """
+        Initialises Hydrogen Bond Energy class.
+
+        Parameters
+        ----------
+        oracle: FoldingOracle
+            The oracle to use for the energy term.
+        inheritable: bool, default=True
+            If a new residue is added next to a residue included in this energy term, this dictates whether that new
+            residue could then be added to this energy term.
+        residues: list[Residue] or None, default=None
+            Which residues to include in the calculation. If None, considers all residues by default.
+        cutoff_dist: float, default=2.5
+            The maximal distance (in Angstroms) between the hydrogen and acceptor to be
+            considered a hydrogen bond.
+        cutoff_angle: float, default=120
+            The angle cutoff (in degrees) between Donor-H..Acceptor to be
+            considered a hydrogen bond.
+        weight: float = 1.0
+            The weight of the energy term.
+        name: str | None = None
+            Optional name to append to the energy term name.
+        """
+        if name is None:
+            name = 'hbond'
+        else:
+            name = f'hbond_{name}'
+
+        super().__init__(name=name, inheritable=inheritable, oracle=oracle, weight=weight)
+        self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
+        self.cutoff_dist = cutoff_dist
+        self.cutoff_angle = cutoff_angle
+        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
+        assert 'structure' in self.oracle.result_class.model_fields, (
+            'HydrogenBondEnergy requires oracle to return structure in result_class'
+        )
+
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        structure = oracles_result.get_structure(self.oracle)
+
+        # Handle empty structure
+        if len(structure) == 0:
+            return 0.0, 0.0
+
+        # If residue groups are specified, create masks for those residues
+        if len(self.residue_groups) > 0:
+            # Get the atom mask for the selected residues
+            selection_mask: npt.NDArray[np.bool_] = self.get_atom_mask(structure, residue_group_index=0)
+
+            # Detect hydrogen bonds within the entire structure
+            triplets = hbond(
+                structure,
+                cutoff_dist=self.cutoff_dist,
+                cutoff_angle=self.cutoff_angle,
+            )
+
+            # Count hydrogen bonds where at least one atom (donor or acceptor) is in the selection
+            if len(triplets) > 0:
+                donor_indices = triplets[:, 0]
+                acceptor_indices = triplets[:, 2]
+                # Count H-bonds where either donor or acceptor is in the selected residues
+                hbond_count = np.sum(selection_mask[donor_indices] | selection_mask[acceptor_indices])
+            else:
+                hbond_count = 0
+
+            # Count number of unique residues in the selected group for normalization
+            selected_structure = structure[selection_mask]
+            n_residues = len(
+                np.unique(np.stack([selected_structure.chain_id, selected_structure.res_id], axis=1), axis=0)
+            )  # Count unique (chain_id, res_id) pairs for multi-chain structures
+        else:
+            # If no residue groups specified, count all hydrogen bonds in the structure
+            triplets = hbond(
+                structure,
+                cutoff_dist=self.cutoff_dist,
+                cutoff_angle=self.cutoff_angle,
+            )
+            hbond_count = len(triplets)
+
+            # Count all residues in the structure for normalization
+            n_residues = len(
+                np.unique(np.stack([structure.chain_id, structure.res_id], axis=1), axis=0)
+            )  # Count unique (chain_id, res_id) pairs for multi-chain structures
+
+        # Negative energy to encourage hydrogen bond formation
+        # Normalize by number of residues to get energy per residue
+        value = -hbond_count / max(n_residues, 1)
+
+        return value, value * self.weight
