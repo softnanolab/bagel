@@ -8,6 +8,7 @@ import bagel as bg
 from bagel.oracles.base import OraclesResultDict
 from bagel.oracles.embedding.esmc import ESMC, ESMCResult
 from bagel.oracles.folding.esmfold2 import ESMFold2, ESMFold2Result
+from boileroom.models.esmfold2.types import ProteinInput, StructurePredictionInput
 
 
 class TestESMCResult:
@@ -122,21 +123,18 @@ class TestESMFold2Oracle:
     def test_esmfold2_pre_process_monomer(self, fake_esmfold2):
         chains = [bg.Chain([bg.Residue(name='A', chain_ID='A', index=i) for i in range(3)])]
         result = fake_esmfold2._pre_process(chains)
-        assert result == {'sequences': [{'kind': 'protein', 'id': 'A', 'sequence': 'AAA'}]}
+        assert result == StructurePredictionInput(sequences=[ProteinInput(id='A', sequence='AAA')])
 
     def test_esmfold2_pre_process_multimer(self, fake_esmfold2):
         chain_a = bg.Chain([bg.Residue(name='A', chain_ID='A', index=i) for i in range(3)])
         chain_b = bg.Chain([bg.Residue(name='G', chain_ID='B', index=i) for i in range(2)])
         result = fake_esmfold2._pre_process([chain_a, chain_b])
-        assert result == {
-            'sequences': [
-                {'kind': 'protein', 'id': 'A', 'sequence': 'AAA'},
-                {'kind': 'protein', 'id': 'B', 'sequence': 'GG'},
-            ]
-        }
+        assert result == StructurePredictionInput(
+            sequences=[ProteinInput(id='A', sequence='AAA'), ProteinInput(id='B', sequence='GG')]
+        )
 
     def test_esmfold2_pre_process_preserves_custom_chain_ids(self, fake_esmfold2):
         chain_a = bg.Chain([bg.Residue(name='A', chain_ID='C-A', index=i) for i in range(2)])
         chain_b = bg.Chain([bg.Residue(name='G', chain_ID='C-B', index=i) for i in range(2)])
         result = fake_esmfold2._pre_process([chain_a, chain_b])
-        assert [entity['id'] for entity in result['sequences']] == ['C-A', 'C-B']
+        assert [entity.id for entity in result.sequences] == ['C-A', 'C-B']

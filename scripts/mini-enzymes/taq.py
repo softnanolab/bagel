@@ -9,7 +9,7 @@ import fire
 from utils import validate_residue_identity, load_best_sequence_and_mask
 
 
-def main(use_modal: bool = False, experiment_name: str | None = None, temperature: float = 1e-4, n_steps: int = 100000):
+def main(backend: str = 'modal', experiment_name: str | None = None, temperature: float = 1e-4, n_steps: int = 100000):
     """
     PLM-based mini-enzyme optimization for Taq DNA polymerase (PDB: 1taq).
 
@@ -17,11 +17,12 @@ def main(use_modal: bool = False, experiment_name: str | None = None, temperatur
     Catalytic residues: D610, F667 (fidelity), D785, E786.
 
     Args:
-        use_modal: Whether to use Modal for GPU inference
+        backend: Oracle backend ('modal', 'apptainer', or 'apptainer:<image-tag>')
         experiment_name: Name for the experiment run
         temperature: MC sampling temperature
         n_steps: Number of MC steps
     """
+    print(f'Backend: {backend}')
     log_path = pl.Path("./logs") / 'mini-enzymes' / 'taq'
 
     offset = 10
@@ -83,7 +84,7 @@ def main(use_modal: bool = False, experiment_name: str | None = None, temperatur
 
     chain = bg.Chain(residues=all_residues)
 
-    esm2 = bg.oracles.ESM2(use_modal=use_modal, config={'model_name': 'esm2_t33_650M_UR50D'})
+    esm2 = bg.oracles.ESM2(backend=backend, config={'model_name': 'esm2_t33_650M_UR50D'})
     result = esm2.embed(chains=[chain])
     immutable = ~np.array(mutability)
     reference_embeddings = result.embeddings[immutable]

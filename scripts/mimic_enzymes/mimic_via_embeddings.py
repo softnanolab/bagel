@@ -11,11 +11,11 @@ import modal
 def run_generate_mimic() -> Any:
     with modal.enable_output():
 
-        # Get the value of an environment variable
-        use_modal = True if os.getenv('USE_MODAL', 'True').lower() in ('true', '1', 'yes') else False
+        # Get the backend from an environment variable (default: modal)
+        backend = os.getenv('BAGEL_BACKEND', 'modal')
 
         # Check
-        print(f'Whether to use modal: {use_modal}')
+        print(f'Backend: {backend}')
 
         # Define the target enzyme we want to mimic
         # Here it is (just to make a random example):
@@ -48,7 +48,7 @@ def run_generate_mimic() -> Any:
         # Extract embeddings for the residues that you want to remain constant and whose environment
         # you want to maintain
         # First define the EmbeddingOracle
-        esm2 = bg.oracles.ESM2( use_modal=use_modal, config={ 'model_name': 'esm2_t33_650M_UR50D', } )
+        esm2 = bg.oracles.ESM2(backend=backend, config={'model_name': 'esm2_t33_650M_UR50D'})
         # Embed the chain to get the embeddings for the residues
         result = esm2.embed( chains=[chain] )
         # Extract only the embeddings for the immutable residues

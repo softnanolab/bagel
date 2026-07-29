@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 def main(
-    use_modal: bool = False,
+    backend: str = 'modal',
     binder_sequence: str = None,
     optimization_params: dict = None,
     output_dir: str = 'data/CA4-binder'
@@ -71,7 +71,7 @@ def main(
     }
 
     esmfold = bg.oracles.ESMFold(
-        use_modal=use_modal, config=config
+        backend=backend, config=config
     )
 
     # Define the energy terms to be applied to the chain
