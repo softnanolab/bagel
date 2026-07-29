@@ -82,6 +82,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/bagel"]
 
+[tool.hatch.build.targets.sdist]
+exclude = ["/docs/demo.gif"]
+
 [tool.hatch.metadata]
 allow-direct-references = true
 

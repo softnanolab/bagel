@@ -159,6 +159,8 @@ def test_state_get_energy(fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch)
     ptm_state = bg.State(name='ptm_test_state', chains=[chain], energy_terms=[ptm_term1, ptm_term2])
     ptm_energy = ptm_state.energy
     assert np.round(ptm_energy, 1) == -3.5  # -0.7 * 2.0 + -0.7 * 3.0
+    assert ptm_state.energy_term_values == {'pTM_1': pytest.approx(-0.7), 'pTM_2': pytest.approx(-0.7)}
+    assert all(isinstance(value, float) for value in ptm_state.energy_term_values.values())
 
     # Test 7: Test with multiple oracles
     class MockOracleA(bg.oracles.Oracle):

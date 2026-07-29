@@ -26,9 +26,12 @@ BAGEL currently targets boileroom 0.4.1. Until that version is published to PyPI
 `uv` resolves the tagged GitHub release through the temporary source override in
 `pyproject.toml`; the lock file records the exact commit for reproducibility.
 
+BAGEL 0.2 requires Python 3.12. Its oracle API replaces `use_modal` and
+`modal_app_context` with explicit `backend` and optional `device` parameters.
+
 Host-side model dependencies are supplied by BoilerRoom's images. To run an
 oracle locally, install Apptainer on the host and use a suitable GPU; no separate
-Python ``local`` extra is required.
+Python `local` extra is required.
 
 ## Documentation [Work In Progress]
 

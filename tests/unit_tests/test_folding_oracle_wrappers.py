@@ -177,6 +177,28 @@ def test_chai1_wrapper_rejects_missing_ptm(monkeypatch, monomer: list[bg.Chain])
         bg.oracles.folding.Chai1(backend='modal').fold(monomer)
 
 
+def test_chai1_defaults_to_one_diffusion_sample(monkeypatch) -> None:
+    captured_config = None
+
+    class FakeChai1Boiler:
+        def __init__(self, backend, device, config):
+            nonlocal captured_config
+            captured_config = config
+
+    monkeypatch.setattr('boileroom.models.chai.chai1.Chai1', FakeChai1Boiler)
+
+    bg.oracles.folding.Chai1(config={'num_diffn_timesteps': 10})
+
+    assert captured_config == {'num_diffn_timesteps': 10, 'num_diffn_samples': 1}
+
+
+def test_chai1_rejects_multiple_diffusion_samples(monkeypatch) -> None:
+    monkeypatch.setattr('boileroom.models.chai.chai1.Chai1', object)
+
+    with pytest.raises(ValueError, match='exactly one Chai-1 diffusion sample'):
+        bg.oracles.folding.Chai1(config={'num_diffn_samples': 5})
+
+
 @pytest.mark.parametrize(
     'ptm_input',
     [

@@ -5,7 +5,12 @@ import numpy as np
 from biotite.structure import Atom, AtomArray, array
 from biotite.structure.io import load_structure
 from bagel.constants import atom_order
-from bagel.oracles.folding.utils import reorder_atoms_in_template, get_unique_residues, reindex_residues
+from bagel.oracles.folding.utils import (
+    get_unique_residues,
+    reindex_residues,
+    reorder_atoms_in_template,
+    validate_array_range,
+)
 
 
 def test_reorder_atoms_in_template(formolase_structure: AtomArray) -> None:
@@ -84,3 +89,9 @@ def test_reindex_residues_uses_original_ids_for_overlapping_remaps() -> None:
     reindexed = reindex_residues(atoms, [chain])
 
     assert np.array_equal(reindexed.res_id, np.array([1, 2, 3]))
+
+
+@pytest.mark.parametrize('values', [np.array(['a']), np.array([object()], dtype=object)])
+def test_validate_array_range_rejects_non_numeric_dtypes(values: np.ndarray) -> None:
+    with pytest.raises(ValueError, match='must have a numeric dtype'):
+        validate_array_range(values, 'confidence')

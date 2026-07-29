@@ -38,15 +38,13 @@ pip install biobagel
 
 **Optional Extras:**
 
-- For local protein model execution (requires GPU):
-```bash
-pip install biobagel[local]
-```
-
 - For development (testing, linting, documentation):
 ```bash
 pip install biobagel[dev]
 ```
+
+Local model execution uses BoilerRoom's Apptainer backend and requires Apptainer
+plus a suitable GPU on the host; there is no separate Python `local` extra.
 
 ### From Source
 
@@ -114,7 +112,15 @@ Oracles are powered by [boileroom](https://github.com/softnanolab/boileroom) 0.4
 - `backend="modal"` (default): Run on [Modal](https://www.modal.com). No local GPU required, but a Modal account with credits is needed. Authenticate via `modal token new`. Pin a specific image release via the `BOILEROOM_IMAGE_TAG` environment variable set **before** importing bagel/boileroom.
 - `backend="apptainer"`: Run locally via an [Apptainer](https://apptainer.org) image pulled by boileroom. Requires `apptainer` on the host machine and a GPU with enough memory for the chosen model. Optionally pin the image tag inline: `backend="apptainer:<image-tag>"`.
 
-All current oracles support `modal` and `apptainer`. The previous `use_modal` boolean and local-Python backend were removed in boileroom 0.3; BAGEL 0.2 therefore uses the explicit `backend` API throughout.
+All current oracles support `modal` and `apptainer`.
+
+### Upgrading to BAGEL 0.2
+
+BAGEL 0.2 requires Python 3.12. Oracle constructors now use
+`backend="modal" | "apptainer"` and an optional `device`; the previous
+`use_modal` and `modal_app_context` arguments and the local-Python backend were
+removed. Replace `use_modal=True` with `backend="modal"` and
+`use_modal=False` with `backend="apptainer"`.
 
 ### Google Colab
 A prototyping, but unscalable alternative is to run BAGEL in Google Colab, having access to a T4 processing unit for free. See this [notebook](https://colab.research.google.com/drive/1dtX8j6t5VhSed4iiqSrjM35DyPSFE1yF?usp=sharing), which includes the installation, and the template script for [simple binder](scripts/binders/simple_binder.py).

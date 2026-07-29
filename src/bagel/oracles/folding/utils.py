@@ -201,6 +201,8 @@ def validate_array_range(
     """
     if not isinstance(array, np.ndarray):
         raise ValueError(f'{field_name} must be a numpy array')
+    if not np.issubdtype(array.dtype, np.number):
+        raise ValueError(f'{field_name} must have a numeric dtype, got {array.dtype}')
     if not np.all((array >= min_val) & (array <= max_val)):
         raise ValueError(f'All values in {field_name} must be between {min_val} and {max_val}')
     return array

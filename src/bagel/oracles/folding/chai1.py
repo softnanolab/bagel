@@ -18,4 +18,8 @@ class Chai1(ConfidenceFoldingOracle):
     def _load(self, config: dict[str, Any] | None = None) -> None:
         from boileroom.models.chai.chai1 import Chai1 as Chai1Boiler
 
-        self.model = Chai1Boiler(backend=self.backend, device=self.device, config=config)
+        model_config = dict(config or {})
+        num_samples = model_config.setdefault('num_diffn_samples', 1)
+        if num_samples != 1:
+            raise ValueError('BAGEL supports exactly one Chai-1 diffusion sample; set num_diffn_samples=1')
+        self.model = Chai1Boiler(backend=self.backend, device=self.device, config=model_config)

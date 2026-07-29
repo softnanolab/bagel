@@ -20,6 +20,14 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _as_scalar_energy(value: Any, term_name: str, value_kind: str) -> float:
+    """Validate and convert one EnergyTerm output to its advertised scalar contract."""
+    array = np.asarray(value)
+    if array.size != 1:
+        raise ValueError(f"Energy term '{term_name}' returned non-scalar {value_kind} energy with shape {array.shape}")
+    return float(array.item())
+
+
 @dataclass
 class State:
     """
@@ -119,12 +127,14 @@ class State:
 
             total_energy = 0.0
             for term in self.energy_terms:
-                unweighted_energy, weighted_energy = term.compute(oracles_result=self._oracles_result)
+                unweighted_value, weighted_value = term.compute(oracles_result=self._oracles_result)
+                unweighted_energy = _as_scalar_energy(unweighted_value, term.name, 'unweighted')
+                weighted_energy = _as_scalar_energy(weighted_value, term.name, 'weighted')
                 total_energy += weighted_energy
                 self._energy_term_values[term.name] = unweighted_energy
                 logger.debug(f'Energy term {term.name} has value {unweighted_energy}')
 
-            self._energy = float(np.asarray(total_energy).item())
+            self._energy = total_energy
             # Store cache key after successful computation
             self._cache_key = self._current_cache_key
 
