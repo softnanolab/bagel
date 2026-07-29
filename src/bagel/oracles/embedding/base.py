@@ -42,6 +42,19 @@ def single_sample_embeddings(values: Any, model_name: str) -> npt.NDArray[np.flo
     return np.asarray(embeddings[0], dtype=np.float64)
 
 
+def single_sample_track_logits(values: Any, field_name: str, model_name: str) -> npt.NDArray[np.float64]:
+    """Validate and extract per-residue logits from a one-sample model batch."""
+    logits = np.asarray(values)
+    if not np.issubdtype(logits.dtype, np.number):
+        raise ValueError(f'{model_name} {field_name} must have a numeric dtype; got {logits.dtype}.')
+    if logits.ndim != 3 or logits.shape[0] != 1:
+        raise ValueError(
+            f'{model_name} {field_name} must have shape (1, residues, classes); got {logits.shape}. '
+            f'BAGEL does not support batched {field_name} outputs.'
+        )
+    return np.asarray(logits[0], dtype=np.float64)
+
+
 class EmbeddingOracle(Oracle):
     """
     An EmbeddingOracle is a specific type of Oracle that uses a sequence-based model to predict the residues' embeddings.

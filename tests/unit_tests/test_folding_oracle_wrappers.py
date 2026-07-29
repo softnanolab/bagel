@@ -7,6 +7,7 @@ from biotite.structure import Atom, array
 from boileroom.base import PredictionMetadata
 from boileroom.models.boltz.types import Boltz2Output
 from boileroom.models.esm.types import ESMFoldOutput
+from boileroom.models.esmfold2.types import ProteinInput, StructurePredictionInput
 
 
 class FakeModel:
@@ -77,32 +78,22 @@ def test_boltz2_reduces_boilerroom_041_output_contract(monkeypatch, monomer: lis
 
 
 @pytest.mark.parametrize(
-    ('oracle_class', 'result_class', 'output_fields', 'expected_fields', 'expected_ptm'),
+    ('oracle_class', 'result_class', 'batched_pae'),
     [
         (
             bg.oracles.folding.Boltz2,
             bg.oracles.folding.Boltz2Result,
-            {'plddt': [np.full(20, 0.8)], 'pae': [np.zeros((20, 20))], 'ptm': [np.array([0.7])]},
-            ['plddt', 'pae', 'ptm'],
-            0.7,
+            False,
         ),
         (
             bg.oracles.folding.Chai1,
             bg.oracles.folding.Chai1Result,
-            {'plddt': [np.full(20, 0.8)], 'pae': [np.zeros((20, 20))], 'ptm': [np.array([0.7])]},
-            ['plddt', 'pae', 'ptm'],
-            0.7,
+            False,
         ),
         (
             bg.oracles.folding.ESMFold,
             bg.oracles.folding.ESMFoldResult,
-            {
-                'plddt': [np.full(20, 0.8)],
-                'pae': np.zeros((1, 20, 20)),
-                'ptm': [np.array([0.7])],
-            },
-            ['plddt', 'pae', 'ptm'],
-            0.7,
+            True,
         ),
     ],
 )
@@ -111,10 +102,11 @@ def test_folding_oracle_wrappers_request_required_fields(
     monomer: list[bg.Chain],
     oracle_class,
     result_class,
-    output_fields,
-    expected_fields,
-    expected_ptm,
+    batched_pae,
 ) -> None:
+    num_residues = len(monomer[0].residues)
+    pae = np.zeros((1, num_residues, num_residues)) if batched_pae else [np.zeros((num_residues, num_residues))]
+    output_fields = {'plddt': [np.full(num_residues, 0.8)], 'pae': pae, 'ptm': [np.array([0.7])]}
     output = SimpleNamespace(atom_array=[fake_atom_array(monomer)], **output_fields)
     fake_model = FakeModel(output)
 
@@ -127,20 +119,21 @@ def test_folding_oracle_wrappers_request_required_fields(
     result = oracle.fold(monomer)
 
     assert isinstance(result, result_class)
-    assert fake_model.calls == [([monomer[0].sequence], {'include_fields': expected_fields})]
+    assert fake_model.calls == [([monomer[0].sequence], {'include_fields': ['plddt', 'pae', 'ptm']})]
     assert np.all(result.structure.chain_id == monomer[0].chain_ID)
     assert np.array_equal(np.unique(result.structure.res_id), np.arange(len(monomer[0].residues)))
     assert np.allclose(result.local_plddt, 0.8)
     assert result.pae.shape == (1, len(monomer[0].residues), len(monomer[0].residues))
     assert result.ptm.shape == (1, 1)
-    assert result.ptm[0, 0] == pytest.approx(expected_ptm)
+    assert result.ptm[0, 0] == pytest.approx(0.7)
 
 
 def test_esmfold2_wrapper_uses_typed_input_and_requests_confidence(monkeypatch, monomer: list[bg.Chain]) -> None:
+    num_residues = len(monomer[0].residues)
     output = SimpleNamespace(
         atom_array=[fake_atom_array(monomer)],
-        plddt=[np.full(20, 0.8)],
-        pae=[np.zeros((20, 20))],
+        plddt=[np.full(num_residues, 0.8)],
+        pae=[np.zeros((num_residues, num_residues))],
         ptm=[np.array([0.7])],
     )
     fake_model = FakeModel(output)
@@ -159,11 +152,38 @@ def test_esmfold2_wrapper_uses_typed_input_and_requests_confidence(monkeypatch, 
     assert options == {'include_fields': ['plddt', 'pae', 'ptm']}
 
 
+class TestESMFold2Oracle:
+    """Tests for the ESMFold2 oracle class."""
+
+    def test_esmfold2_result_class(self):
+        assert bg.oracles.folding.ESMFold2.result_class is bg.oracles.folding.ESMFold2Result
+
+    def test_esmfold2_pre_process_monomer(self, fake_esmfold2):
+        chains = [bg.Chain([bg.Residue(name='A', chain_ID='A', index=i) for i in range(3)])]
+        result = fake_esmfold2._pre_process(chains)
+        assert result == StructurePredictionInput(sequences=[ProteinInput(id='A', sequence='AAA')])
+
+    def test_esmfold2_pre_process_multimer(self, fake_esmfold2):
+        chain_a = bg.Chain([bg.Residue(name='A', chain_ID='A', index=i) for i in range(3)])
+        chain_b = bg.Chain([bg.Residue(name='G', chain_ID='B', index=i) for i in range(2)])
+        result = fake_esmfold2._pre_process([chain_a, chain_b])
+        assert result == StructurePredictionInput(
+            sequences=[ProteinInput(id='A', sequence='AAA'), ProteinInput(id='B', sequence='GG')]
+        )
+
+    def test_esmfold2_pre_process_preserves_custom_chain_ids(self, fake_esmfold2):
+        chain_a = bg.Chain([bg.Residue(name='A', chain_ID='C-A', index=i) for i in range(2)])
+        chain_b = bg.Chain([bg.Residue(name='G', chain_ID='C-B', index=i) for i in range(2)])
+        result = fake_esmfold2._pre_process([chain_a, chain_b])
+        assert [entity.id for entity in result.sequences] == ['C-A', 'C-B']
+
+
 def test_chai1_wrapper_rejects_missing_ptm(monkeypatch, monomer: list[bg.Chain]) -> None:
+    num_residues = len(monomer[0].residues)
     output = SimpleNamespace(
         atom_array=[fake_atom_array(monomer)],
-        plddt=[np.full(20, 0.8)],
-        pae=[np.zeros((20, 20))],
+        plddt=[np.full(num_residues, 0.8)],
+        pae=[np.zeros((num_residues, num_residues))],
         ptm=None,
     )
     fake_model = FakeModel(output)
@@ -208,10 +228,11 @@ def test_chai1_rejects_multiple_diffusion_samples(monkeypatch) -> None:
     ],
 )
 def test_chai1_wrapper_handles_ptm_shapes(monkeypatch, monomer: list[bg.Chain], ptm_input) -> None:
+    num_residues = len(monomer[0].residues)
     output = SimpleNamespace(
         atom_array=[fake_atom_array(monomer)],
-        plddt=[np.full(20, 0.8)],
-        pae=[np.zeros((20, 20))],
+        plddt=[np.full(num_residues, 0.8)],
+        pae=[np.zeros((num_residues, num_residues))],
         ptm=ptm_input,
     )
     fake_model = FakeModel(output)
@@ -236,10 +257,11 @@ def test_chai1_wrapper_handles_ptm_shapes(monkeypatch, monomer: list[bg.Chain], 
     ],
 )
 def test_boltz2_rejects_missing_ptm(monkeypatch, monomer: list[bg.Chain], ptm, message: str) -> None:
+    num_residues = len(monomer[0].residues)
     output = SimpleNamespace(
         atom_array=[fake_atom_array(monomer)],
-        plddt=[np.full(20, 0.8)],
-        pae=[np.zeros((20, 20))],
+        plddt=[np.full(num_residues, 0.8)],
+        pae=[np.zeros((num_residues, num_residues))],
         ptm=ptm,
     )
 

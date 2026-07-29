@@ -20,7 +20,7 @@ The BAGEL package is made up of several components that need to be specified to 
 | **Component**      | **Description**                                                                                      | **Examples**                                         |
 |--------------------|------------------------------------------------------------------------------------------------------|------------------------------------------------------|
 | `EnergyTerms`      | Define specific design constraints as terms in the energy function.                                  | `TemplateMatchEnergy`, `PLDDTEnergy`, `HydrophobicEnergy` |
-| `Oracles`          | Provide information (often via ML models) to compute optimization/sampling metrics.<br>Oracles are typically wrappers around models from [boileroom](https://github.com/softnanolab/boileroom). | `ESMFold2`, `Boltz2`, `Chai1`, `ESM3`, `ESM-C`, `ESM-2` |
+| `Oracles`          | Provide information (often via ML models) to compute optimization/sampling metrics.<br>Oracles are typically wrappers around models from [boileroom](https://github.com/softnanolab/boileroom). | `ESMFold`, `ESMFold2`, `Boltz2`, `Chai1`, `ESM3`, `ESM-C`, `ESM-2` |
 | `Minimizers`       | Algorithms that sample or optimize sequences to find optima or diverse variants.                     | Monte Carlo, `SimulatedTempering`, `SimulatedAnnealing` |
 | `MutationProtocols`| Methods for perturbing sequences to generate new candidates.                                         | `Canonical`, `GrandCanonical`                            |
 
@@ -112,7 +112,9 @@ Oracles are powered by [boileroom](https://github.com/softnanolab/boileroom) 0.4
 - `backend="modal"` (default): Run on [Modal](https://www.modal.com). No local GPU required, but a Modal account with credits is needed. Authenticate via `modal token new`. Pin a specific image release via the `BOILEROOM_IMAGE_TAG` environment variable set **before** importing bagel/boileroom.
 - `backend="apptainer"`: Run locally via an [Apptainer](https://apptainer.org) image pulled by boileroom. Requires `apptainer` on the host machine and a GPU with enough memory for the chosen model. Optionally pin the image tag inline: `backend="apptainer:<image-tag>"`.
 
-All current oracles support `modal` and `apptainer`.
+All current oracles expose `modal` and `apptainer` backends. The Modal paths are
+covered by the integration suite; Apptainer support for Boltz2 and Chai1 is
+available through BoilerRoom but has not yet been validated in BAGEL's CI.
 
 ### Upgrading to BAGEL 0.2
 

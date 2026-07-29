@@ -13,6 +13,23 @@ API Reference
 
 .. automodule:: bagel
 
+Top-level objects
+~~~~~~~~~~~~~~~~~
+
+.. currentmodule:: bagel
+
+.. autoclass:: Chain
+   :no-index:
+
+.. autoclass:: Residue
+   :no-index:
+
+.. autoclass:: State
+   :no-index:
+
+.. autoclass:: System
+   :no-index:
+
 Core Modules
 ------------
 

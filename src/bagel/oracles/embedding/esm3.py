@@ -20,7 +20,7 @@ import numpy as np
 import numpy.typing as npt
 
 from ...chain import Chain
-from .base import EmbeddingResult, EmbeddingOracle, single_sample_embeddings
+from .base import EmbeddingResult, EmbeddingOracle, single_sample_embeddings, single_sample_track_logits
 
 if TYPE_CHECKING:
     from boileroom.models.esm3.types import ESM3Output
@@ -165,7 +165,7 @@ class ESM3(EmbeddingOracle):
             if logits is None:
                 logger.warning('ESM3 track %r requested but %s not found in output; leaving as None', track, field)
                 continue
-            per_residue = np.asarray(logits)[0]  # drop batch -> (residues, vocab)
+            per_residue = single_sample_track_logits(logits, field, 'ESM3')
             if decoder == 'sasa':
                 result_kwargs['sasa'] = decode_sasa(per_residue)
             elif decoder == 'ss':

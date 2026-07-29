@@ -91,6 +91,7 @@ def test_state_get_energy(fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch)
 
     energy = state.energy
     assert energy == 5.0  # 1.0 * 2.0 + 1.0 * 3.0
+    assert isinstance(energy, float)
     assert state._energy == 5.0
     assert state._energy_term_values == {'MockEnergyTerm1': 1.0, 'MockEnergyTerm2': 1.0}
     assert fake_esmfold in state._oracles_result
@@ -203,6 +204,34 @@ def test_state_get_energy(fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch)
     assert len(multi_oracle_state._oracles_result) == 2  # Should have results from both oracles
     assert oracle_a in multi_oracle_state._oracles_result
     assert oracle_b in multi_oracle_state._oracles_result
+
+
+@pytest.mark.parametrize(
+    ('computed_values', 'value_kind'),
+    [
+        ((np.array([]), 1.0), 'unweighted'),
+        ((np.array([1.0, 2.0]), 1.0), 'unweighted'),
+        ((1.0, np.array([])), 'weighted'),
+        ((1.0, np.array([1.0, 2.0])), 'weighted'),
+    ],
+)
+def test_state_rejects_non_scalar_energy_term_outputs(computed_values, value_kind: str) -> None:
+    class MockOracle(bg.oracles.Oracle):
+        result_class = str
+
+        def predict(self, chains):
+            return 'unused'
+
+    class MalformedEnergyTerm(bg.energies.EnergyTerm):
+        def compute(self, oracles_result):
+            return computed_values
+
+    chain = bg.Chain([bg.Residue(name='A', chain_ID='A', index=0)])
+    term = MalformedEnergyTerm(name='MalformedTerm', oracle=MockOracle(), weight=1.0, inheritable=True)
+    state = bg.State(name='malformed', chains=[chain], energy_terms=[term])
+
+    with pytest.raises(ValueError, match=rf"Energy term 'MalformedTerm'.*{value_kind}"):
+        _ = state.energy
 
 
 def test_energy_cache_auto_invalidation(fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch) -> None:

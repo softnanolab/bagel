@@ -116,3 +116,24 @@ class TestESM3Oracle:
         assert result.secondary_structure == 'HE'
         assert result.function_logits is None
         assert result.residue_annotation_logits is None
+
+    @pytest.mark.parametrize(
+        ('logits', 'message'),
+        [
+            (np.asarray(1.0), r'sasa_logits must have shape \(1, residues, classes\)'),
+            (np.zeros((2, 4)), r'sasa_logits must have shape \(1, residues, classes\)'),
+            (np.zeros((2, 4, 16)), r'sasa_logits must have shape \(1, residues, classes\)'),
+            (np.full((1, 4, 16), 'invalid'), 'sasa_logits must have a numeric dtype'),
+        ],
+    )
+    def test_post_process_rejects_malformed_track_logits(self, monkeypatch, logits, message):
+        monkeypatch.setattr(ESM3, '_load', lambda self, config=None: None)
+        oracle = ESM3(tracks=['sasa'])
+        chains = [bg.Chain([bg.Residue(name='A', chain_ID='A', index=i) for i in range(4)])]
+
+        class _Output:
+            embeddings = np.zeros((1, 4, 8))
+            sasa_logits = logits
+
+        with pytest.raises(ValueError, match=message):
+            oracle._post_process(_Output(), chains)

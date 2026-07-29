@@ -58,7 +58,7 @@ def main(
     ]
     binder_chain = bg.Chain(residues=residues_binder)
 
-    # Now define the folding algorithm, run locally not on modal
+    # Define the folding oracle using the requested backend.
     config = {
         'output_pdb': False,
         'output_cif': False,

@@ -1,10 +1,12 @@
 """ESMFold2 structure-prediction oracle."""
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from boileroom.models.esmfold2.types import ProteinInput, StructurePredictionInput
 from ...chain import Chain
 from .base import ConfidenceFoldingOracle, ConfidenceFoldingResult
+
+if TYPE_CHECKING:
+    from boileroom.models.esmfold2.types import StructurePredictionInput
 
 
 class ESMFold2Result(ConfidenceFoldingResult):
@@ -51,7 +53,7 @@ class ESMFold2(ConfidenceFoldingOracle):
 
         self.model = ESMFold2Boiler(backend=self.backend, device=self.device, config=config)
 
-    def _pre_process(self, chains: list[Chain]) -> StructurePredictionInput:
+    def _pre_process(self, chains: list[Chain]) -> 'StructurePredictionInput':
         """Build a structured ESMFold2 fold input that preserves each ``chain_ID``.
 
         Returns one typed complex with a protein entity per chain keyed by the
@@ -59,6 +61,8 @@ class ESMFold2(ConfidenceFoldingOracle):
         makes ESMFold2 fold the chains as a single complex while receiving bagel's
         chain IDs directly.
         """
+        from boileroom.models.esmfold2.types import ProteinInput, StructurePredictionInput
+
         return StructurePredictionInput(
             sequences=[ProteinInput(id=chain.chain_ID, sequence=chain.sequence) for chain in chains]
         )
