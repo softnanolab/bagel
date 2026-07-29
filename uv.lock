@@ -197,7 +197,7 @@ wandb = [
 [package.metadata]
 requires-dist = [
     { name = "biotite", specifier = ">=1.0.1" },
-    { name = "boileroom", git = "https://github.com/softnanolab/boileroom.git?tag=0.4.1" },
+    { name = "boileroom", specifier = "==0.4.1" },
     { name = "fire", specifier = ">=0.5.0" },
     { name = "ipykernel", marker = "extra == 'dev'", specifier = ">=6.29.5" },
     { name = "matplotlib", specifier = ">=3.10.0" },
@@ -258,7 +258,7 @@ wheels = [
 [[package]]
 name = "boileroom"
 version = "0.4.1"
-source = { git = "https://github.com/softnanolab/boileroom.git?tag=0.4.1#e2fd8bfda0448f1b7b4154e9ccd3be9de53794a5" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "biotite" },
     { name = "click" },
@@ -269,6 +269,10 @@ dependencies = [
     { name = "pyyaml" },
     { name = "rich" },
     { name = "torch" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d9/59/d6b6b94efdf731b3c95b5a700a9edf3a315e7f98f506f507555ae0626dba/boileroom-0.4.1.tar.gz", hash = "sha256:bfa1cd09d6600d422bace2d6d85c092f58a6467d36279467a0dfd8044f346687", size = 5063457, upload-time = "2026-07-29T14:27:04.973Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0b/fe/76e47ffbc1cec012acb02dc63c7255c636a51e7c981d8450950e2f0c9fcb/boileroom-0.4.1-py3-none-any.whl", hash = "sha256:83b3fede37a102c9d35c3d6ef80ced6420fc92df43bdbfe3d188ee9671765ece", size = 118920, upload-time = "2026-07-29T14:27:03.41Z" },
 ]
 
 [[package]]

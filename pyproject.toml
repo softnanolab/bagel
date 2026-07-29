@@ -87,7 +87,3 @@ exclude = ["/docs/demo.gif"]
 
 [tool.hatch.metadata]
 allow-direct-references = true
-
-[tool.uv.sources]
-# Remove this source override after boileroom 0.4.1 is published to PyPI.
-boileroom = { git = "https://github.com/softnanolab/boileroom.git", tag = "0.4.1" }
