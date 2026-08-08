@@ -7,7 +7,7 @@ Copyright (c) 2025 Jakub Lála, Ayham Al-Saffar, Stefano Angioletti-Uberti
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Type
+from typing import Any
 import pathlib as pl
 import logging
 from pydantic import BaseModel
@@ -26,7 +26,7 @@ class OracleResult(BaseModel):
 
     @abstractmethod
     def save_attributes(self, filepath: pl.Path) -> None:
-        pass
+        raise NotImplementedError
 
 
 class Oracle(ABC):
@@ -34,7 +34,7 @@ class Oracle(ABC):
     An Oracle is any algorithm that, given a State as input, can return a prediction.
     """
 
-    result_class: Type[OracleResult] = OracleResult  # holds class, not instance
+    result_class: type[OracleResult]
 
     def __post_init__(self) -> None:
         """Sanity check."""
@@ -44,7 +44,7 @@ class Oracle(ABC):
         """Return a reference of the oracle."""
         return self
 
-    def __deepcopy__(self, memo: dict) -> Any:
+    def __deepcopy__(self, memo: dict[int, Any]) -> Any:
         """
         Return a reference of the oracle.
 
@@ -56,7 +56,7 @@ class Oracle(ABC):
 
     @abstractmethod
     def predict(self, chains: list[Chain]) -> OracleResult:
-        pass
+        raise NotImplementedError
 
 
 from .folding import FoldingResult, FoldingOracle

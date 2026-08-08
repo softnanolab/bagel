@@ -4,11 +4,11 @@ import os
 from typing import Any
 
 def run_simple_binder() -> Any:
-    # Get the value of an environment variable
-    use_modal = True if os.getenv('USE_MODAL', 'True').lower() in ('true', '1', 'yes') else False
+    # Get the backend from an environment variable (default: modal)
+    backend = os.getenv('BAGEL_BACKEND', 'modal')
 
     # Check
-    print(f'Whether to use modal: {use_modal}')
+    print(f'Backend: {backend}')
 
     # Define the target protein
     # This sequence comes from a PDB of the interleukin-8 protein
@@ -48,7 +48,7 @@ def run_simple_binder() -> Any:
         'glycine_linker': 'GGGG',
         'position_ids_skip': 1024,
     }
-    esmfold = bg.oracles.ESMFold(use_modal=use_modal, config=config)
+    esmfold = bg.oracles.ESMFold(backend=backend, config=config)
 
     # Define the energy terms to be applied to the chain. apply them to residues, and specify the weight
     energy_terms = [

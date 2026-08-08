@@ -4,31 +4,40 @@
    contain the root `toctree` directive.
 
 Bagel Documentation
-==================
+===================
 
 Welcome to the Bagel package documentation.
 
-.. toctree::
-   :maxdepth: 2
-   :caption: Contents:
-
-   api/modules
-
 API Reference
-------------
+-------------
 
 .. automodule:: bagel
-   :members:
-   :undoc-members:
-   :show-inheritance:
+
+Top-level objects
+~~~~~~~~~~~~~~~~~
+
+.. currentmodule:: bagel
+
+.. autoclass:: Chain
+   :no-index:
+
+.. autoclass:: Residue
+   :no-index:
+
+.. autoclass:: State
+   :no-index:
+
+.. autoclass:: System
+   :no-index:
 
 Core Modules
------------
+------------
 
 .. automodule:: bagel.chain
    :members:
    :undoc-members:
    :show-inheritance:
+   :no-index:
 
 .. automodule:: bagel.system
    :members:
@@ -60,10 +69,15 @@ Core Modules
    :undoc-members:
    :show-inheritance:
 
-Folding Package
--------------
+Oracle Packages
+---------------
 
-.. automodule:: bagel.folding
+.. automodule:: bagel.oracles.folding
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+.. automodule:: bagel.oracles.embedding
    :members:
    :undoc-members:
    :show-inheritance:

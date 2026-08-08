@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from biotite.sequence.io.fasta import FastaFile
 from biotite.structure import AtomArray
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +30,7 @@ class MonteCarloAnalyzer(Analyzer):
         super().__init__(path)
         self._load_data()
 
-    def _load_data(self):
+    def _load_data(self) -> None:
         # Load optimization and energy data
         self.optimization_df = pd.read_csv(self.path / 'optimization.log')
         self.current_energies_df = pd.read_csv(self.path / 'current' / 'energies.csv')
@@ -90,7 +92,7 @@ class MonteCarloAnalyzer(Analyzer):
             column = f'{state_name}/sequence'
             energies_df[column] = step_series.map(seq_by_step.get)
 
-    def plot_energies(self, weighted: bool = True, use_best: bool = False, ax: plt.Axes = None):
+    def plot_energies(self, weighted: bool = True, use_best: bool = False, ax: Axes | None = None) -> Axes:
         """
         Plot the evolution of system energy together with individual energy terms.
 
@@ -137,9 +139,9 @@ class MonteCarloAnalyzer(Analyzer):
 class SimulatedTemperingAnalyzer(MonteCarloAnalyzer):
     def __init__(self, path: str):
         super().__init__(path)
-        self.acceptance_rates = {}
+        self.acceptance_rates: dict[float, list[float]] = {}
 
-    def plot_acceptance_rate(self):
+    def plot_acceptance_rate(self) -> tuple[Figure, Axes]:
         """
         Plots the cumulative evolution of acceptance rates by temperature.
         """

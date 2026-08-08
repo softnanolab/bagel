@@ -21,10 +21,10 @@ Each script preserves the catalytic and functional residues (plus a buffer zone)
 
 ```bash
 # Run with Modal (recommended)
-python petase.py --use_modal=True --n_steps=100000
+python petase.py --backend=modal --n_steps=100000
 
-# Run locally
-python petase.py --use_modal=False --n_steps=100000
+# Run through a local Apptainer image
+python petase.py --backend=apptainer --n_steps=100000
 ```
 
 ## Data

@@ -38,7 +38,7 @@ def residues_by_pdb_number(residues: list[bg.Residue], pdb_numbers: range) -> li
 
 
 def main(
-    use_modal: bool = True,
+    backend: str = 'modal',
     binder_sequence: str | None = None,
     n_cycles: int = 2000,
     n_steps_low: int = 200,
@@ -90,7 +90,7 @@ def main(
 
     # -- Oracle -------------------------------------------------------------
     esmfold = bg.oracles.ESMFold(
-        use_modal=use_modal,
+        backend=backend,
         config={
             'glycine_linker': GLYCINE_LINKER,
             'position_ids_skip': POSITION_IDS_SKIP,

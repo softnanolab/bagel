@@ -116,7 +116,7 @@ class EnergyTerm(ABC):
             unweighted_energy : float
                 How well the structure satisfies the given criteria. Where possible, this number should be between 0 and 1.
             weighted_energy : float
-        The unweighted energy multiplied by the energy term's weight.
+                The unweighted energy multiplied by the energy term's weight.
         """
         pass
 

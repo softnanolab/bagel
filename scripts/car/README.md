@@ -23,21 +23,19 @@ uv run python scripts/car/bgl_sol_cd20_dimer.py --help
 uv run python scripts/car/lnk_cd20_monomer.py --help
 ```
 
-For local execution, set `--use_modal=False` and point `MODEL_DIR` at a
-location with the ESMFold weights (see the project README for details):
+For local execution, select BoilerRoom's Apptainer backend:
 
 ```bash
-MODEL_DIR=/path/to/models uv run python scripts/car/lnk_cd20_monomer.py \
-  --use_modal=False
+uv run python scripts/car/lnk_cd20_monomer.py --backend=apptainer
 ```
 
 For a minimal smoke run, override the default production-scale tempering
 schedule:
 
 ```bash
-uv run python scripts/car/bgl_sol_cd20_dimer.py --use_modal=True \
+uv run python scripts/car/bgl_sol_cd20_dimer.py --backend=modal \
   --n_cycles=1 --n_steps_low=1 --n_steps_high=1 --log_frequency=1
-uv run python scripts/car/lnk_cd20_monomer.py --use_modal=True \
+uv run python scripts/car/lnk_cd20_monomer.py --backend=modal \
   --n_cycles=1 --n_steps_low=1 --n_steps_high=1 --log_frequency=1
 ```
 

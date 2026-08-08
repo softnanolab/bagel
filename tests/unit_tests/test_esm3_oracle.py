@@ -93,7 +93,7 @@ class TestESM3Oracle:
     def test_post_process_decodes_requested_tracks(self, monkeypatch):
         monkeypatch.setattr(ESM3, '_load', lambda self, config=None: None)
         oracle = ESM3(tracks=['sasa', 'secondary_structure'])
-        oracle.input_chains = [bg.Chain([bg.Residue(name='A', chain_ID='A', index=i) for i in range(2)])]
+        chains = [bg.Chain([bg.Residue(name='A', chain_ID='A', index=i) for i in range(2)])]
 
         n_sasa = _SASA_BIN_MIDPOINTS.shape[0]
         sasa_logits = np.zeros((1, 2, n_sasa))
@@ -110,9 +110,30 @@ class TestESM3Oracle:
         output.sasa_logits = sasa_logits
         output.secondary_structure_logits = ss_logits
 
-        result = oracle._post_process(output)
+        result = oracle._post_process(output, chains)
         assert result.embeddings.shape == (2, 8)
         assert np.allclose(result.sasa, [_SASA_BIN_MIDPOINTS[2], _SASA_BIN_MIDPOINTS[7]])
         assert result.secondary_structure == 'HE'
         assert result.function_logits is None
         assert result.residue_annotation_logits is None
+
+    @pytest.mark.parametrize(
+        ('logits', 'message'),
+        [
+            (np.asarray(1.0), r'sasa_logits must have shape \(1, residues, classes\)'),
+            (np.zeros((2, 4)), r'sasa_logits must have shape \(1, residues, classes\)'),
+            (np.zeros((2, 4, 16)), r'sasa_logits must have shape \(1, residues, classes\)'),
+            (np.full((1, 4, 16), 'invalid'), 'sasa_logits must have a numeric dtype'),
+        ],
+    )
+    def test_post_process_rejects_malformed_track_logits(self, monkeypatch, logits, message):
+        monkeypatch.setattr(ESM3, '_load', lambda self, config=None: None)
+        oracle = ESM3(tracks=['sasa'])
+        chains = [bg.Chain([bg.Residue(name='A', chain_ID='A', index=i) for i in range(4)])]
+
+        class _Output:
+            embeddings = np.zeros((1, 4, 8))
+            sasa_logits = logits
+
+        with pytest.raises(ValueError, match=message):
+            oracle._post_process(_Output(), chains)

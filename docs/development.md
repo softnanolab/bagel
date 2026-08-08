@@ -22,13 +22,15 @@ First, you need to install the development dependencies:
 uv sync --extra dev
 ```
 
-If you are working on the optimization logic, using Modal should be sufficient; however, if you also need to debug individual Oracles locally, we suggest using a GPU and installing the local dependencies:
+BAGEL targets the pinned `boileroom==0.4.1` release from PyPI. The lock file
+records the published distribution metadata for reproducibility.
 
-```bash
-uv sync --extra local
-# or install all extras
-uv sync --all-extras
-```
+BAGEL 0.2 requires Python 3.12. Its oracle API replaces `use_modal` and
+`modal_app_context` with explicit `backend` and optional `device` parameters.
+
+Host-side model dependencies are supplied by BoilerRoom's images. To run an
+oracle locally, install Apptainer on the host and use a suitable GPU; no separate
+Python `local` extra is required.
 
 ## Documentation [Work In Progress]
 
@@ -40,20 +42,18 @@ uv run pydoclint src/bagel/* --style=sphinx
 
 ## Testing
 
-To run the tests, you must specify how to handle Oracles, i.e. whether to run remotely or not.
+To run the tests, you must specify how to handle Oracles, i.e. whether to run remotely or locally.
 
 ```bash
 # Run tests while skipping Oracle execution
 uv run pytest --oracles skip
 
 # Alternative options:
-# --oracles modal   # Use remote execution via Modal
-# --oracles local   # Use local GPU-based execution
+# --oracles modal      # Run oracles remotely via Modal (requires `modal token new`)
+# --oracles apptainer  # Run oracles locally via Apptainer (requires `apptainer` on the host + a GPU)
 ```
 
-When using `--oracles local`, the `MODEL_DIR` environment variable must be set. You can either:
-- Set it in a `.env` file (copy `.env.example` to `.env` and update the path), or
-- Set it as an environment variable. If not set, it will default to an XDG-compliant location (`~/.cache/bagel/models` or `$XDG_CACHE_HOME/bagel/models`).
+Boltz-2 and Chai-1 fixtures currently skip under `--oracles apptainer` until the apptainer path is validated in CI; use `--oracles modal` to exercise them.
 
 ## Commit Checking
 

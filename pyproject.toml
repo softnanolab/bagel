@@ -1,6 +1,6 @@
 [project]
 name = "biobagel"
-version = "0.1.14"
+version = "0.2.0"
 authors = [
   {name = "Jakub Lála", email = "jakublala@gmail.com"},
   {name = "Ayham Al-Saffar", email = "ayham.saffar@gmail.com"},
@@ -12,10 +12,10 @@ license = "MIT"
 license_files = "LICENSE"
 keywords = ["protein", "protein design", "optimization", "monte carlo", "sampling", "energy landscape"]
 
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "biotite>=1.0.1",
-    "boileroom==0.2.2",
+    "boileroom==0.4.1",
     "numpy>=2.2.0",
     "pandas>=2.2.3",
     "pydantic>=2.10.6",
@@ -31,15 +31,11 @@ dev = [
     "pytest-xdist>=3.6.1",
     "pytest-cov>=6.0.0",
     "pytest-repeat>=0.9.4",
-    "python-dotenv>=1.2.1",
     "ruff>=0.8.6",
     "sphinx>=8.1.3",
     "sphinx-rtd-theme>=1.3.0",
     "sphinx-autodoc-typehints>=1.24.1",
     "pre-commit>=3.6.0",
-]
-local = [
-    "transformers>=4.49.0",
 ]
 wandb = [
     "wandb>=0.23.0",
@@ -52,12 +48,11 @@ Issues = "https://github.com/softnanolab/bagel/issues"
 [tool.mypy]
 strict = true
 show_traceback = true
-plugins = "numpy.typing.mypy_plugin"
-files = ["**/src/bagel/*.py"] #selects files checked during mypy call, but does not affect the editor's MyPy linter
+files = ["src/bagel"]
 explicit_package_bases = true #allows giving directories different mypy settings
 
 [[tool.mypy.overrides]]
-module = ["biotite.*", "pytest.*", "pandas.*", "bagel.*", "dotenv", "wandb"] # libraries that don't have type stubs
+module = ["biotite.*", "boileroom.*", "pytest.*", "pandas.*", "bagel.*", "wandb"] # libraries that don't have type stubs
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -66,7 +61,7 @@ ignore_errors = true
 
 [tool.ruff]
 line-length = 120
-include = ["pyproject.toml", "**/src/bagel/*.py", "**/tests/*.py"]
+include = ["pyproject.toml", "src/bagel/**/*.py", "tests/**/*.py"]
 fix = true
 
 [tool.ruff.lint.per-file-ignores]
@@ -86,6 +81,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/bagel"]
+
+[tool.hatch.build.targets.sdist]
+exclude = ["/docs/demo.gif"]
 
 [tool.hatch.metadata]
 allow-direct-references = true
