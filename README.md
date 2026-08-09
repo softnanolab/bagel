@@ -130,6 +130,40 @@ A prototyping, but unscalable alternative is to run BAGEL in Google Colab, havin
 ### Examples
 [Templates](scripts/) and [example applications from the paper](scripts/technical-report/) are included as ready-to-run Python scripts. For a case study on enzyme miniaturization using PLM embeddings, see the [mini-enzymes scripts](scripts/mini-enzymes/).
 
+## Building BAGEL scripts with an AI agent
+
+BAGEL ships an **agent skill**, [`bagel-script-builder`](.claude/skills/bagel-script-builder/), that turns a plain-language design goal — *"design a 30-residue binder to CD20 and sweep 8 seeds on SLURM"* — into runnable, reviewable BAGEL scripts. It is a guided, question-driven workflow: it drafts a script, then **interviews you** to pin down every undefined piece (States, Chains, EnergyTerms, protected residues, optimizer), writes a **verbose, well-commented** script to disk, offers a Modal **smoke test**, and can generate an **execution harness** for parameter sweeps.
+
+The skill is plain Markdown plus reference files and ready-to-use launcher templates, so it is model-agnostic — it works with any capable coding agent, not only Claude.
+
+### With Claude Code
+
+The skill lives in this repo under [`.claude/skills/bagel-script-builder/`](.claude/skills/bagel-script-builder/), so [Claude Code](https://claude.com/claude-code) running in the repo discovers it automatically. Just describe what you want:
+
+> "Use BAGEL to design a binder against `<target>`, focus on residues 40–60, and sweep 5 seeds serially in the background."
+
+Claude runs the interview and writes the scripts into `bagel_designs/<name>/`. To make the skill available in every project, copy it to your personal skills directory:
+
+```bash
+cp -r .claude/skills/bagel-script-builder ~/.claude/skills/
+```
+
+### With any other agent
+
+[`SKILL.md`](.claude/skills/bagel-script-builder/SKILL.md) is a self-contained playbook. With any coding agent (e.g. Cursor, Aider, a Claude API harness, or your own), point it at the skill directory and ask it to follow the workflow:
+
+> "Read `.claude/skills/bagel-script-builder/SKILL.md` and its `references/`, then follow that workflow to build a BAGEL script for `<goal>`."
+
+The agent reads `SKILL.md`, consults the reference files (`api-reference.md`, `patterns.md`, `clarification-checklist.md`, `execution-harness.md`) as needed, and adapts the launcher templates in `assets/`. No Claude-specific features are required.
+
+### What it produces
+
+- A **verbose, commented** design script (a single `main()` exposed via a CLI), saved for review.
+- An optional **smoke test** that runs the whole pipeline for one step on Modal to catch errors early.
+- For sweeps, a **one-command launcher** (`sweep_runner.py` / `submit_cluster.py`) that runs each configuration in its own folder — serially, in the background, on a SLURM/PBS cluster, or in parallel on Modal.
+
+Every generated file begins with a comment noting it was produced with AI assistance, so it is clear the code should be reviewed before use. When running sweeps in parallel on Modal, the skill sets a distinct `MODAL_ENVIRONMENT` per run to avoid the shared-app-name conflict inherent to the default backend.
+
 ## Contributing
 
 For development setup, testing, and contribution guidelines, see [Development Guide](docs/development.md).
