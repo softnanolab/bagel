@@ -62,8 +62,11 @@ them concurrently and they collide — and on a cold machine they also race to c
    avoids a cold-start stampede even within one environment.
 
 If this is more orchestration than the user wants, prefer **serial/background on Modal** (no
-concurrency, no conflict) or **cluster parallelism**, where each job already runs in its own
-process/environment. Reserve high `--max-parallel` on Modal for when per-run environments are set.
+concurrency, no conflict). **Cluster parallelism does not fix this by itself:** separate SLURM/PBS
+jobs are separate OS processes, but they still share the one `"boileroom"` Modal app unless each
+sets its own `MODAL_ENVIRONMENT`. Set a per-run `modal_environment` for concurrent Modal-backed
+cluster jobs too — `submit_cluster.py` then exports it into each job script. Reserve high
+`--max-parallel` on Modal for when per-run environments are set.
 
 *Advanced (true per-instance Modal):* to run each entire minimization as a separate remote Modal
 function, wrap the design call in your own `modal.App` and `.map()` over `SWEEP`. This needs a

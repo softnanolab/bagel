@@ -49,14 +49,14 @@ def main(backend: str = 'modal', binder_length: int = 20,
 
     # 4. Energy terms: global confidence, per-group pLDDT, and the interface (PAE + separation).
     energy_terms = [
-        bg.energies.PTMEnergy(oracle=esmfold, weight=0.2),
-        bg.energies.PLDDTEnergy(oracle=esmfold, residues=residues_epitope, weight=1.0, name='epitope'),
-        bg.energies.PLDDTEnergy(oracle=esmfold, residues=residues_binder, weight=1.0, name='binder'),
+        bg.energies.PTMEnergy(oracle=esmfold, weight=0.2, name='global_ptm'),
+        bg.energies.PLDDTEnergy(oracle=esmfold, residues=residues_epitope, weight=1.0, name='epitope_plddt'),
+        bg.energies.PLDDTEnergy(oracle=esmfold, residues=residues_binder, weight=1.0, name='binder_plddt'),
         bg.energies.PAEEnergy(oracle=esmfold, residues=[residues_epitope, residues_binder],
-                              weight=2.0, name='interface'),          # two groups
+                              weight=2.0, name='interface_pae'),          # two groups
         bg.energies.SeparationEnergy(oracle=esmfold, residues=[residues_epitope, residues_binder],
-                                     weight=1.0, name='interface'),   # two groups
-        bg.energies.HydrophobicEnergy(oracle=esmfold, residues=residues_binder, weight=1.0, name='binder'),
+                                     weight=1.0, name='interface_separation'),   # two groups
+        bg.energies.HydrophobicEnergy(oracle=esmfold, residues=residues_binder, weight=1.0, name='binder_hydrophobic'),
     ]
 
     # 5. State -> System.

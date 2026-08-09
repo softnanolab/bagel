@@ -74,9 +74,18 @@ def main() -> None:
         if not runs:
             sys.exit(f"No sweep entry named {args.only!r}")
 
+    # Cluster jobs run concurrently, so warn if their Modal environments would collide.
+    warning = cfg.parallel_modal_warning(runs)
+    if warning:
+        print(f"WARNING: {warning}")
+
     submit = SUBMIT_CMD[args.scheduler]
     print(f"{'Rendering' if args.dry_run else 'Submitting'} {len(runs)} job(s) to {args.scheduler}")
     for run in runs:
+        # Skip runs already completed by a previous launch (matches sweep_runner.py).
+        if (cfg.RUNS_DIR / run["name"] / "DONE").exists():
+            print(f"  [skip] {run['name']} (already DONE)")
+            continue
         job_path, _ = render(args.scheduler, run)
         if args.dry_run:
             print(f"  rendered {job_path}")

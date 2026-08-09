@@ -45,19 +45,22 @@ def _ensure_modal_env(name: str) -> None:
     subprocess.run(["modal", "environment", "create", name], capture_output=True, text=True)
 
 
-def _prepare(run: dict) -> tuple[pl.Path, list[str], dict]:
+def _prepare(run: dict, *, initialize: bool = True) -> tuple[pl.Path, list[str], dict]:
+    """Build the command + environment for a run. With initialize=False (used by --dry-run)
+    it has no side effects — no directory, no command.txt, no Modal CLI call."""
     run_dir = cfg.RUNS_DIR / run["name"]
-    run_dir.mkdir(parents=True, exist_ok=True)
     cmd = [sys.executable, str(cfg.DESIGN_SCRIPT), *cfg.cli_args_for(run, run_dir)]
     # Per-run environment (e.g. MODAL_ENVIRONMENT to isolate parallel Modal runs).
     extra_env = cfg.env_for(run)
     env = {**os.environ, **extra_env}
-    if extra_env.get("MODAL_ENVIRONMENT"):
-        _ensure_modal_env(extra_env["MODAL_ENVIRONMENT"])
-    (run_dir / "command.txt").write_text(
-        " ".join(f"{k}={v}" for k, v in extra_env.items()) + (" " if extra_env else "")
-        + " ".join(cmd) + "\n"
-    )
+    if initialize:
+        run_dir.mkdir(parents=True, exist_ok=True)
+        if extra_env.get("MODAL_ENVIRONMENT"):
+            _ensure_modal_env(extra_env["MODAL_ENVIRONMENT"])
+        (run_dir / "command.txt").write_text(
+            " ".join(f"{k}={v}" for k, v in extra_env.items()) + (" " if extra_env else "")
+            + " ".join(cmd) + "\n"
+        )
     return run_dir, cmd, env
 
 
@@ -121,10 +124,12 @@ def run_parallel(runs: list[dict], max_parallel: int) -> int:
     return failures
 
 
-def relaunch_background() -> None:
+def relaunch_background(only: str | None = None) -> None:
     out = cfg.RUNS_DIR / "sweep_runner.out"
     cfg.RUNS_DIR.mkdir(parents=True, exist_ok=True)
     cmd = [sys.executable, os.path.abspath(__file__), "--mode", "serial"]
+    if only:  # preserve the user's --only selection in the detached run
+        cmd.extend(["--only", only])
     with open(out, "w") as fh:
         proc = subprocess.Popen(
             cmd, stdout=fh, stderr=subprocess.STDOUT,
@@ -141,6 +146,8 @@ def main() -> None:
     ap.add_argument("--only", default=None, help="run only the sweep entry with this name")
     ap.add_argument("--dry-run", action="store_true", help="print commands, run nothing")
     args = ap.parse_args()
+    if args.mode == "parallel" and args.max_parallel < 1:
+        ap.error("--max-parallel must be at least 1")
 
     runs = cfg.SWEEP
     if args.only:
@@ -150,21 +157,18 @@ def main() -> None:
 
     if args.dry_run:
         for r in runs:
-            _, cmd, _ = _prepare(r)
+            _, cmd, _ = _prepare(r, initialize=False)
             print(" ".join(cmd))
         return
 
     if args.mode == "background":
-        relaunch_background()
+        relaunch_background(args.only)
         return
 
-    if args.mode == "parallel" and any(
-        not r.get("modal_environment") and str(r["args"].get("backend", "")) == "modal"
-        for r in runs
-    ):
-        print("WARNING: parallel Modal runs share the fixed 'boileroom' app name and may "
-              "collide. Set a per-run modal_environment in sweep_config.py, or warm up one "
-              "run first. See the skill's execution-harness note.")
+    if args.mode == "parallel":
+        warning = cfg.parallel_modal_warning(runs)
+        if warning:
+            print(f"WARNING: {warning}")
 
     print(f"Sweep: {len(runs)} run(s), mode={args.mode}")
     failures = run_serial(runs) if args.mode == "serial" else run_parallel(runs, args.max_parallel)

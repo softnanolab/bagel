@@ -85,3 +85,28 @@ def env_for(run: dict) -> dict:
     if run.get("modal_environment"):
         env["MODAL_ENVIRONMENT"] = str(run["modal_environment"])
     return env
+
+
+# Design scripts default `backend` to "modal" when the flag is omitted, so an unset backend
+# is treated as Modal here.
+DEFAULT_BACKEND = "modal"
+
+
+def parallel_modal_warning(runs: list[dict]) -> str | None:
+    """Return a warning if these runs would collide on Modal when run concurrently, else None.
+
+    Concurrent backend='modal' runs share the fixed "boileroom" app name unless each has its
+    own Modal environment. This flags the misconfiguration (missing or duplicate environments)
+    for the launchers to surface; a single run or serial execution is always fine.
+    """
+    modal_runs = [r for r in runs if str(r["args"].get("backend", DEFAULT_BACKEND)) == "modal"]
+    if len(modal_runs) < 2:
+        return None
+    envs = [r.get("modal_environment") for r in modal_runs]
+    if any(not e for e in envs) or len(set(envs)) != len(envs):
+        return (
+            "Concurrent Modal runs share the fixed 'boileroom' app name and may collide. "
+            "Give each a unique, non-empty modal_environment in sweep_config.py (and warm up "
+            "one run first). See the skill's execution-harness note."
+        )
+    return None
