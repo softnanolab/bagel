@@ -65,8 +65,12 @@ If this is more orchestration than the user wants, prefer **serial/background on
 concurrency, no conflict). **Cluster parallelism does not fix this by itself:** separate SLURM/PBS
 jobs are separate OS processes, but they still share the one `"boileroom"` Modal app unless each
 sets its own `MODAL_ENVIRONMENT`. Set a per-run `modal_environment` for concurrent Modal-backed
-cluster jobs too — `submit_cluster.py` then exports it into each job script. Reserve high
-`--max-parallel` on Modal for when per-run environments are set.
+cluster jobs too — `submit_cluster.py` then exports it into each job script. For local
+`--mode parallel` with `--max-parallel > 1`, `sweep_runner.py` **enforces** this: it refuses
+to start unless each concurrent Modal run has a unique, non-empty `modal_environment`
+(`--max-parallel 1` or `--mode serial` streams them one at a time and is exempt).
+`submit_cluster.py` only warns, since a scheduler generally does not run the jobs against
+Modal concurrently.
 
 *Advanced (true per-instance Modal):* to run each entire minimization as a separate remote Modal
 function, wrap the design call in your own `modal.App` and `.map()` over `SWEEP`. This needs a

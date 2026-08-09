@@ -23,7 +23,9 @@ Modes:
   serial     — run each design to completion, then the next. Simple and cheap on local CPU.
   parallel   — run up to --max-parallel designs at once. With backend='modal' each design
                offloads folding to its own Modal GPU instances, so this gives real parallel
-               Modal usage (this is the "parallel on Modal" option).
+               Modal usage (this is the "parallel on Modal" option). Concurrent Modal runs
+               must each set a unique modal_environment; the launcher refuses to start
+               otherwise (use --max-parallel 1 or --mode serial to stream them instead).
   background — re-launch this script detached (nohup-style) in serial mode and return
                immediately; a single background process walks the whole sweep, submitting the
                next run only when the previous finishes. Progress is in sweep_runner.out.
@@ -165,10 +167,17 @@ def main() -> None:
         relaunch_background(args.only)
         return
 
-    if args.mode == "parallel":
-        warning = cfg.parallel_modal_warning(runs)
-        if warning:
-            print(f"WARNING: {warning}")
+    if args.mode == "parallel" and args.max_parallel > 1:
+        # Concurrent Modal runs collide on the fixed "boileroom" app name, so require a
+        # unique per-run environment before launching. (--max-parallel 1 streams one run
+        # at a time and can't collide, so it's exempt.)
+        problem = cfg.parallel_modal_warning(runs)
+        if problem:
+            sys.exit(
+                f"ERROR: {problem}\n"
+                "Fix the environments, or use --max-parallel 1 (or --mode serial) to stream "
+                "the sweep one run at a time."
+            )
 
     print(f"Sweep: {len(runs)} run(s), mode={args.mode}")
     failures = run_serial(runs) if args.mode == "serial" else run_parallel(runs, args.max_parallel)
