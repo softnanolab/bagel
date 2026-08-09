@@ -153,3 +153,23 @@ max_theoretical_sasa_for_residues = {
     'ALA': 129.0 * angstrom**2,  # Alanine
     'GLY': 104.0 * angstrom**2,  # Glycine
 }
+
+# Van der Waals radii used to build molecular surfaces (e.g. in ShapeComplementarityEnergy).
+# These are *united-atom* radii, from Chothia (1975), https://doi.org/10.1038/254304a0: each heavy atom's radius is
+# enlarged to absorb the hydrogens bonded to it. That is the right choice here because the structures returned by
+# the folding oracles contain no hydrogens, so genuine hydrogen-free radii (e.g. the Bondi set, where carbon is
+# 1.70) would systematically undersize every atom and leave an artificial gap between contacting surfaces.
+# Keys are upper-case element symbols as found in the `element` annotation of a biotite AtomArray.
+vdw_radii = {
+    'H': 1.00 * angstrom,
+    'C': 1.87 * angstrom,
+    'N': 1.65 * angstrom,
+    'O': 1.40 * angstrom,
+    'F': 1.47 * angstrom,
+    'P': 1.90 * angstrom,
+    'S': 1.85 * angstrom,
+    'SE': 1.90 * angstrom,
+}
+
+# Fallback radius used for elements missing from `vdw_radii` (carbon, by far the most common protein atom).
+default_vdw_radius = 1.87 * angstrom

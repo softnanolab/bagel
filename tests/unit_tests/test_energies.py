@@ -4,8 +4,10 @@ from bagel.oracles import OraclesResultDict
 from biotite.structure import AtomArray, sasa, annotate_sse, get_residue_count, concatenate, Atom, array
 from biotite.structure.io import load_structure
 import numpy as np
+import pandas as pd
 from unittest.mock import Mock, patch
 import copy
+import inspect
 import pytest
 
 
@@ -1193,3 +1195,374 @@ def test_HydropathyEnergy_empty_structure_returns_zero(
 
     assert unweighted_energy == 0.0, 'unweighted energy should be 0 for empty structure'
     assert weighted_energy == 0.0, 'weighted energy should be 0 for empty structure'
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# ShapeComplementarityEnergy
+# ---------------------------------------------------------------------------------------------------------------
+
+CARBON_CONTACT = 2 * 1.87  # separation of two carbon nuclei whose united-atom vdW surfaces just touch
+
+
+def build_plate(
+    n_side: int,
+    height: float,
+    chain_id: str,
+    res_name: str = 'LEU',
+    spacing: float = 2.5,
+    corrugation: float = 0.0,
+) -> tuple[list[Atom], list[bg.Residue]]:
+    """Builds a square slab of atoms in the xy plane, one atom per residue, optionally corrugated in z."""
+    atoms, residues = [], []
+    letter = {v: k for k, v in bg.constants.aa_dict.items()}[res_name]
+    for index in range(n_side * n_side):
+        i, j = divmod(index, n_side)
+        z = height + corrugation * np.sin(0.9 * i) * np.cos(0.9 * j)
+        atoms.append(
+            Atom(
+                coord=[i * spacing, j * spacing, z],
+                chain_id=chain_id,
+                res_id=index,
+                res_name=res_name,
+                element='C',
+                atom_name='CA',
+            )
+        )
+        residues.append(bg.Residue(name=letter, chain_ID=chain_id, index=index))
+    return atoms, residues
+
+
+def facing_plates(
+    separation: float, n_side: int = 8, corrugation: float = 0.0, mirror: bool = False, res_name: str = 'LEU'
+) -> tuple[AtomArray, tuple[list[bg.Residue], list[bg.Residue]]]:
+    """Builds two slabs facing each other across `separation`, optionally with matching or opposed corrugation."""
+    bottom_atoms, bottom_residues = build_plate(n_side, 0.0, 'A', res_name, corrugation=corrugation)
+    top_atoms, top_residues = build_plate(
+        n_side, separation, 'B', res_name, corrugation=-corrugation if mirror else corrugation
+    )
+    return array(bottom_atoms + top_atoms), (bottom_residues, top_residues)
+
+
+def shape_complementarity(
+    oracle: bg.oracles.folding.ESMFold,
+    structure: AtomArray,
+    groups: tuple[list[bg.Residue], list[bg.Residue]],
+    **kwargs,
+) -> float:
+    """Returns minus the energy for the given structure and residue groups, so that a better fit reads higher."""
+    energy = bg.energies.ShapeComplementarityEnergy(oracle=oracle, residues=groups, **kwargs)
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = structure
+    unweighted_energy, _ = energy.compute(oracles_result=OraclesResultDict({oracle: mock_folding_result}))
+    return -unweighted_energy
+
+
+def test_fibonacci_sphere_returns_evenly_spread_unit_vectors() -> None:
+    points = bg.energies._fibonacci_sphere(500)
+    assert points.shape == (500, 3)
+    assert np.allclose(np.linalg.norm(points, axis=1), 1.0), 'points must lie on the unit sphere'
+    assert np.allclose(points.mean(axis=0), 0.0, atol=1e-2), 'points must be spread evenly over the whole sphere'
+    assert np.array_equal(points, bg.energies._fibonacci_sphere(500)), 'point generation must be deterministic'
+
+
+def test_statistic_handles_both_modes_and_empty_input() -> None:
+    values = np.array([0.0, 1.0, 2.0, 30.0])
+    assert np.isclose(bg.energies._statistic(values, 'mean'), 8.25)
+    # the median must ignore the outlier that drags the mean
+    assert np.isclose(bg.energies._statistic(values, 'median'), 1.5)
+    assert bg.energies._statistic(np.zeros(0), 'mean') == 0.0, 'empty input must not produce a nan'
+    assert bg.energies._statistic(np.zeros(0), 'median') == 0.0, 'empty input must not produce a nan'
+
+
+def test_molecular_surface_dots_of_an_isolated_atom_lie_on_its_vdw_sphere() -> None:
+    coords = np.zeros((1, 3))
+    radii = np.array([1.87])
+    unit_sphere = bg.energies._fibonacci_sphere(100)
+    dots, normals, parents = bg.energies._molecular_surface_dots(coords, radii, 1.4, unit_sphere, np.array([True]))
+    assert len(dots) == 100, 'nothing can occlude a lone atom, so every dot must survive'
+    assert np.allclose(np.linalg.norm(dots, axis=1), 1.87), 'dots must sit on the vdW sphere, not the probe sphere'
+    assert np.allclose(np.linalg.norm(normals, axis=1), 1.0), 'normals must be unit vectors'
+    assert np.all(parents == 0)
+
+
+def test_molecular_surface_dots_removes_crevices_a_probe_cannot_enter() -> None:
+    # two atoms far enough apart not to overlap, but too close for a 1.4 A probe to reach between them
+    coords = np.array([[0.0, 0.0, 0.0], [4.0, 0.0, 0.0]])
+    radii = np.array([1.87, 1.87])
+    unit_sphere = bg.energies._fibonacci_sphere(400)
+    seed = np.array([True, True])
+    with_probe, _, _ = bg.energies._molecular_surface_dots(coords, radii, 1.4, unit_sphere, seed)
+    without_probe, _, _ = bg.energies._molecular_surface_dots(coords, radii, 0.0, unit_sphere, seed)
+    assert len(with_probe) < len(without_probe), 'the probe must exclude the crevice between the two atoms'
+    # without a probe the surfaces reach right up to where the two atoms almost meet; with one they must not
+    midplane_gap_with_probe = np.abs(with_probe[:, 0] - 2.0).min()
+    midplane_gap_without_probe = np.abs(without_probe[:, 0] - 2.0).min()
+    assert midplane_gap_with_probe > midplane_gap_without_probe + 0.5, (
+        'the probe should hold the surface well back from the crevice between the two atoms'
+    )
+
+
+def test_buried_by_partner_only_flags_dots_the_partner_shields() -> None:
+    dots = np.array([[1.87, 0.0, 0.0], [-1.87, 0.0, 0.0]])  # one dot facing the partner, one facing away
+    normals = np.array([[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0]])
+    partner_coords = np.array([[CARBON_CONTACT, 0.0, 0.0]])
+    buried = bg.energies._buried_by_partner(dots, normals, partner_coords, np.array([1.87]), 1.4)
+    assert buried[0] and not buried[1], 'only the dot pressed against the partner is buried'
+    assert not bg.energies._buried_by_partner(dots, normals, np.zeros((0, 3)), np.zeros(0), 1.4).any()
+
+
+def test_ShapeComplementarityEnergy_rewards_well_fitting_surfaces(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+) -> None:
+    structure, groups = facing_plates(CARBON_CONTACT)
+    touching = shape_complementarity(fake_esmfold, structure, groups, scaling='intensive')
+
+    structure, groups = facing_plates(CARBON_CONTACT + 1.5)
+    separated = shape_complementarity(fake_esmfold, structure, groups, scaling='intensive')
+
+    assert touching > 0.6, f'two flat surfaces in contact should be highly complementary, found {touching}'
+    assert touching > separated, 'pulling the surfaces apart must reduce complementarity'
+    assert separated > 0.0, 'surfaces 1.5 A apart still partly face each other'
+
+
+def test_ShapeComplementarityEnergy_prefers_interlocking_to_clashing_corrugation(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+) -> None:
+    # same corrugation on both slabs means every bump sits in the opposing groove: a lock and key fit
+    structure, groups = facing_plates(CARBON_CONTACT, corrugation=1.2, mirror=False)
+    interlocking = shape_complementarity(fake_esmfold, structure, groups)
+    # mirrored corrugation puts bump against bump instead
+    structure, groups = facing_plates(CARBON_CONTACT, corrugation=1.2, mirror=True)
+    clashing = shape_complementarity(fake_esmfold, structure, groups)
+    assert interlocking > clashing, f'interlocking ({interlocking}) should beat clashing ({clashing}) surfaces'
+
+
+def test_ShapeComplementarityEnergy_is_zero_when_the_groups_do_not_touch(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+) -> None:
+    structure, groups = facing_plates(40.0)
+    assert shape_complementarity(fake_esmfold, structure, groups) == 0.0, 'no interface means no complementarity'
+
+
+def test_ShapeComplementarityEnergy_is_bounded_symmetric_and_deterministic(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+) -> None:
+    structure, (group_1, group_2) = facing_plates(CARBON_CONTACT, corrugation=0.8)
+    value = shape_complementarity(fake_esmfold, structure, (group_1, group_2), scaling='intensive')
+    assert -1.0 <= value <= 1.0, 'the intensive statistic is a weighted mean of quantities bounded by 1'
+    assert np.isclose(value, shape_complementarity(fake_esmfold, structure, (group_2, group_1), scaling='intensive')), (
+        'the energy must not depend on which group is passed first'
+    )
+    assert value == shape_complementarity(fake_esmfold, structure, (group_1, group_2), scaling='intensive'), (
+        're-evaluating the same structure must give a bit-identical energy'
+    )
+
+
+def test_ShapeComplementarityEnergy_applies_its_weight(fake_esmfold: bg.oracles.folding.ESMFold) -> None:
+    structure, groups = facing_plates(CARBON_CONTACT)
+    energy = bg.energies.ShapeComplementarityEnergy(oracle=fake_esmfold, residues=groups, weight=3.0)
+    assert energy.scaling == 'extensive', 'the default scaling should be the one suitable for an energy'
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = structure
+    unweighted_energy, weighted_energy = energy.compute(OraclesResultDict({fake_esmfold: mock_folding_result}))
+    assert unweighted_energy < 0, 'a good fit must lower the energy'
+    assert np.isclose(weighted_energy, unweighted_energy * 3.0), 'weighted energy is incorrect'
+
+
+@pytest.mark.parametrize('scaling', ['extensive', 'intensive'])
+def test_ShapeComplementarityEnergy_is_blind_to_residue_chemistry(
+    fake_esmfold: bg.oracles.folding.ESMFold, scaling: str
+) -> None:
+    # The term is purely geometric: identical geometry must give an identical energy whatever the residues are.
+    # This is the property that the removed hydrophobicity weighting used to break, and it is worth pinning.
+    leucine_structure, leucine_groups = facing_plates(CARBON_CONTACT, corrugation=0.8, res_name='LEU')
+    arginine_structure, arginine_groups = facing_plates(CARBON_CONTACT, corrugation=0.8, res_name='ARG')
+    leucine = shape_complementarity(fake_esmfold, leucine_structure, leucine_groups, scaling=scaling)
+    arginine = shape_complementarity(fake_esmfold, arginine_structure, arginine_groups, scaling=scaling)
+    assert np.isclose(leucine, arginine), (
+        'an all-leucine and an all-arginine interface of the same shape must score the same'
+    )
+
+
+def test_ShapeComplementarityEnergy_takes_no_chemistry_arguments(fake_esmfold: bg.oracles.folding.ESMFold) -> None:
+    # Guards against the hydrophobicity weighting being reintroduced without a deliberate decision.
+    _, groups = facing_plates(CARBON_CONTACT, n_side=2)
+    parameters = inspect.signature(bg.energies.ShapeComplementarityEnergy.__init__).parameters
+    assert 'hydrophobic_weight' not in parameters
+    assert 'hydrophobicity' not in parameters
+    with pytest.raises(TypeError):
+        bg.energies.ShapeComplementarityEnergy(oracle=fake_esmfold, residues=groups, hydrophobic_weight=4.0)  # type: ignore[call-arg]
+
+
+def test_ShapeComplementarityEnergy_rejects_invalid_arguments(fake_esmfold: bg.oracles.folding.ESMFold) -> None:
+    _, groups = facing_plates(CARBON_CONTACT, n_side=2)
+    valid = dict(oracle=fake_esmfold, residues=groups)
+    with pytest.raises(AssertionError):
+        bg.energies.ShapeComplementarityEnergy(oracle=fake_esmfold, residues=([], groups[1]))
+    with pytest.raises(AssertionError):
+        bg.energies.ShapeComplementarityEnergy(**valid, interface_cutoff=0.0)
+    with pytest.raises(AssertionError):
+        bg.energies.ShapeComplementarityEnergy(**valid, distance_decay=-1.0)
+    with pytest.raises(AssertionError):
+        bg.energies.ShapeComplementarityEnergy(**valid, n_surface_points=0)
+    with pytest.raises(AssertionError):
+        bg.energies.ShapeComplementarityEnergy(**valid, probe_radius=-0.1)
+    with pytest.raises(AssertionError):
+        bg.energies.ShapeComplementarityEnergy(**valid, statistic='wrong')  # type: ignore[arg-type]
+
+
+def test_ShapeComplementarityEnergy_warns_when_the_two_groups_overlap(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+) -> None:
+    _, (group_1, group_2) = facing_plates(CARBON_CONTACT, n_side=2)
+    with pytest.warns(UserWarning, match='appear in both groups'):
+        bg.energies.ShapeComplementarityEnergy(oracle=fake_esmfold, residues=(group_1, group_1 + group_2))
+
+
+@pytest.mark.parametrize('scaling', ['extensive', 'intensive'])
+def test_ShapeComplementarityEnergy_ranks_a_real_interface_above_a_decoy(
+    fake_esmfold: bg.oracles.folding.ESMFold, formolase_structure: AtomArray, scaling: str
+) -> None:
+    chain_ids = list(pd.unique(formolase_structure.chain_id))[:2]
+    groups = []
+    for chain_id in chain_ids:
+        sequence = bg.oracles.folding.utils.sequence_from_atomarray(
+            formolase_structure[formolase_structure.chain_id == chain_id]
+        )
+        groups.append([bg.Residue(name=aa, chain_ID=chain_id, index=i) for i, aa in enumerate(sequence)])
+    native_groups = (groups[0], groups[1])
+
+    native = shape_complementarity(fake_esmfold, formolase_structure, native_groups, scaling=scaling)
+    # slide one subunit sideways: the same residues are still in contact, but they no longer interlock
+    decoy_structure = copy.deepcopy(formolase_structure)
+    decoy_structure.coord[decoy_structure.chain_id == chain_ids[1]] += np.array([3.0, 0.0, 0.0])
+    decoy = shape_complementarity(fake_esmfold, decoy_structure, native_groups, scaling=scaling)
+
+    assert 0.3 < native < 1.0, f'a real protein-protein interface should score well, found {native}'
+    assert native > decoy + 0.1, f'the native packing ({native}) should clearly beat the decoy ({decoy})'
+
+
+def test_ShapeComplementarityEnergy_is_short_ranged(fake_esmfold: bg.oracles.folding.ESMFold) -> None:
+    # a dot only counts while the partner shields it from the solvent, so the term must die once a probe fits
+    # between the two surfaces, i.e. beyond about twice the probe radius of clearance
+    probe_radius = bg.constants.probe_radius_water
+    in_range = shape_complementarity(fake_esmfold, *facing_plates(CARBON_CONTACT + 1.5 * probe_radius))
+    out_of_range = shape_complementarity(fake_esmfold, *facing_plates(CARBON_CONTACT + 2.5 * probe_radius))
+    assert in_range > 0.0, 'surfaces closer together than two probe radii must still see each other'
+    assert out_of_range == 0.0, 'once a solvent molecule fits between the surfaces the energy must vanish exactly'
+
+
+def test_ShapeComplementarityEnergy_intensive_scaling_grows_with_size_but_saturates(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+) -> None:
+    # The statistic is a per-dot average, so it is not extensive. It still rises with contact area through a
+    # perimeter effect - a small patch is dominated by its poorly facing rim - but the rise must flatten off,
+    # unlike a buried-area term which would keep growing in proportion to the number of residues.
+    scores = [
+        shape_complementarity(fake_esmfold, *facing_plates(CARBON_CONTACT, n_side=n), scaling='intensive')
+        for n in (3, 6, 12)
+    ]
+    small, medium, large = scores
+    assert small < medium < large, 'a larger contact patch is less dominated by its rim and should score higher'
+    assert (large - medium) < (medium - small), 'the gain from extra interface area must saturate, not stay linear'
+    assert large < 4 * small, 'the statistic is an average, so it must not scale with the number of residues'
+
+
+def build_ragged_interface() -> tuple[
+    AtomArray, tuple[list[bg.Residue], list[bg.Residue]], tuple[list[bg.Residue], list[bg.Residue]]
+]:
+    """Builds an interface whose first half packs tightly and whose second half is held 1.5 A too far apart."""
+    n_side = 8
+    atoms, group_1, group_2, tight_1, tight_2 = [], [], [], [], []
+    for chain_id, base_height in (('A', 0.0), ('B', CARBON_CONTACT)):
+        for index in range(n_side * n_side):
+            i, j = divmod(index, n_side)
+            tightly_packed = i < n_side // 2
+            height = base_height if tightly_packed or chain_id == 'A' else base_height + 1.5
+            atoms.append(
+                Atom(
+                    coord=[i * 2.5, j * 2.5, height],
+                    chain_id=chain_id,
+                    res_id=index,
+                    res_name='LEU',
+                    element='C',
+                    atom_name='CA',
+                )
+            )
+            residue = bg.Residue(name='L', chain_ID=chain_id, index=index)
+            group = group_1 if chain_id == 'A' else group_2
+            group.append(residue)
+            if tightly_packed:
+                (tight_1 if chain_id == 'A' else tight_2).append(residue)
+
+    return array(atoms), (group_1, group_2), (tight_1, tight_2)
+
+
+def test_ShapeComplementarityEnergy_extensive_scaling_penalises_shedding_a_badly_packed_region(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+) -> None:
+    # The whole point of integrating rather than averaging: dropping part of the interface must cost energy, even
+    # if the part dropped was the badly packed part. Otherwise a design can "improve" by shedding bad contacts.
+    structure, whole_groups, tight_groups = build_ragged_interface()
+    whole = shape_complementarity(fake_esmfold, structure, whole_groups, scaling='extensive')
+    trimmed = shape_complementarity(fake_esmfold, structure, tight_groups, scaling='extensive')
+    assert whole > trimmed > 0, (
+        f'losing the loose half must cost energy under extensive scaling, but the score went {whole} -> {trimmed}'
+    )
+
+
+def test_ShapeComplementarityEnergy_intensive_scaling_rewards_shedding_a_badly_packed_region(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+) -> None:
+    # Documents the pathology that motivates the extensive default, and guards the docstring warning about it.
+    structure, whole_groups, tight_groups = build_ragged_interface()
+    whole = shape_complementarity(fake_esmfold, structure, whole_groups, scaling='intensive')
+    trimmed = shape_complementarity(fake_esmfold, structure, tight_groups, scaling='intensive')
+    assert trimmed > whole, (
+        f'averaging should reward dropping the loose half ({whole} -> {trimmed}); if this ever fails the docstring '
+        f'warning about intensive scaling needs revisiting'
+    )
+
+
+def test_ShapeComplementarityEnergy_is_extensive_in_the_contact_area(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+) -> None:
+    # An energy should be linear in the amount of interface, up to a perimeter correction. Fit E = a n^2 + b n
+    # against square patches of side n and check the bulk term dominates and the model is accurate.
+    sides = np.array([4, 6, 8, 10, 12, 14], dtype=float)
+    values = np.array(
+        [
+            shape_complementarity(fake_esmfold, *facing_plates(CARBON_CONTACT, n_side=int(n)), scaling='extensive')
+            for n in sides
+        ]
+    )
+    design = np.stack([sides**2, sides], axis=1)
+    (bulk, perimeter), *_ = np.linalg.lstsq(design, values, rcond=None)
+    predicted = design @ np.array([bulk, perimeter])
+
+    assert np.all(values > 0), 'a well packed interface must give a favourable (negative) energy at every size'
+    assert np.max(np.abs(predicted - values) / values) < 0.05, 'area plus perimeter should describe the energy well'
+    assert bulk > 0, 'the bulk term must reward interface area'
+    # the perimeter correction must be a correction, not the leading behaviour, for a large patch
+    assert abs(perimeter * sides[-1]) < 0.25 * abs(bulk * sides[-1] ** 2)
+    # doubling the area roughly doubles the energy, which an intensive statistic could never do
+    small = shape_complementarity(fake_esmfold, *facing_plates(CARBON_CONTACT, n_side=8), scaling='extensive')
+    large = shape_complementarity(fake_esmfold, *facing_plates(CARBON_CONTACT, n_side=16), scaling='extensive')
+    assert 3.4 < large / small < 4.6, (
+        f'four times the area should give roughly four times the energy, got {large / small}'
+    )
+
+
+def test_ShapeComplementarityEnergy_extensive_scaling_is_still_zero_out_of_contact(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+) -> None:
+    apart = shape_complementarity(fake_esmfold, *facing_plates(40.0), scaling='extensive')
+    assert apart == 0.0, 'integrating over an empty interface must give exactly zero, not a nan'
+
+
+def test_ShapeComplementarityEnergy_rejects_invalid_scaling(fake_esmfold: bg.oracles.folding.ESMFold) -> None:
+    _, groups = facing_plates(CARBON_CONTACT, n_side=2)
+    with pytest.raises(AssertionError):
+        bg.energies.ShapeComplementarityEnergy(oracle=fake_esmfold, residues=groups, scaling='wrong')  # type: ignore[arg-type]
+    with pytest.raises(AssertionError):
+        bg.energies.ShapeComplementarityEnergy(oracle=fake_esmfold, residues=groups, area_scale=0.0)
