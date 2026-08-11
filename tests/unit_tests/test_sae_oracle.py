@@ -18,6 +18,8 @@ class _FakeSAEOutput:
     features: np.ndarray | None = None
     layer: int = 27
     sae_model: str = 'test/sae'
+    chain_index: np.ndarray | None = None
+    residue_index: np.ndarray | None = None
 
 
 class _FakeBoilerSAE:
@@ -101,3 +103,25 @@ class TestSAEOracle:
         chains = [bg.Chain([bg.Residue(name='A', chain_ID='A', index=0)])]
         with pytest.raises(ValueError, match='num_features'):
             oracle.embed(chains)
+
+    def test_embed_persists_unpadded_chain_and_residue_index(self):
+        pooled = np.ones((1, 4), dtype=np.float64)
+        # boileroom returns (1, residues) padded with -1; two chains of 3 and 2.
+        chain_index = np.array([[0, 0, 0, 1, 1, -1]], dtype=np.int64)
+        residue_index = np.array([[0, 1, 2, 0, 1, -1]], dtype=np.int64)
+        oracle = _make_oracle(
+            _FakeSAEOutput(pooled_features=pooled, chain_index=chain_index, residue_index=residue_index)
+        )
+        chain_a = bg.Chain([bg.Residue(name='A', chain_ID='A', index=i) for i in range(3)])
+        chain_b = bg.Chain([bg.Residue(name='G', chain_ID='B', index=i) for i in range(2)])
+        result = oracle.embed([chain_a, chain_b])
+        np.testing.assert_array_equal(result.chain_index, [0, 0, 0, 1, 1])
+        np.testing.assert_array_equal(result.residue_index, [0, 1, 2, 0, 1])
+
+    def test_embed_indices_none_when_absent(self):
+        pooled = np.ones((1, 4), dtype=np.float64)
+        oracle = _make_oracle(_FakeSAEOutput(pooled_features=pooled))
+        chains = [bg.Chain([bg.Residue(name='A', chain_ID='A', index=i) for i in range(3)])]
+        result = oracle.embed(chains)
+        assert result.chain_index is None
+        assert result.residue_index is None

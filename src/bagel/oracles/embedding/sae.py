@@ -47,6 +47,13 @@ class SAEResult(EmbeddingResult):
     features: npt.NDArray[np.float64]
     layer: int = -1
     sae_model: str = ""
+    # Per-residue identity of every embedding/activation row, as reported by
+    # BoilerRoom: ``chain_index`` is the 0-based chain ordinal (in input order) and
+    # ``residue_index`` is the 0-based index of the residue within its chain. These
+    # let residue-selective terms (e.g. ResidueSAEnergy) cross-check the row->residue
+    # mapping they reconstruct from ``input_chains``.
+    chain_index: npt.NDArray[np.int_] | None = None
+    residue_index: npt.NDArray[np.int_] | None = None
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -140,10 +147,35 @@ class SAE(EmbeddingOracle):
             per_residue = np.asarray(per_residue, dtype=np.float64)
             # Drop the leading batch axis for the single sample.
             embeddings = per_residue[0] if per_residue.ndim == 3 else per_residue
+        chain_index = self._single_sample_indices(getattr(output, 'chain_index', None))
+        residue_index = self._single_sample_indices(getattr(output, 'residue_index', None))
         return self.result_class(
             input_chains=chains,
             embeddings=embeddings,
             features=features,
             layer=int(getattr(output, 'layer', -1)),
             sae_model=str(getattr(output, 'sae_model', '')),
+            chain_index=chain_index,
+            residue_index=residue_index,
         )
+
+    @staticmethod
+    def _single_sample_indices(values: Any) -> npt.NDArray[np.int_] | None:
+        """Extract a 1-D per-residue index array for BAGEL's single-sample batch.
+
+        BoilerRoom returns ``chain_index`` / ``residue_index`` as ``(1, residues)``
+        (padded with ``-1``) or ``(residues,)``. Returns the unpadded 1-D array, or
+        ``None`` if the field is absent.
+        """
+        if values is None:
+            return None
+        arr = np.asarray(values)
+        if arr.ndim == 2:
+            if arr.shape[0] != 1:
+                raise ValueError(
+                    f'SAE chain/residue index must have shape (1, residues); got {arr.shape}. '
+                    'BAGEL does not support embedding batches.'
+                )
+            arr = arr[0]
+        arr = np.asarray(arr, dtype=int)
+        return arr[arr != -1]

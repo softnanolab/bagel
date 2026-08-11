@@ -193,6 +193,59 @@ class EnergyTerm(ABC):
             atom_mask[chain_mask] = np.isin(chain_res_ids, chain_res_ids_in_group)
         return atom_mask
 
+    def get_embedding_residue_mask(
+        self,
+        input_chains: list[Chain],
+        residue_group_index: int,
+        chain_index: npt.NDArray[np.int_] | None = None,
+        residue_index: npt.NDArray[np.int_] | None = None,
+    ) -> npt.NDArray[np.bool_]:
+        """Boolean mask over per-residue embedding rows for a stored residue group.
+
+        Per-residue embeddings follow the input order: chains in ``input_chains``
+        order, residues in each chain's ``0..len-1`` order. Each row's identity
+        ``(chain_ID, index)`` is reconstructed from ``input_chains`` and matched
+        against the term's residue group.
+
+        If ``chain_index`` / ``residue_index`` (as reported by the oracle) are
+        provided, they are used as a redundant cross-check: ``chain_index`` is the
+        0-based chain ordinal mapped back to its ``chain_ID`` via ``input_chains``,
+        and both must agree with the reconstruction — otherwise a ``ValueError`` is
+        raised, catching any row/residue misalignment.
+        """
+        chain_ids_in_order = [chain.chain_ID for chain in input_chains]
+        row_chain_ids = np.array([res.chain_ID for chain in input_chains for res in chain.residues])
+        row_res_indices = np.array(
+            [res.index for chain in input_chains for res in chain.residues], dtype=int
+        )
+
+        if chain_index is not None and residue_index is not None:
+            reported_chain = np.asarray(chain_index, dtype=int)
+            reported_res = np.asarray(residue_index, dtype=int)
+            n_rows = row_chain_ids.shape[0]
+            if reported_chain.shape[0] != n_rows or reported_res.shape[0] != n_rows:
+                raise ValueError(
+                    'Oracle chain/residue index length does not match the number of residues in input_chains '
+                    f'({reported_chain.shape[0]} / {reported_res.shape[0]} vs {n_rows}).'
+                )
+            if np.any(reported_chain < 0) or np.any(reported_chain >= len(chain_ids_in_order)):
+                raise ValueError('Oracle chain_index refers to a chain ordinal outside input_chains.')
+            reported_chain_ids = np.array([chain_ids_in_order[c] for c in reported_chain])
+            if not np.array_equal(reported_chain_ids, row_chain_ids) or not np.array_equal(
+                reported_res, row_res_indices
+            ):
+                raise ValueError(
+                    'Oracle-reported chain/residue indices disagree with the input_chains ordering; '
+                    'the embedding rows may be misaligned with the residues.'
+                )
+
+        chain_ids, res_indices = self.residue_groups[residue_group_index]
+        mask = np.zeros(row_chain_ids.shape[0], dtype=bool)
+        for cid in np.unique(chain_ids):
+            wanted = res_indices[chain_ids == cid]
+            mask |= (row_chain_ids == cid) & np.isin(row_res_indices, wanted)
+        return mask
+
 
 class PTMEnergy(EnergyTerm):
     """
@@ -1527,6 +1580,45 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
         return global_index_list
 
 
+def _prepare_sae_feature_terms(
+    feature_indices: list[int],
+    coefficients: list[float] | None,
+    normalize_coefficients: bool,
+) -> tuple[npt.NDArray[np.int_], npt.NDArray[np.float64]]:
+    """Validate ``feature_indices`` / ``coefficients`` shared by the SAE energy terms.
+
+    Returns the validated integer index array and the coefficient array (L1-normalized
+    so :math:`\\sum_i |c_i| = 1` when ``normalize_coefficients`` is set). Raises on empty,
+    duplicate, or negative indices, mismatched lengths, or all-zero coefficients under
+    normalization.
+    """
+    feature_indices_array = np.asarray(feature_indices, dtype=int)
+    if feature_indices_array.ndim != 1 or feature_indices_array.size == 0:
+        raise ValueError('feature_indices must be a non-empty 1D list of feature indices.')
+    if np.any(feature_indices_array < 0):
+        raise ValueError('feature_indices must be non-negative.')
+    if np.unique(feature_indices_array).size != feature_indices_array.size:
+        raise ValueError('feature_indices must be unique.')
+
+    if coefficients is None:
+        coefficients_array = np.ones(feature_indices_array.size, dtype=np.float64)
+    else:
+        coefficients_array = np.asarray(coefficients, dtype=np.float64)
+        if coefficients_array.shape != feature_indices_array.shape:
+            raise ValueError(
+                f'coefficients length ({coefficients_array.size}) must match '
+                f'feature_indices length ({feature_indices_array.size}).'
+            )
+
+    if normalize_coefficients:
+        l1_norm = float(np.sum(np.abs(coefficients_array)))
+        if l1_norm == 0.0:
+            raise ValueError('coefficients must have at least one non-zero value to be normalized.')
+        coefficients_array = coefficients_array / l1_norm
+
+    return feature_indices_array, coefficients_array
+
+
 class SAEnergy(EnergyTerm):
     r"""
     Linear energy over sparse-autoencoder (SAE) features of a protein.
@@ -1604,32 +1696,9 @@ class SAEnergy(EnergyTerm):
             name = f'sae_{name}'
         super().__init__(name=name, oracle=oracle, inheritable=True, weight=weight)
 
-        feature_indices_array = np.asarray(feature_indices, dtype=int)
-        if feature_indices_array.ndim != 1 or feature_indices_array.size == 0:
-            raise ValueError('feature_indices must be a non-empty 1D list of feature indices.')
-        if np.any(feature_indices_array < 0):
-            raise ValueError('feature_indices must be non-negative.')
-        if np.unique(feature_indices_array).size != feature_indices_array.size:
-            raise ValueError('feature_indices must be unique.')
-        self.feature_indices = feature_indices_array
-
-        if coefficients is None:
-            coefficients_array = np.ones(self.feature_indices.size, dtype=np.float64)
-        else:
-            coefficients_array = np.asarray(coefficients, dtype=np.float64)
-            if coefficients_array.shape != self.feature_indices.shape:
-                raise ValueError(
-                    f'coefficients length ({coefficients_array.size}) must match '
-                    f'feature_indices length ({self.feature_indices.size}).'
-                )
-
-        if normalize_coefficients:
-            l1_norm = float(np.sum(np.abs(coefficients_array)))
-            if l1_norm == 0.0:
-                raise ValueError('coefficients must have at least one non-zero value to be normalized.')
-            coefficients_array = coefficients_array / l1_norm
-
-        self.coefficients = coefficients_array
+        self.feature_indices, self.coefficients = _prepare_sae_feature_terms(
+            feature_indices, coefficients, normalize_coefficients
+        )
         self.maximize = bool(maximize)
 
         assert isinstance(self.oracle, EmbeddingOracle), 'Oracle must be an instance of EmbeddingOracle'
@@ -1651,5 +1720,145 @@ class SAEnergy(EnergyTerm):
                 f'feature index {max_index} is out of range for a feature vector of length {features.shape[0]}.'
             )
         linear_combination = float(np.sum(self.coefficients * features[self.feature_indices]))
+        value = -linear_combination if self.maximize else linear_combination
+        return value, value * self.weight
+
+
+class ResidueSAEnergy(EnergyTerm):
+    r"""
+    Linear energy over **per-residue** sparse-autoencoder (SAE) features.
+
+    Where :class:`SAEnergy` acts on the whole-protein max-pooled feature vector,
+    this term acts on the dense per-residue activations
+    :math:`A \in \mathbb{R}^{R \times F}` (``SAEResult.embeddings``), optionally
+    restricted to a group of residues, and pools them over the selected residues to
+    one scalar per feature:
+
+    .. math::
+
+        E = -\sum_{i \in \mathcal{I}} c_i \, \operatorname{pool}_{r \in \mathcal{R}} A_{r, i}
+
+    where :math:`\mathcal{R}` are the selected residues, :math:`\operatorname{pool}`
+    is ``max`` / ``mean`` / ``sum``, and the sign / normalization conventions match
+    :class:`SAEnergy` (positive coefficients *promote* their feature by default; the
+    coefficients are L1-normalized so :math:`\sum_i |c_i| = 1`).
+
+    The ``max`` pooling over *all* residues reproduces :class:`SAEnergy`; ``mean``
+    rewards a feature that is *pervasive* across the region, ``sum`` rewards total
+    feature mass (grows with the region size).
+
+    Residues are selected with BAGEL's usual idiom — a list of :class:`~bagel.chain.Residue`
+    objects — and their embedding rows are resolved automatically in the correct
+    multichain order (see :meth:`EnergyTerm.get_embedding_residue_mask`).
+
+    Requires the SAE **oracle** to be built with ``include_per_residue=True`` so the
+    per-residue activations are populated.
+    """
+
+    def __init__(
+        self,
+        oracle: EmbeddingOracle,
+        feature_indices: list[int],
+        coefficients: list[float] | None = None,
+        weight: float = 1.0,
+        name: str | None = None,
+        maximize: bool = True,
+        normalize_coefficients: bool = True,
+        residues: list[Residue] | None = None,
+        pooling: Literal['max', 'mean', 'sum'] = 'mean',
+    ) -> None:
+        """
+        Initialises the per-residue SAE energy term.
+
+        Parameters
+        ----------
+        oracle: EmbeddingOracle
+            The SAE oracle. Must be configured with ``include_per_residue=True`` so
+            its result exposes per-residue activations in ``embeddings``.
+        feature_indices: list[int]
+            Indices of the SAE features to include. Must be non-empty and unique.
+        coefficients: list[float] | None = None
+            Per-feature linear coefficients, aligned with ``feature_indices``.
+            Defaults to all ones.
+        weight: float = 1.0
+            Overall weight of the energy term.
+        name: str | None = None
+            Optional suffix appended to the energy term name.
+        maximize: bool = True
+            If ``True`` (default) the linear combination is negated so a positive
+            coefficient *promotes* its feature under BAGEL's minimization.
+        normalize_coefficients: bool = True
+            If ``True`` (default) coefficients are L1-normalized (:math:`\\sum_i |c_i| = 1`).
+        residues: list[Residue] | None = None
+            Residues over which to pool. ``None`` (default) uses **all** residues.
+        pooling: {'max', 'mean', 'sum'} = 'mean'
+            How to reduce the selected residues to one value per feature.
+        """
+        name = 'residue_sae' if name is None else f'residue_sae_{name}'
+        # Residue-selective term: freeze the residue set (do not inherit residues
+        # added later under grand-canonical moves).
+        super().__init__(name=name, oracle=oracle, inheritable=False, weight=weight)
+
+        self.feature_indices, self.coefficients = _prepare_sae_feature_terms(
+            feature_indices, coefficients, normalize_coefficients
+        )
+        self.maximize = bool(maximize)
+
+        if pooling not in ('max', 'mean', 'sum'):
+            raise ValueError(f"pooling must be 'max', 'mean', or 'sum'; got {pooling!r}.")
+        self.pooling = pooling
+
+        self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
+
+        assert isinstance(self.oracle, EmbeddingOracle), 'Oracle must be an instance of EmbeddingOracle'
+        assert 'embeddings' in self.oracle.result_class.model_fields, (
+            'ResidueSAEnergy requires the oracle to expose per-residue "embeddings" in its result_class'
+        )
+
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        result = oracles_result[self.oracle]
+        activations = getattr(result, 'embeddings', None)
+        if activations is None:
+            raise ValueError(
+                'ResidueSAEnergy needs per-residue activations; build the SAE oracle with '
+                'include_per_residue=True.'
+            )
+        activations = np.asarray(activations, dtype=np.float64)
+        if activations.ndim != 2:
+            raise ValueError(
+                f'per-residue SAE activations must be 2D (residues, features); got shape {activations.shape}.'
+            )
+
+        if self.residue_groups:
+            mask = self.get_embedding_residue_mask(
+                result.input_chains,
+                0,
+                getattr(result, 'chain_index', None),
+                getattr(result, 'residue_index', None),
+            )
+            if mask.shape[0] != activations.shape[0]:
+                raise ValueError(
+                    f'residue mask length ({mask.shape[0]}) does not match the number of activation rows '
+                    f'({activations.shape[0]}).'
+                )
+            rows = activations[mask]
+            if rows.shape[0] == 0:
+                raise ValueError('No embedding rows matched the selected residues for ResidueSAEnergy.')
+        else:
+            rows = activations
+
+        if self.pooling == 'max':
+            pooled = rows.max(axis=0)
+        elif self.pooling == 'mean':
+            pooled = rows.mean(axis=0)
+        else:  # 'sum'
+            pooled = rows.sum(axis=0)
+
+        max_index = int(self.feature_indices.max())
+        if max_index >= pooled.shape[0]:
+            raise IndexError(
+                f'feature index {max_index} is out of range for a feature vector of length {pooled.shape[0]}.'
+            )
+        linear_combination = float(np.sum(self.coefficients * pooled[self.feature_indices]))
         value = -linear_combination if self.maximize else linear_combination
         return value, value * self.weight
