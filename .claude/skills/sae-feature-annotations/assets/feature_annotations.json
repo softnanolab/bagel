@@ -1,0 +1,8 @@
+{
+  "sae_model": "esmc-6b-2024-12-sae-layer60-k64-codebook16384",
+  "base_url": "https://biohub.ai",
+  "endpoint": "https://biohub.ai/esm/protein/api/v1alpha1/features",
+  "fetched_at": null,
+  "note": "OFFLINE FALLBACK TABLE (feature_index -> label + short description) for the ESMC-6B-sae-layer60-k64-codebook16384 SAE. Not yet seeded. Run `python ../scripts/sae_features.py refresh` with a valid API key (ESM_API_KEY / FORGE_TOKEN) to populate `features` from Biohub. Until then, every query must go live. Once seeded, this table is only a fallback: Biohub is authoritative and may have changed since `fetched_at`.",
+  "features": []
+}

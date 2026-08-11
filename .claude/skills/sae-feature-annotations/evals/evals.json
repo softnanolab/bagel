@@ -1,0 +1,26 @@
+{
+  "skill_name": "sae-feature-annotations",
+  "evals": [
+    {
+      "id": 0,
+      "name": "basic-map-lookup",
+      "prompt": "I ran boileroom's SAE model on one of my proteins and pulled out the SAE feature indices that fired: 42, 100, and 777. What do these features correspond to biologically?",
+      "expected_output": "Leads with the ESMC-6B-sae-layer60-k64-codebook16384 validity note; returns the label+description for features 42/100/777 obtained by querying Biohub; keeps each index next to its annotation.",
+      "files": []
+    },
+    {
+      "id": 1,
+      "name": "extended-detail",
+      "prompt": "For SAE feature 42, I want the full picture - which real proteins activate it most (both UniRef90 and SwissProt), what its decoder nearest-neighbour features are, and its activation statistics.",
+      "expected_output": "Recognizes this needs the per-feature detail endpoint (live only, key required), calls it, and summarizes top UniRef90+SwissProt proteins, decoder nearest neighbours, and activation statistics for feature 42. Leads with the validity note.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "wrong-sae-guardrail",
+      "prompt": "I used a local ESM-C 600M sparse autoencoder at layer 27 (codebook 16384) and got feature index 88 firing strongly on my sequence. What does feature 88 correspond to? Look it up in the Biohub annotations.",
+      "expected_output": "Refuses to map feature 88 to a Biohub label because the Biohub annotations are only valid for ESMC-6B layer 60 (k64, codebook16384), not a 600M layer-27 SAE. Explains the feature basis differs; does not fabricate an annotation.",
+      "files": []
+    }
+  ]
+}
