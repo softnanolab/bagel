@@ -15,10 +15,14 @@ def _multichain_chains():
     return chain_a, chain_b
 
 
-def _oracle_with_embeddings(embeddings, chains, chain_index=None, residue_index=None):
+VALID_SAE_MODEL = 'esmc-6b-2024-12-sae-layer60-k64-codebook16384'
+
+
+def _oracle_with_embeddings(embeddings, chains, chain_index=None, residue_index=None, sae_model_id=VALID_SAE_MODEL):
     """Return a fake SAE oracle + result holding per-residue ``embeddings``."""
     oracle = SAE.__new__(SAE)
     oracle.result_class = SAEResult
+    oracle.sae_model_id = sae_model_id
     result = SAEResult(
         input_chains=list(chains),
         features=np.asarray(embeddings, dtype=np.float64).max(axis=0),
@@ -146,6 +150,15 @@ def test_weight_and_sign_conventions():
         oracle=oracle, feature_indices=[0], pooling='mean', maximize=False
     )
     assert energy_min.compute(results)[0] == pytest.approx(5.0)
+
+
+def test_wrong_sae_model_raises():
+    chain_a, chain_b = _multichain_chains()
+    oracle, _ = _oracle_with_embeddings(
+        _EMB, (chain_a, chain_b), _CI, _RI, sae_model_id='biohub/ESMC-600M-sae-k64-codebook16384'
+    )
+    with pytest.raises(ValueError, match='ESMC-6B'):
+        bg.energies.ResidueSAEnergy(oracle=oracle, feature_indices=[0])
 
 
 def test_invalid_pooling_raises():

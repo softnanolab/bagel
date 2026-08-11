@@ -7,6 +7,7 @@ Copyright (c) 2025 Jakub Lála, Ayham Al-Saffar, Stefano Angioletti-Uberti
 """
 
 from abc import ABC, abstractmethod
+import re
 import warnings
 
 import numpy as np
@@ -1580,6 +1581,34 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
         return global_index_list
 
 
+# SAE energy terms are only meaningful for the specific SAE they were designed
+# around: the ESMC-6B, layer-60, k64, codebook-16384 model. The feature indices and
+# their learned "concepts" are model-specific, so mixing in a different SAE would be
+# silently wrong.
+REQUIRED_SAE_MODEL = 'ESMC-6B-sae-layer60-k64-codebook16384'
+_REQUIRED_SAE_MODEL_TOKENS = ('6b', 'layer60', 'k64', 'codebook16384')
+
+
+def _require_supported_sae_model(oracle: 'EnergyTerm.oracle') -> None:  # type: ignore[name-defined]
+    """Raise unless the oracle is configured to use the required SAE model.
+
+    Checks the oracle's ``sae_model_id`` (set by :class:`~bagel.oracles.embedding.sae.SAE`).
+    Matching is done on normalized tokens so it is robust to the model's date tag
+    (e.g. ``esmc-6b-2024-12-sae-layer60-k64-codebook16384``). If the oracle does not
+    expose a model id (e.g. a bare test double), the check is skipped.
+    """
+    model_id = getattr(oracle, 'sae_model_id', None)
+    if model_id is None:
+        return
+    normalized = re.sub(r'[^a-z0-9]', '', str(model_id).lower())
+    if not all(token in normalized for token in _REQUIRED_SAE_MODEL_TOKENS):
+        raise ValueError(
+            f'SAE energy terms require an oracle backed by the {REQUIRED_SAE_MODEL} model, '
+            f'but this oracle uses {model_id!r}. Build the SAE oracle with the default '
+            '(ESMC-6B / layer 60) configuration.'
+        )
+
+
 def _prepare_sae_feature_terms(
     feature_indices: list[int],
     coefficients: list[float] | None,
@@ -1705,6 +1734,7 @@ class SAEnergy(EnergyTerm):
         assert 'features' in self.oracle.result_class.model_fields, (
             'SAEnergy requires the oracle to return a per-protein "features" vector in its result_class'
         )
+        _require_supported_sae_model(self.oracle)
 
     def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
         result = oracles_result[self.oracle]
@@ -1814,6 +1844,7 @@ class ResidueSAEnergy(EnergyTerm):
         assert 'embeddings' in self.oracle.result_class.model_fields, (
             'ResidueSAEnergy requires the oracle to expose per-residue "embeddings" in its result_class'
         )
+        _require_supported_sae_model(self.oracle)
 
     def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
         result = oracles_result[self.oracle]

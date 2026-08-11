@@ -23,6 +23,24 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# BoilerRoom's default SAE model (ESMC-6B / layer 60 / k64 / codebook 16384), served
+# through the Forge API. Duplicated here (rather than importing SAECore, which pulls
+# torch) so the oracle can report its configured model id without heavy imports.
+DEFAULT_FORGE_SAE_MODEL = 'esmc-6b-2024-12-sae-layer60-k64-codebook16384'
+
+
+def _resolve_sae_model_id(config: dict[str, Any]) -> str:
+    """Identifier of the SAE model a given config selects.
+
+    Mirrors BoilerRoom's default resolution: the Forge ``forge_sae_model`` for the
+    (default) forge source, or the local ``sae_repo_id`` when ``feature_source`` is
+    ``'local'``. Returns an empty string when a local repo id is not specified.
+    """
+    source = str(config.get('feature_source', 'forge'))
+    if source == 'local':
+        return str(config.get('sae_repo_id', ''))
+    return str(config.get('forge_sae_model', DEFAULT_FORGE_SAE_MODEL))
+
 
 class SAEResult(EmbeddingResult):
     """Stores sparse-autoencoder features for a set of chains.
@@ -111,10 +129,17 @@ class SAE(EmbeddingOracle):
         # tests can patch out _load entirely.
         from boileroom.models.sae.sae import SAE as SAEBoiler
 
+        cfg = config or {}
+        # Identifier of the SAE model this oracle is configured to use, resolved
+        # from the config the same way BoilerRoom resolves its defaults (ESMC-6B /
+        # layer 60 via Forge). Exposed so energy terms can require a specific SAE
+        # model. Kept torch-free: we do not import SAECore just to read its default.
+        self.sae_model_id = _resolve_sae_model_id(cfg)
+
         # Pass config straight through so BoilerRoom's SAE defaults apply
         # (ESMC-6B / layer 60 via Forge). Use feature_source="local" for the
         # 300M / 600M SAEs.
-        self.model = SAEBoiler(backend=self.backend, device=self.device, config=config or {})
+        self.model = SAEBoiler(backend=self.backend, device=self.device, config=cfg)
 
     def embed(self, chains: list[Chain]) -> SAEResult:
         """Compute SAE features for the residues in the given chains.

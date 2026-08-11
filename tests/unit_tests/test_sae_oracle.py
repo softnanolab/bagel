@@ -7,7 +7,23 @@ import pytest
 
 import bagel as bg
 from bagel.oracles.base import OraclesResultDict
-from bagel.oracles.embedding.sae import SAE, SAEResult
+from bagel.oracles.embedding.sae import SAE, SAEResult, _resolve_sae_model_id, DEFAULT_FORGE_SAE_MODEL
+
+
+class TestResolveSAEModelId:
+    def test_default_is_forge_6b(self):
+        assert _resolve_sae_model_id({}) == DEFAULT_FORGE_SAE_MODEL
+        assert '6b' in DEFAULT_FORGE_SAE_MODEL and 'layer60' in DEFAULT_FORGE_SAE_MODEL
+
+    def test_explicit_forge_model(self):
+        assert _resolve_sae_model_id({'forge_sae_model': 'custom-forge-sae'}) == 'custom-forge-sae'
+
+    def test_local_uses_repo_id(self):
+        cfg = {'feature_source': 'local', 'sae_repo_id': 'biohub/ESMC-600M-sae-k64-codebook16384'}
+        assert _resolve_sae_model_id(cfg) == 'biohub/ESMC-600M-sae-k64-codebook16384'
+
+    def test_local_without_repo_is_empty(self):
+        assert _resolve_sae_model_id({'feature_source': 'local'}) == ''
 
 
 @dataclass

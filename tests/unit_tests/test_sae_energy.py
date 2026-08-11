@@ -8,10 +8,14 @@ from bagel.oracles.base import OraclesResultDict
 from bagel.oracles.embedding.sae import SAE, SAEResult
 
 
-def _oracle_with_features(features: np.ndarray):
+VALID_SAE_MODEL = 'esmc-6b-2024-12-sae-layer60-k64-codebook16384'
+
+
+def _oracle_with_features(features: np.ndarray, sae_model_id: str | None = VALID_SAE_MODEL):
     """Return a (fake) SAE oracle and an OraclesResultDict holding ``features``."""
     oracle = SAE.__new__(SAE)
     oracle.result_class = SAEResult
+    oracle.sae_model_id = sae_model_id
     chains = [bg.Chain([bg.Residue(name='A', chain_ID='A', index=0)])]
     result = SAEResult(input_chains=chains, features=np.asarray(features, dtype=np.float64))
     oracles_result = OraclesResultDict()
@@ -139,3 +143,21 @@ def test_feature_index_out_of_range_raises():
     energy = bg.energies.SAEnergy(oracle=oracle, feature_indices=[0, 5])
     with pytest.raises(IndexError):
         energy.compute(results)
+
+
+def test_wrong_sae_model_raises():
+    oracle, _ = _oracle_with_features(np.ones(3), sae_model_id='biohub/ESMC-600M-sae-k64-codebook16384')
+    with pytest.raises(ValueError, match='ESMC-6B'):
+        bg.energies.SAEnergy(oracle=oracle, feature_indices=[0])
+
+
+def test_model_check_accepts_date_tagged_id():
+    # The default forge id carries a date tag; token matching must accept it.
+    oracle, _ = _oracle_with_features(np.ones(3), sae_model_id='esmc-6b-2024-12-sae-layer60-k64-codebook16384')
+    assert bg.energies.SAEnergy(oracle=oracle, feature_indices=[0]).name == 'sae'
+
+
+def test_model_check_skipped_when_id_absent():
+    oracle, _ = _oracle_with_features(np.ones(3), sae_model_id=None)
+    # No model id on the oracle -> check is skipped, no error.
+    assert bg.energies.SAEnergy(oracle=oracle, feature_indices=[0]).name == 'sae'
