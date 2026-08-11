@@ -1525,3 +1525,131 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
             global_index_list.append(chain_res_to_global[(str(chain_id), int(res_id))])
 
         return global_index_list
+
+
+class SAEnergy(EnergyTerm):
+    r"""
+    Linear energy over sparse-autoencoder (SAE) features of a protein.
+
+    The oracle (a :class:`~bagel.oracles.embedding.sae.SAE` oracle) returns one
+    per-protein feature vector :math:`f \in \mathbb{R}^{F}` — the max activation of
+    each of the :math:`F` SAE features across the residues. This term selects a
+    user-chosen subset of features and returns the **negated** weighted sum:
+
+    .. math::
+
+        E = -\sum_{i \in \mathcal{I}} c_i \, f_i
+
+    where :math:`\mathcal{I}` are the selected ``feature_indices`` and
+    :math:`c_i` are the ``coefficients`` (all ``1`` by default).
+
+    Two defaults make positive coefficients intuitive:
+
+    - **Sign** (``maximize=True``, the default): the linear combination is negated,
+      so — because BAGEL **minimizes** energy — a **positive** coefficient *promotes*
+      its feature (drives the activation up) and a negative coefficient suppresses
+      it. Set ``maximize=False`` to minimize the features instead (positive
+      coefficient suppresses).
+    - **Normalization** (``normalize_coefficients=True``, the default): the
+      coefficients are rescaled so that :math:`\sum_i |c_i| = 1`. This makes the
+      energy scale invariant to how many features you select and to the absolute
+      size of the coefficients, so ``weight`` alone controls the term's magnitude
+      relative to other energies. Only the *relative* coefficients matter.
+
+    This makes it easy to steer a design toward or away from the concepts encoded
+    by specific SAE features (e.g. a catalytic-motif feature, a beta-barrel
+    feature, etc.).
+    """
+
+    def __init__(
+        self,
+        oracle: EmbeddingOracle,
+        feature_indices: list[int],
+        coefficients: list[float] | None = None,
+        weight: float = 1.0,
+        name: str | None = None,
+        maximize: bool = True,
+        normalize_coefficients: bool = True,
+    ) -> None:
+        """
+        Initialises the SAE energy term.
+
+        Parameters
+        ----------
+        oracle: EmbeddingOracle
+            The SAE oracle whose result exposes a per-protein ``features`` vector.
+        feature_indices: list[int]
+            Indices of the SAE features to include in the energy. Must be
+            non-empty and unique.
+        coefficients: list[float] | None = None
+            Per-feature linear coefficients :math:`c_i`, aligned with
+            ``feature_indices``. Defaults to all ones.
+        weight: float = 1.0
+            Overall weight of the energy term.
+        name: str | None = None
+            Optional suffix appended to the energy term name.
+        maximize: bool = True
+            If ``True`` (default) the linear combination is negated so that, under
+            BAGEL's energy minimization, a positive coefficient *promotes* its
+            feature. Set to ``False`` to minimize the features instead.
+        normalize_coefficients: bool = True
+            If ``True`` (default) the coefficients are rescaled so that
+            :math:`\\sum_i |c_i| = 1`, making the energy invariant to the number of
+            selected features and the absolute coefficient scale. Requires at least
+            one non-zero coefficient.
+        """
+        if name is None:
+            name = 'sae'
+        else:
+            name = f'sae_{name}'
+        super().__init__(name=name, oracle=oracle, inheritable=True, weight=weight)
+
+        feature_indices_array = np.asarray(feature_indices, dtype=int)
+        if feature_indices_array.ndim != 1 or feature_indices_array.size == 0:
+            raise ValueError('feature_indices must be a non-empty 1D list of feature indices.')
+        if np.any(feature_indices_array < 0):
+            raise ValueError('feature_indices must be non-negative.')
+        if np.unique(feature_indices_array).size != feature_indices_array.size:
+            raise ValueError('feature_indices must be unique.')
+        self.feature_indices = feature_indices_array
+
+        if coefficients is None:
+            coefficients_array = np.ones(self.feature_indices.size, dtype=np.float64)
+        else:
+            coefficients_array = np.asarray(coefficients, dtype=np.float64)
+            if coefficients_array.shape != self.feature_indices.shape:
+                raise ValueError(
+                    f'coefficients length ({coefficients_array.size}) must match '
+                    f'feature_indices length ({self.feature_indices.size}).'
+                )
+
+        if normalize_coefficients:
+            l1_norm = float(np.sum(np.abs(coefficients_array)))
+            if l1_norm == 0.0:
+                raise ValueError('coefficients must have at least one non-zero value to be normalized.')
+            coefficients_array = coefficients_array / l1_norm
+
+        self.coefficients = coefficients_array
+        self.maximize = bool(maximize)
+
+        assert isinstance(self.oracle, EmbeddingOracle), 'Oracle must be an instance of EmbeddingOracle'
+        assert 'features' in self.oracle.result_class.model_fields, (
+            'SAEnergy requires the oracle to return a per-protein "features" vector in its result_class'
+        )
+
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        result = oracles_result[self.oracle]
+        features = np.asarray(getattr(result, 'features'), dtype=np.float64)
+        if features.ndim != 1:
+            raise ValueError(
+                f'SAE features are expected to be a 1D per-protein vector, not shape: {features.shape}. '
+                'This does not work with batches.'
+            )
+        max_index = int(self.feature_indices.max())
+        if max_index >= features.shape[0]:
+            raise IndexError(
+                f'feature index {max_index} is out of range for a feature vector of length {features.shape[0]}.'
+            )
+        linear_combination = float(np.sum(self.coefficients * features[self.feature_indices]))
+        value = -linear_combination if self.maximize else linear_combination
+        return value, value * self.weight

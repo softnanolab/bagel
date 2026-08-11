@@ -15,7 +15,10 @@ keywords = ["protein", "protein design", "optimization", "monte carlo", "samplin
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "biotite>=1.0.1",
-    "boileroom==0.4.1",
+    # SAE features depend on the boileroom SAE model, which lives on the
+    # features/sae branch until it is released. Repin to a published version
+    # (e.g. boileroom==0.5.0) once that branch is merged and released.
+    "boileroom @ git+https://github.com/softnanolab/boileroom.git@features/sae",
     "numpy>=2.2.0",
     "pandas>=2.2.3",
     "pydantic>=2.10.6",
