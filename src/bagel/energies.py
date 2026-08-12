@@ -1677,7 +1677,10 @@ def _smoothed_normals(
 
     lengths = np.linalg.norm(normals, axis=1, keepdims=True)
     # a dot with no usable neighbourhood keeps a zero normal, which simply scores 0 rather than blowing up
-    return np.divide(normals, lengths, out=np.zeros_like(normals), where=lengths > 1e-9)
+    return np.asarray(
+        np.divide(normals, lengths, out=np.zeros_like(normals), where=lengths > 1e-9),
+        dtype=np.float64,
+    )
 
 
 def _buried_by_partner(
