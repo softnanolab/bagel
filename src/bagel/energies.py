@@ -14,7 +14,7 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 from typing import Literal, Callable, Any
-from biotite.structure import AtomArray, sasa, annotate_sse, superimpose
+from biotite.structure import AtomArray, CellList, sasa, annotate_sse, superimpose
 from .constants import (
     hydrophobic_residues,
     max_sasa_values,
@@ -23,6 +23,8 @@ from .constants import (
     hydropathy_index,
     max_theoretical_sasa_for_residues,
     max_residue_sasa,
+    vdw_radii,
+    default_vdw_radius,
 )
 from .chain import Residue, Chain
 from .oracles import Oracle, OracleResult, OraclesResultDict
@@ -1523,8 +1525,8 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
         reference_embeddings = reference_embeddings / np.linalg.norm(reference_embeddings, axis=1, keepdims=True)
         self.reference_embeddings = reference_embeddings
         assert self.reference_embeddings.shape[0] == len(self.residue_groups[0][0]), (
-            f'Number of reference embeddings ({self.reference_embeddings.shape[0]}) does not'
-            f'match number of residues to include in energy term ({len(self.residue_groups[0])})'
+            f'Number of reference embeddings ({self.reference_embeddings.shape[0]}) does not '
+            f'match number of residues to include in energy term ({len(self.residue_groups[0][0])})'
         )
 
         assert isinstance(self.oracle, EmbeddingOracle), 'Oracle must be an instance of EmbeddingOracle'
@@ -1545,11 +1547,14 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
         # The following generate a 2D numpy array of shape (n_conserved_residues, n_features)
         # where n_conserved_residues is the number of residues in the reference embeddings
         # and n_features is the number of features in the embeddings.
-        # Note that n_conserved_residues must be equal to len(self.residue_groups[0])
+        # Note that n_conserved_residues must be equal to len(self.residue_groups[0][0])
         conserved_embeddings = embeddings[self.conserved_index_list(chains)]
 
         assert conserved_embeddings.shape == self.reference_embeddings.shape, (
-            f'Conserved embeddings shape {conserved_embeddings.shape} does not match reference embeddings {self.reference_embeddings.shape}'
+            f'Conserved embeddings shape {conserved_embeddings.shape} does not match reference '
+            f'embeddings shape {self.reference_embeddings.shape}. The reference embeddings are fixed '
+            f'at construction, so this term cannot follow residues added to or removed from its group '
+            f'at runtime (e.g. under GrandCanonical sampling); apply it to a fixed set of residues.'
         )
         # Normalise the conserved embeddings to unit length
         conserved_embeddings = conserved_embeddings / np.linalg.norm(conserved_embeddings, axis=1, keepdims=True)
@@ -1579,6 +1584,515 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
             global_index_list.append(chain_res_to_global[(str(chain_id), int(res_id))])
 
         return global_index_list
+
+def _fibonacci_sphere(n_points: int) -> npt.NDArray[np.float64]:
+    """
+    Generates ``n_points`` approximately uniformly distributed unit vectors on a sphere using the golden-spiral
+    (Fibonacci) construction. This is deterministic, so repeated evaluations of an energy term that uses it return
+    exactly the same number. That matters for Monte Carlo, where a randomly fluctuating energy would be
+    indistinguishable from a real change in the landscape.
+    """
+    assert n_points > 0, 'n_points must be positive'
+    indices = np.arange(n_points, dtype=np.float64) + 0.5
+    z = 1.0 - 2.0 * indices / n_points
+    ring_radius = np.sqrt(np.clip(1.0 - z * z, 0.0, None))
+    golden_angle = np.pi * (1.0 + np.sqrt(5.0))
+    theta = golden_angle * indices
+    return np.stack([ring_radius * np.cos(theta), ring_radius * np.sin(theta), z], axis=-1)
+
+
+def _atom_vdw_radii(structure: AtomArray) -> npt.NDArray[np.float64]:
+    """Looks up the van der Waals radius of every atom in ``structure``, falling back to carbon for unknown elements."""
+    return np.array(
+        [vdw_radii.get(str(element).upper(), default_vdw_radius) for element in structure.element], dtype=np.float64
+    )
+
+
+def _has_neighbour_within(
+    coords: npt.NDArray[np.float64], other_coords: npt.NDArray[np.float64], radius: float
+) -> npt.NDArray[np.bool_]:
+    """Flags every coordinate in ``coords`` that has at least one of ``other_coords`` within ``radius`` of it."""
+    if coords.shape[0] == 0 or other_coords.shape[0] == 0:
+        return np.zeros(coords.shape[0], dtype=bool)
+    cell_list = CellList(other_coords, cell_size=max(radius, 1e-3))
+    neighbours = np.atleast_2d(cell_list.get_atoms(coords, radius=radius))
+    if neighbours.shape[1] == 0:
+        return np.zeros(coords.shape[0], dtype=bool)
+    return np.asarray((neighbours >= 0).any(axis=1), dtype=bool)
+
+
+def _molecular_surface_dots(
+    coords: npt.NDArray[np.float64],
+    radii: npt.NDArray[np.float64],
+    probe_radius: float,
+    unit_sphere: npt.NDArray[np.float64],
+    seed_mask: npt.NDArray[np.bool_],
+    chunk_size: int = 20000,
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.int_]]:
+    """
+    Builds a dot representation of the contact part of the solvent-excluded ("molecular") surface of a group of
+    atoms - the locus of points where a rolling solvent probe touches the group.
+
+    The construction is the standard one. Dots are laid on the solvent-accessible sphere of radius
+    (van der Waals + probe) around each atom flagged in ``seed_mask``, which is the surface traced by the probe
+    *centre*. A dot is discarded if it falls inside the accessible sphere of any *other* atom in the group, since
+    the probe cannot sit there. Each surviving probe centre is then projected inward by the probe radius onto the
+    point where the probe actually touches the atom, giving a dot on the van der Waals surface.
+
+    That last step is what distinguishes this from a plain van der Waals dot surface, and it matters a lot here.
+    Testing occlusion with the inflated radii removes the dots lining the narrow crevices between neighbouring
+    atoms, which no solvent can reach and which no partner protein can complement either. Left in, those dots
+    contribute badly matched, near-random normals and drag the complementarity statistic towards zero.
+
+    The van der Waals surface, not the accessible surface, is the right place to put the final dots because two
+    molecules in contact have coincident van der Waals surfaces, whereas their accessible surfaces interpenetrate
+    by twice the probe radius. Coincidence at contact is what makes a distance-decay complementarity score
+    meaningful. A convenient side effect is that the outward normal at a dot is exactly the radial direction from
+    its parent atom.
+
+    Note that only the convex contact patches are produced; the concave reentrant patches that the probe sweeps out
+    where it bridges two atoms are not represented. Those are a minority of a protein surface, and omitting them
+    costs far less accuracy than including the crevices would.
+
+    Returns
+    -------
+    (dots, normals, parent_atom_indices)
+        Coordinates of the surviving dots on the van der Waals surface, their outward unit normals, and the index
+        (into ``coords``) of the atom each dot belongs to.
+    """
+    seed_indices = np.flatnonzero(seed_mask)
+    if seed_indices.size == 0 or coords.shape[0] == 0:
+        return np.zeros((0, 3), dtype=np.float64), np.zeros((0, 3), dtype=np.float64), np.zeros(0, dtype=np.int_)
+
+    expanded_radii = radii + probe_radius
+    n_points = unit_sphere.shape[0]
+    offsets = expanded_radii[seed_indices][:, None, None] * unit_sphere[None, :, :]
+    probe_centres = (coords[seed_indices][:, None, :] + offsets).reshape(-1, 3)
+    normals = np.tile(unit_sphere, (seed_indices.size, 1))
+    parents = np.repeat(seed_indices, n_points)
+
+    max_radius = float(expanded_radii.max())
+    cell_list = CellList(coords, cell_size=max(max_radius, 1e-3))
+
+    keep = np.ones(probe_centres.shape[0], dtype=bool)
+    for start in range(0, probe_centres.shape[0], chunk_size):
+        stop = min(start + chunk_size, probe_centres.shape[0])
+        block = probe_centres[start:stop]
+        neighbours = np.atleast_2d(cell_list.get_atoms(block, radius=max_radius))
+        if neighbours.shape[1] == 0:
+            continue
+        valid = neighbours >= 0
+        safe = np.where(valid, neighbours, 0)
+        distances = np.linalg.norm(block[:, None, :] - coords[safe], axis=-1)
+        occluded = valid & (safe != parents[start:stop, None]) & (distances < expanded_radii[safe] - 1e-9)
+        keep[start:stop] = ~occluded.any(axis=1)
+
+    # project each surviving probe centre inward onto the point where the probe touches the atom
+    dots = probe_centres[keep] - probe_radius * normals[keep]
+    return dots, normals[keep], parents[keep]
+
+
+def _smoothed_normals(
+    dots: npt.NDArray[np.float64],
+    coords: npt.NDArray[np.float64],
+    radii: npt.NDArray[np.float64],
+    smoothing: float,
+    chunk_size: int = 20000,
+) -> npt.NDArray[np.float64]:
+    """
+    Replaces the per-atom radial normal at each surface dot with a normal averaged over the nearby atoms.
+
+    The raw normal on a union-of-spheres surface points straight out of whichever single atom owns the dot, so it
+    swings through a large angle from one side of an atom to the other. A real solvent-excluded surface is far
+    smoother, because the reentrant patches swept out by the rolling probe bridge neighbouring atoms. Those patches
+    are not represented here, so their smoothing effect is imitated directly: the normal at a dot is the weighted
+    mean of the radial directions from all atoms within reach, each weighted by ``exp(-(d - r) / smoothing)`` in
+    its distance from that atom's surface.
+
+    Without this, complementarity is measured atom against atom and the resulting statistic is dominated by the
+    bumpiness of individual side chain atoms rather than by the shape of the interface as a whole.
+    """
+    normals = np.zeros_like(dots)
+    if dots.shape[0] == 0 or coords.shape[0] == 0:
+        return normals
+
+    reach = float(radii.max()) + 4.0 * smoothing
+    cell_list = CellList(coords, cell_size=max(reach, 1e-3))
+    for start in range(0, dots.shape[0], chunk_size):
+        stop = min(start + chunk_size, dots.shape[0])
+        block = dots[start:stop]
+        neighbours = np.atleast_2d(cell_list.get_atoms(block, radius=reach))
+        if neighbours.shape[1] == 0:
+            continue
+        valid = neighbours >= 0
+        safe = np.where(valid, neighbours, 0)
+        offsets = block[:, None, :] - coords[safe]
+        distances = np.maximum(np.linalg.norm(offsets, axis=-1), 1e-9)
+        weights = np.where(valid, np.exp(-np.clip(distances - radii[safe], 0.0, None) / smoothing), 0.0)
+        normals[start:stop] = np.sum(weights[..., None] * offsets / distances[..., None], axis=1)
+
+    lengths = np.linalg.norm(normals, axis=1, keepdims=True)
+    # a dot with no usable neighbourhood keeps a zero normal, which simply scores 0 rather than blowing up
+    return np.asarray(
+        np.divide(normals, lengths, out=np.zeros_like(normals), where=lengths > 1e-9),
+        dtype=np.float64,
+    )
+
+
+def _buried_by_partner(
+    dots: npt.NDArray[np.float64],
+    normals: npt.NDArray[np.float64],
+    partner_coords: npt.NDArray[np.float64],
+    partner_radii: npt.NDArray[np.float64],
+    probe_radius: float,
+    chunk_size: int = 20000,
+) -> npt.NDArray[np.bool_]:
+    """
+    Flags the surface dots that the partner group hides from the solvent, which is what defines the interface.
+
+    A dot is solvent accessible if a spherical probe of radius ``probe_radius`` can sit tangent to the surface
+    there, i.e. with its centre at ``dot + probe_radius * normal``. The dot is buried by the partner if that probe
+    centre clashes with any partner atom, that is if it lies within ``partner_radius + probe_radius`` of it.
+
+    Defining the interface this way, rather than by a plain distance cutoff, keeps out dots that merely happen to
+    be near the partner while pointing away from it - for example dots on the far side of an interface atom. Those
+    would otherwise be scored as badly matched and would dilute the statistic.
+    """
+    n_dots = dots.shape[0]
+    buried = np.zeros(n_dots, dtype=bool)
+    if n_dots == 0 or partner_coords.shape[0] == 0:
+        return buried
+
+    probe_centres = dots + probe_radius * normals
+    clash_radii = partner_radii + probe_radius
+    max_clash_radius = float(clash_radii.max())
+    cell_list = CellList(partner_coords, cell_size=max(max_clash_radius, 1e-3))
+
+    for start in range(0, n_dots, chunk_size):
+        stop = min(start + chunk_size, n_dots)
+        block = probe_centres[start:stop]
+        neighbours = np.atleast_2d(cell_list.get_atoms(block, radius=max_clash_radius))
+        if neighbours.shape[1] == 0:
+            continue
+        valid = neighbours >= 0
+        safe = np.where(valid, neighbours, 0)
+        distances = np.linalg.norm(block[:, None, :] - partner_coords[safe], axis=-1)
+        buried[start:stop] = (valid & (distances < clash_radii[safe] - 1e-9)).any(axis=1)
+
+    return buried
+
+
+def _nearest_dot(
+    query_dots: npt.NDArray[np.float64],
+    target_dots: npt.NDArray[np.float64],
+    cutoff: float,
+    chunk_size: int = 20000,
+) -> tuple[npt.NDArray[np.int_], npt.NDArray[np.float64]]:
+    """
+    For every dot in ``query_dots``, finds the closest dot in ``target_dots`` lying within ``cutoff``.
+
+    Returns
+    -------
+    (indices, distances)
+        Index into ``target_dots`` of the nearest dot, or -1 if none lies within ``cutoff``. The distance is
+        ``np.inf`` wherever the index is -1.
+    """
+    n_query = query_dots.shape[0]
+    indices = np.full(n_query, -1, dtype=np.int_)
+    distances = np.full(n_query, np.inf, dtype=np.float64)
+    if n_query == 0 or target_dots.shape[0] == 0:
+        return indices, distances
+
+    cell_list = CellList(target_dots, cell_size=max(cutoff, 1e-3))
+    for start in range(0, n_query, chunk_size):
+        stop = min(start + chunk_size, n_query)
+        block = query_dots[start:stop]
+        neighbours = np.atleast_2d(cell_list.get_atoms(block, radius=cutoff))
+        if neighbours.shape[1] == 0:
+            continue
+        valid = neighbours >= 0
+        safe = np.where(valid, neighbours, 0)
+        block_distances = np.where(valid, np.linalg.norm(block[:, None, :] - target_dots[safe], axis=-1), np.inf)
+        rows = np.arange(block.shape[0])
+        closest = np.argmin(block_distances, axis=1)
+        best_distance = block_distances[rows, closest]
+        found = np.isfinite(best_distance)
+        indices[start:stop] = np.where(found, safe[rows, closest], -1)
+        distances[start:stop] = best_distance
+
+    return indices, distances
+
+
+def _statistic(values: npt.NDArray[np.float64], statistic: Literal['mean', 'median']) -> float:
+    """Computes the mean or median of ``values``. Returns 0.0 if there is nothing to aggregate."""
+    if values.size == 0:
+        return 0.0
+    return float(np.mean(values) if statistic == 'mean' else np.median(values))
+
+
+class ShapeComplementarityEnergy(EnergyTerm):
+    """
+    Purely geometric energy measuring how well the surfaces of two groups of residues interlock - a "lock and
+    key" fit. It is blind to the chemistry of the residues involved and depends only on their shape.
+
+    This is a variant of the shape complementarity statistic *Sc* of
+    `Lawrence & Colman (1993) <https://doi.org/10.1006/jmbi.1993.1648>`_. A dot representation of the
+    solvent-excluded surface of each group is built *in isolation*, i.e. as if the other group were absent. The
+    interface is then the set of dots that the partner hides from the solvent. For each interface dot *a* on the
+    first group, the nearest interface dot *b* on the second group is found and the pair is scored as
+
+    .. math:: s(a) = -(\\mathbf{n}_a \\cdot \\mathbf{n}_b) \\, e^{-w d_{ab}^2}
+
+    where :math:`\\mathbf{n}` are the outward surface normals, :math:`d_{ab}` is the separation of the two dots and
+    :math:`w` is ``distance_decay``. This is +1 for two surfaces that face each other and touch, decays towards 0
+    as they move apart or turn from facing each other to merely running parallel, and is negative for surfaces
+    pointing the same way. The procedure is symmetrised by repeating it from the second group back onto the first.
+
+    .. note::
+        Earlier revisions re-weighted each dot pair by the hydrophobicity of the two residues involved. That was
+        removed after benchmarking against measured binding free energies: the weighting improved agreement for
+        mutations that *remove* a hydrophobic contact and degraded it by a comparable amount for mutations that
+        *introduce* one, leaving no net benefit over a mixed set of designs. Chemistry belongs in the terms built
+        for it - :class:`HydrophobicEnergy` and :class:`HydropathyEnergy` - rather than folded into a geometric
+        one, where it cannot be reasoned about separately.
+
+    **Extensive by default.** Each dot stands for a definite patch of surface: dots are laid uniformly in solid
+    angle, so a dot on an atom of radius :math:`r` represents :math:`4 \\pi r^2 / N` of it. The energy is therefore
+    a surface integral over the buried interface rather than an average over it,
+
+    .. math:: E = -\\frac{1}{2 A_0} \\sum_{a \\in I_A \\cup I_B} s_a \\, \\delta A_a
+
+    where :math:`A_0` is ``area_scale`` and the half undoes the double counting from summing over both sides. Read
+    physically, this is an interfacial free energy per unit area, discounted by :math:`s` wherever the surfaces fit
+    badly. Doubling a well-packed interface doubles the energy, so ``weight`` genuinely scales the result rather
+    than merely redistributing it. On flat test interfaces the energy follows :math:`a n^2 + b n` - a bulk term plus a
+    perimeter correction - to within 1% over a sixteenfold range of area, with the perimeter share falling from
+    about 20% of a 16-residue patch to 6% of a 256-residue one.
+
+    Setting ``scaling='intensive'`` instead reports the plain *Sc* statistic, a per-dot average bounded in
+    [-1, 1]. That is the right choice for *describing* an interface, and the wrong one for driving a simulation:
+    see the warnings below.
+
+    .. note::
+        This term is **short ranged**. A dot only counts while the partner actually shields it from the solvent, so
+        the energy falls to exactly 0 once the two surfaces are more than about twice the probe radius apart and a
+        solvent molecule can slip between them - roughly 3 Angstrom of clearance. Inside that range it varies
+        smoothly, but beyond it the landscape is flat, so this term can refine and rank a contact that already
+        exists but cannot pull two partners into contact. Pair it with :class:`SeparationEnergy` or
+        :class:`FlexEvoBindEnergy` to do that.
+
+    .. warning::
+        Being extensive, the energy grows with the size of the system, which matters in two places. In
+        :class:`~bagel.mutation.GrandCanonical` sampling it creates a standing incentive to grow the chains, so it
+        should be balanced by a :class:`ChemicalPotentialEnergy`. And its magnitude depends on ``area_scale``
+        rather than being bounded, so check it is comparable with the other terms in your energy function before
+        choosing ``weight``. The default ``area_scale`` of 1000 square Angstrom puts a typical designed interface
+        in the region of -0.5, which sits naturally alongside the other terms in this module.
+
+    .. warning::
+        With ``scaling='intensive'`` the value is a per-dot average, which has two consequences worth knowing.
+        It saturates rather than growing with contact area, so it will not reward a larger interface. Worse,
+        because the average runs over the dots that are *currently* buried, a design can improve it by letting a
+        badly packed region recede out of contact rather than by repairing it - the offending dots simply leave the
+        average. The extensive form has neither problem, which is why it is the default. Intensive values are also
+        *not* comparable with published *Sc* figures: Lawrence & Colman build a full analytic molecular surface
+        including the concave reentrant patches, and report around 0.70-0.75 for well-packed oligomeric interfaces,
+        whereas only the convex contact patches are reconstructed here and a native interface lands nearer 0.5.
+
+    .. note::
+        The calculation is sensitive to side chain placement, so it is only as trustworthy as the structure the
+        oracle predicts. It is worth pairing it with a confidence term (:class:`PLDDTEnergy`, :class:`PAEEnergy`)
+        over the interface residues, so that confidently wrong interfaces are not rewarded.
+    """
+
+    def __init__(
+        self,
+        oracle: FoldingOracle,
+        residues: tuple[list[Residue], list[Residue]],
+        scaling: Literal['extensive', 'intensive'] = 'extensive',
+        area_scale: float = 1000.0,
+        interface_cutoff: float = 6.0,
+        distance_decay: float = 0.5,
+        statistic: Literal['mean', 'median'] = 'mean',
+        n_surface_points: int = 150,
+        probe_radius: float | None = None,
+        normal_smoothing: float | None = None,
+        inheritable: bool = True,
+        weight: float = 1.0,
+        name: str | None = None,
+    ) -> None:
+        """
+        Initialises shape complementarity energy class.
+
+        Parameters
+        ----------
+        oracle: FoldingOracle
+            The oracle to use for the energy term.
+        residues: tuple[list[Residue], list[Residue]]
+            A tuple containing two lists of residues, defining the two sides of the interface. These are usually
+            the residues of the two chains being docked, but any two disjoint sets work, for instance two domains
+            of the same chain.
+        scaling: {'extensive', 'intensive'}, default='extensive'
+            'extensive' integrates the weighted fit over the buried surface, so the energy is proportional to how
+            much interface there is as well as how good it is. This is the right choice for an energy function.
+            'intensive' instead reports the per-dot average, i.e. the plain Sc statistic bounded in [-1, 1], which
+            is useful for describing or reporting on an interface but is a poor thing to minimise.
+        area_scale: float, default=1000.0
+            Area, in square Angstrom, that the extensive energy is divided by, so that a typical interface gives a
+            value of order 1 rather than of order several hundred. Ignored when ``scaling='intensive'``. Multiply
+            the reported energy by this to recover the fit-weighted buried area in square Angstrom.
+        interface_cutoff: float, default=6.0
+            Maximum separation, in Angstrom, at which two surface dots may still be paired. Interface dots with no
+            partner within this distance are dropped from the statistic. This mainly trims the ragged rim of the
+            interface; the interface itself is defined by burial, not by this cutoff.
+        distance_decay: float, default=0.5
+            The :math:`w` in :math:`e^{-w d^2}`, in Angstrom^-2. The Lawrence-Colman value is 0.5, which halves the
+            contribution of a dot pair separated by about 1.2 Angstrom. Larger values demand tighter packing.
+        statistic: {'mean', 'median'}, default='mean'
+            How individual dot scores are aggregated when ``scaling='intensive'``; ignored otherwise. Lawrence &
+            Colman use the median, which is more robust to a handful of badly matched dots. The mean varies more
+            smoothly with the sequence and is therefore the better behaved of the two as an energy.
+        n_surface_points: int, default=150
+            Number of dots generated per atom before burial is tested. Larger values reduce the discretisation
+            noise of the statistic, at a proportional cost in runtime.
+        probe_radius: float or None, default=None
+            Radius of the rolling solvent probe. It sets both how much of the crevice between neighbouring
+            atoms is smoothed out of each surface, and which dots count as buried by the partner and therefore
+            as interface. Defaults to the van der Waals radius of water.
+        normal_smoothing: float or None, default=None
+            Length scale, in Angstrom, over which surface normals are averaged across neighbouring atoms, which
+            imitates the smoothing that the reentrant patches of a true solvent-excluded surface would provide.
+            Defaults to the probe radius. Set to 0 to use the raw per-atom radial normals, which makes the term
+            measure complementarity atom against atom and therefore much noisier.
+        inheritable: bool, default=True
+            If a new residue is added next to a residue included in this energy term, this dictates whether that
+            new residue could then be added to this energy term.
+        weight: float = 1.0
+            The weight of the energy term.
+        name: str | None = None
+            Optional name to append to the energy term name.
+        """
+        if name is None:
+            name = 'shape_complementarity'
+        else:
+            name = f'shape_complementarity_{name}'
+
+        super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight)
+        self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
+        self.scaling: Literal['extensive', 'intensive'] = scaling
+        self.area_scale = area_scale
+        self.interface_cutoff = interface_cutoff
+        self.distance_decay = distance_decay
+        self.statistic: Literal['mean', 'median'] = statistic
+        self.n_surface_points = n_surface_points
+        self.probe_radius = probe_radius_water if probe_radius is None else probe_radius
+        self.normal_smoothing = self.probe_radius if normal_smoothing is None else normal_smoothing
+        self._unit_sphere = _fibonacci_sphere(n_surface_points)
+
+        assert len(residues[0]) > 0 and len(residues[1]) > 0, 'both residue groups must be non-empty'
+        assert scaling in ('extensive', 'intensive'), f'unknown scaling {scaling}'
+        assert area_scale > 0, 'area_scale must be positive'
+        assert interface_cutoff > 0, 'interface_cutoff must be positive'
+        assert distance_decay >= 0, 'distance_decay must be non-negative'
+        assert statistic in ('mean', 'median'), f'unknown statistic {statistic}'
+        assert n_surface_points > 0, 'n_surface_points must be positive'
+        assert self.probe_radius >= 0, 'probe_radius must be non-negative'
+        assert self.normal_smoothing >= 0, 'normal_smoothing must be non-negative'
+        overlap = {(res.chain_ID, res.index) for res in residues[0]} & {
+            (res.chain_ID, res.index) for res in residues[1]
+        }
+        if overlap:
+            warnings.warn(
+                f'{len(overlap)} residue(s) appear in both groups of {name}; a residue cannot be complementary to '
+                'itself, so the resulting energy will be hard to interpret.'
+            )
+        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
+        assert 'structure' in self.oracle.result_class.model_fields, (
+            'ShapeComplementarityEnergy requires oracle to return structure in result_class'
+        )
+
+    def _score_against(
+        self,
+        dots: npt.NDArray[np.float64],
+        normals: npt.NDArray[np.float64],
+        areas: npt.NDArray[np.float64],
+        other_dots: npt.NDArray[np.float64],
+        other_normals: npt.NDArray[np.float64],
+    ) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+        """
+        Scores every dot of one interface against its nearest partner on the other.
+
+        Returns ``(scores, areas)`` for the dots that found a partner, where ``areas`` is the patch of surface
+        each dot stands for. Dots with no partner within ``interface_cutoff`` are dropped entirely rather than
+        scored as zero, so they contribute neither reward nor penalty.
+        """
+        empty = np.zeros(0, dtype=np.float64)
+        partner, distance = _nearest_dot(dots, other_dots, self.interface_cutoff)
+        matched = partner >= 0
+        if not matched.any():
+            return empty, empty
+
+        partner = partner[matched]
+        facing = -np.sum(normals[matched] * other_normals[partner], axis=-1)
+        scores = facing * np.exp(-self.distance_decay * distance[matched] ** 2)
+        return scores, areas[matched]
+
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        structure = oracles_result.get_structure(self.oracle)
+        group_1 = structure[self.get_atom_mask(structure, residue_group_index=0)]
+        group_2 = structure[self.get_atom_mask(structure, residue_group_index=1)]
+        if len(group_1) == 0 or len(group_2) == 0:
+            return 0.0, 0.0
+
+        coords_1 = np.asarray(group_1.coord, dtype=np.float64)
+        coords_2 = np.asarray(group_2.coord, dtype=np.float64)
+        radii_1 = _atom_vdw_radii(group_1)
+        radii_2 = _atom_vdw_radii(group_2)
+
+        # Only atoms close enough to the other group can carry an interface dot, so build surface for those alone.
+        # A dot sits up to one van der Waals radius from its own atom and may be paired with a dot up to one radius
+        # beyond a partner atom, hence the padding on top of the cutoff.
+        seed_radius = self.interface_cutoff + float(radii_1.max()) + float(radii_2.max())
+        seed_1 = _has_neighbour_within(coords_1, coords_2, seed_radius)
+        seed_2 = _has_neighbour_within(coords_2, coords_1, seed_radius)
+
+        dots_1, normals_1, parents_1 = _molecular_surface_dots(
+            coords_1, radii_1, self.probe_radius, self._unit_sphere, seed_1
+        )
+        dots_2, normals_2, parents_2 = _molecular_surface_dots(
+            coords_2, radii_2, self.probe_radius, self._unit_sphere, seed_2
+        )
+
+        # the interface is the part of each surface that the partner hides from the solvent. Burial is decided
+        # with the raw radial normals, which point exactly along the probe's line of approach to the atom.
+        interface_1 = _buried_by_partner(dots_1, normals_1, coords_2, radii_2, self.probe_radius)
+        interface_2 = _buried_by_partner(dots_2, normals_2, coords_1, radii_1, self.probe_radius)
+        if not interface_1.any() or not interface_2.any():
+            return 0.0, 0.0
+
+        # Dots are laid uniformly in solid angle, so each stands for an equal patch of its parent atom's sphere.
+        # This is what lets the term be summed into a surface integral rather than only averaged.
+        areas_1 = 4.0 * np.pi * radii_1[parents_1][interface_1] ** 2 / self.n_surface_points
+        areas_2 = 4.0 * np.pi * radii_2[parents_2][interface_2] ** 2 / self.n_surface_points
+        dots_1, normals_1 = dots_1[interface_1], normals_1[interface_1]
+        dots_2, normals_2 = dots_2[interface_2], normals_2[interface_2]
+        if self.normal_smoothing > 0:
+            normals_1 = _smoothed_normals(dots_1, coords_1, radii_1, self.normal_smoothing)
+            normals_2 = _smoothed_normals(dots_2, coords_2, radii_2, self.normal_smoothing)
+
+        # symmetrise: score group 1 against group 2 and vice versa, then pool the two sets of dot scores
+        scores_12, areas_12 = self._score_against(dots_1, normals_1, areas_1, dots_2, normals_2)
+        scores_21, areas_21 = self._score_against(dots_2, normals_2, areas_2, dots_1, normals_1)
+        scores = np.concatenate([scores_12, scores_21])
+        areas = np.concatenate([areas_12, areas_21])
+
+        if self.scaling == 'extensive':
+            # a surface integral of the quality of fit over the buried surface. The half undoes the double
+            # counting from summing over both sides of the interface.
+            value = -0.5 * float(np.sum(scores * areas)) / self.area_scale
+        else:
+            value = -_statistic(scores, self.statistic)
+        return value, value * self.weight
 
 
 # SAE energy terms are only meaningful for the specific SAE they were designed

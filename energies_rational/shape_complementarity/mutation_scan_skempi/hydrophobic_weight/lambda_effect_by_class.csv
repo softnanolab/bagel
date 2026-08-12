@@ -1,0 +1,5 @@
+class,n,rho_lambda1,rho_lambda4,delta,ci_low,ci_high
+hydrophobic -> polar,162,0.356,0.636,0.28,0.153,0.414
+polar -> hydrophobic,218,0.102,-0.025,-0.127,-0.252,0.001
+polar -> polar,124,0.203,0.25,0.048,-0.096,0.189
+ALL substitutions,555,0.212,0.236,0.023,-0.071,0.119
