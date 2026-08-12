@@ -8,8 +8,10 @@ where hydrophobic contact is the dominant thing changing.
 
 **Result: the hypothesis is confirmed for removal of hydrophobic contact and refuted for addition.**
 
-- Removing a hydrophobic residue **from a hydrophobic pocket**: rho = **0.503** (λ=1) and **0.717**
-  (λ=4), against 0.356 / 0.636 without the environment filter. The difference between hydrophobic
+- Removing a hydrophobic residue **from a clean hydrophobic pocket** (hydrophobic partners *and*
+  `n_charged_partners == 0` with no salt bridge): rho = **0.503** (λ=1) and **0.717** (λ=4) at
+  **n = 87**, against 0.356 / 0.636 without any environment filter. The hydrophobic-partner filter
+  alone (partner_h ≥ 0.45, **n = 88**) gives rho = **0.510**, and the difference between hydrophobic
   and mixed/polar partner environments is **+0.310, 95% CI [+0.011, +0.608]** — significant.
 - Adding a hydrophobic residue: **no filtering rescues it.** Removing every case with a charged
   partner and requiring hydrophobic partners moves rho from 0.102 to −0.028. The failure in this

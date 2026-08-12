@@ -4,7 +4,8 @@
 testing it only on X→Ala mutations, which cannot produce the case where the parameter matters.**
 
 The weight helps a great deal when a mutation **removes** a hydrophobic contact, and hurts when one is
-**introduced**. Over a mixed set the two cancel exactly, which is what the earlier test saw.
+**introduced**. Over a mixed set the two effects largely cancel, leaving a net change that is not
+distinguishable from zero (+0.023, 95% CI [−0.071, +0.119]), which is what the earlier test saw.
 
 ## Why the earlier test could not have found this
 
@@ -32,6 +33,11 @@ wild-type and mutant residue on the term's own scale:
 | polar → hydrophobic | h(wt) < 0.45, h(mut) ≥ 0.6 | 218 |
 | polar → polar | both < 0.45 | 124 |
 | hydrophobic → hydrophobic | both ≥ 0.6 | 18 |
+| unclassified / intermediate | h(wt) or h(mut) in [0.45, 0.6) | 33 |
+
+The `[0.45, 0.6)` band is deliberately excluded from the four named classes, so the 33 intermediate
+cases do not appear in any class-specific correlation; they are still counted in the pooled
+`all substitutions` row (162 + 218 + 124 + 18 + 33 = 555).
 
 Because φ = 1 + (λ−1)·h_a·h_b is linear in λ, the energy is exactly affine in λ. Two evaluations per
 structure therefore reconstruct every λ exactly (verified numerically to 1e-9), which is what made a
