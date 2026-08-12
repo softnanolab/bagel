@@ -92,9 +92,7 @@ def test_residue_selection_by_residue_objects_multichain():
     # mean of {1, 9} = 5 -> -5
     assert energy.compute(results)[0] == pytest.approx(-5.0)
     # max of {1, 9} = 9
-    energy_max = bg.energies.ResidueSAEnergy(
-        oracle=oracle, feature_indices=[0], residues=selected, pooling='max'
-    )
+    energy_max = bg.energies.ResidueSAEnergy(oracle=oracle, feature_indices=[0], residues=selected, pooling='max')
     assert energy_max.compute(results)[0] == pytest.approx(-9.0)
 
 
@@ -132,9 +130,7 @@ def test_crosscheck_detects_index_disagreement():
     # Corrupt residue_index so it disagrees with input_chains reconstruction.
     bad_ri = [0, 1, 2, 1, 0]  # chain B order swapped
     oracle, results = _oracle_with_embeddings(_EMB, (chain_a, chain_b), _CI, bad_ri)
-    energy = bg.energies.ResidueSAEnergy(
-        oracle=oracle, feature_indices=[0], residues=[chain_b.residues[0]]
-    )
+    energy = bg.energies.ResidueSAEnergy(oracle=oracle, feature_indices=[0], residues=[chain_b.residues[0]])
     with pytest.raises(ValueError, match='disagree'):
         energy.compute(results)
 
@@ -157,9 +153,7 @@ def test_weight_and_sign_conventions():
     assert unweighted == pytest.approx(-5.0)
     assert weighted == pytest.approx(-10.0)
     # maximize=False flips the sign.
-    energy_min = bg.energies.ResidueSAEnergy(
-        oracle=oracle, feature_indices=[0], pooling='mean', maximize=False
-    )
+    energy_min = bg.energies.ResidueSAEnergy(oracle=oracle, feature_indices=[0], pooling='mean', maximize=False)
     assert energy_min.compute(results)[0] == pytest.approx(5.0)
 
 
@@ -183,7 +177,4 @@ def test_name_prefix():
     chain_a, _ = _multichain_chains()
     oracle, _ = _oracle_with_embeddings(_EMB[:3], (chain_a,), _CI[:3], _RI[:3])
     assert bg.energies.ResidueSAEnergy(oracle=oracle, feature_indices=[0]).name == 'residue_sae'
-    assert (
-        bg.energies.ResidueSAEnergy(oracle=oracle, feature_indices=[0], name='motif').name
-        == 'residue_sae_motif'
-    )
+    assert bg.energies.ResidueSAEnergy(oracle=oracle, feature_indices=[0], name='motif').name == 'residue_sae_motif'
