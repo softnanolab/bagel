@@ -830,7 +830,9 @@ def test_embeddings_similarity_energy(
             residues=square_structure_residues,
             reference_embeddings=np.zeros((len(square_structure_residues), 1280)),  # Using typical ESM2 embedding size
         )
-        assert 'Oracle must be an instance of EmbeddingOracle' in str(e.value)
+    # Assert outside the `with` block: inside it the construction above raises first, so the
+    # message check would never execute.
+    assert 'Oracle must be an instance of EmbeddingOracle' in str(e.value)
 
     # Enforce correct number of reference embeddings
     with pytest.raises(AssertionError) as e:
@@ -841,10 +843,9 @@ def test_embeddings_similarity_energy(
                 (len(square_structure_residues) - 1, 1280)
             ),  # Using typical ESM2 embedding size
         )
-        assert (
-            'Number of reference embeddings (1) does not match number of residues to include in energy term (2)'
-            in str(e.value)
-        )
+    assert 'Number of reference embeddings (1) does not match number of residues to include in energy term (2)' in str(
+        e.value
+    )
 
     # Test dynamic reference embeddings
     # Create initial two-chain multimer state

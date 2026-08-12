@@ -1471,8 +1471,8 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
         reference_embeddings = reference_embeddings / np.linalg.norm(reference_embeddings, axis=1, keepdims=True)
         self.reference_embeddings = reference_embeddings
         assert self.reference_embeddings.shape[0] == len(self.residue_groups[0][0]), (
-            f'Number of reference embeddings ({self.reference_embeddings.shape[0]}) does not'
-            f'match number of residues to include in energy term ({len(self.residue_groups[0])})'
+            f'Number of reference embeddings ({self.reference_embeddings.shape[0]}) does not '
+            f'match number of residues to include in energy term ({len(self.residue_groups[0][0])})'
         )
 
         assert isinstance(self.oracle, EmbeddingOracle), 'Oracle must be an instance of EmbeddingOracle'
@@ -1493,11 +1493,14 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
         # The following generate a 2D numpy array of shape (n_conserved_residues, n_features)
         # where n_conserved_residues is the number of residues in the reference embeddings
         # and n_features is the number of features in the embeddings.
-        # Note that n_conserved_residues must be equal to len(self.residue_groups[0])
+        # Note that n_conserved_residues must be equal to len(self.residue_groups[0][0])
         conserved_embeddings = embeddings[self.conserved_index_list(chains)]
 
         assert conserved_embeddings.shape == self.reference_embeddings.shape, (
-            f'Conserved embeddings shape {conserved_embeddings.shape} does not match reference embeddings {self.reference_embeddings.shape}'
+            f'Conserved embeddings shape {conserved_embeddings.shape} does not match reference '
+            f'embeddings shape {self.reference_embeddings.shape}. The reference embeddings are fixed '
+            f'at construction, so this term cannot follow residues added to or removed from its group '
+            f'at runtime (e.g. under GrandCanonical sampling); apply it to a fixed set of residues.'
         )
         # Normalise the conserved embeddings to unit length
         conserved_embeddings = conserved_embeddings / np.linalg.norm(conserved_embeddings, axis=1, keepdims=True)
