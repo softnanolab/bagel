@@ -7,6 +7,7 @@ Copyright (c) 2025 Jakub Lála, Ayham Al-Saffar, Stefano Angioletti-Uberti
 """
 
 from abc import ABC, abstractmethod
+import re
 import warnings
 
 import numpy as np
@@ -34,11 +35,6 @@ from .oracles.folding.utils import reorder_atoms_in_template
 
 # first row is chain_ids and second row is corresponding residue indices.
 ResidueGroup = tuple[npt.NDArray[np.str_], npt.NDArray[np.int_]]
-
-
-def residue_list_to_group(residues: list[Residue]) -> ResidueGroup:
-    """Converts list of residue objects to ResidueGroup required by energy term objects"""
-    return (np.array([res.chain_ID for res in residues]), np.array([res.index for res in residues]))
 
 
 class EnergyTerm(ABC):
@@ -194,6 +190,57 @@ class EnergyTerm(ABC):
             # for that specific chain, check if the residue indices are in the residue group
             atom_mask[chain_mask] = np.isin(chain_res_ids, chain_res_ids_in_group)
         return atom_mask
+
+    def get_embedding_residue_mask(
+        self,
+        input_chains: list[Chain],
+        residue_group_index: int,
+        chain_index: npt.NDArray[np.int_] | None = None,
+        residue_index: npt.NDArray[np.int_] | None = None,
+    ) -> npt.NDArray[np.bool_]:
+        """Boolean mask over per-residue embedding rows for a stored residue group.
+
+        Per-residue embeddings follow the input order: chains in ``input_chains``
+        order, residues in each chain's ``0..len-1`` order. Each row's identity
+        ``(chain_ID, index)`` is reconstructed from ``input_chains`` and matched
+        against the term's residue group.
+
+        If ``chain_index`` / ``residue_index`` (as reported by the oracle) are
+        provided, they are used as a redundant cross-check: ``chain_index`` is the
+        0-based chain ordinal mapped back to its ``chain_ID`` via ``input_chains``,
+        and both must agree with the reconstruction — otherwise a ``ValueError`` is
+        raised, catching any row/residue misalignment.
+        """
+        chain_ids_in_order = [chain.chain_ID for chain in input_chains]
+        row_chain_ids = np.array([res.chain_ID for chain in input_chains for res in chain.residues])
+        row_res_indices = np.array([res.index for chain in input_chains for res in chain.residues], dtype=int)
+
+        if chain_index is not None and residue_index is not None:
+            reported_chain = np.asarray(chain_index, dtype=int)
+            reported_res = np.asarray(residue_index, dtype=int)
+            n_rows = row_chain_ids.shape[0]
+            if reported_chain.shape[0] != n_rows or reported_res.shape[0] != n_rows:
+                raise ValueError(
+                    'Oracle chain/residue index length does not match the number of residues in input_chains '
+                    f'({reported_chain.shape[0]} / {reported_res.shape[0]} vs {n_rows}).'
+                )
+            if np.any(reported_chain < 0) or np.any(reported_chain >= len(chain_ids_in_order)):
+                raise ValueError('Oracle chain_index refers to a chain ordinal outside input_chains.')
+            reported_chain_ids = np.array([chain_ids_in_order[c] for c in reported_chain])
+            if not np.array_equal(reported_chain_ids, row_chain_ids) or not np.array_equal(
+                reported_res, row_res_indices
+            ):
+                raise ValueError(
+                    'Oracle-reported chain/residue indices disagree with the input_chains ordering; '
+                    'the embedding rows may be misaligned with the residues.'
+                )
+
+        chain_ids, res_indices = self.residue_groups[residue_group_index]
+        mask = np.zeros(row_chain_ids.shape[0], dtype=bool)
+        for cid in np.unique(chain_ids):
+            wanted = res_indices[chain_ids == cid]
+            mask |= (row_chain_ids == cid) & np.isin(row_res_indices, wanted)
+        return mask
 
 
 class PTMEnergy(EnergyTerm):
@@ -1532,251 +1579,6 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
         return global_index_list
 
 
-def _fibonacci_sphere(n_points: int) -> npt.NDArray[np.float64]:
-    """
-    Generates ``n_points`` approximately uniformly distributed unit vectors on a sphere using the golden-spiral
-    (Fibonacci) construction. This is deterministic, so repeated evaluations of an energy term that uses it return
-    exactly the same number. That matters for Monte Carlo, where a randomly fluctuating energy would be
-    indistinguishable from a real change in the landscape.
-    """
-    assert n_points > 0, 'n_points must be positive'
-    indices = np.arange(n_points, dtype=np.float64) + 0.5
-    z = 1.0 - 2.0 * indices / n_points
-    ring_radius = np.sqrt(np.clip(1.0 - z * z, 0.0, None))
-    golden_angle = np.pi * (1.0 + np.sqrt(5.0))
-    theta = golden_angle * indices
-    return np.stack([ring_radius * np.cos(theta), ring_radius * np.sin(theta), z], axis=-1)
-
-
-def _atom_vdw_radii(structure: AtomArray) -> npt.NDArray[np.float64]:
-    """Looks up the van der Waals radius of every atom in ``structure``, falling back to carbon for unknown elements."""
-    return np.array(
-        [vdw_radii.get(str(element).upper(), default_vdw_radius) for element in structure.element], dtype=np.float64
-    )
-
-
-def _has_neighbour_within(
-    coords: npt.NDArray[np.float64], other_coords: npt.NDArray[np.float64], radius: float
-) -> npt.NDArray[np.bool_]:
-    """Flags every coordinate in ``coords`` that has at least one of ``other_coords`` within ``radius`` of it."""
-    if coords.shape[0] == 0 or other_coords.shape[0] == 0:
-        return np.zeros(coords.shape[0], dtype=bool)
-    cell_list = CellList(other_coords, cell_size=max(radius, 1e-3))
-    neighbours = np.atleast_2d(cell_list.get_atoms(coords, radius=radius))
-    if neighbours.shape[1] == 0:
-        return np.zeros(coords.shape[0], dtype=bool)
-    return np.asarray((neighbours >= 0).any(axis=1), dtype=bool)
-
-
-def _molecular_surface_dots(
-    coords: npt.NDArray[np.float64],
-    radii: npt.NDArray[np.float64],
-    probe_radius: float,
-    unit_sphere: npt.NDArray[np.float64],
-    seed_mask: npt.NDArray[np.bool_],
-    chunk_size: int = 20000,
-) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.int_]]:
-    """
-    Builds a dot representation of the contact part of the solvent-excluded ("molecular") surface of a group of
-    atoms - the locus of points where a rolling solvent probe touches the group.
-
-    The construction is the standard one. Dots are laid on the solvent-accessible sphere of radius
-    (van der Waals + probe) around each atom flagged in ``seed_mask``, which is the surface traced by the probe
-    *centre*. A dot is discarded if it falls inside the accessible sphere of any *other* atom in the group, since
-    the probe cannot sit there. Each surviving probe centre is then projected inward by the probe radius onto the
-    point where the probe actually touches the atom, giving a dot on the van der Waals surface.
-
-    That last step is what distinguishes this from a plain van der Waals dot surface, and it matters a lot here.
-    Testing occlusion with the inflated radii removes the dots lining the narrow crevices between neighbouring
-    atoms, which no solvent can reach and which no partner protein can complement either. Left in, those dots
-    contribute badly matched, near-random normals and drag the complementarity statistic towards zero.
-
-    The van der Waals surface, not the accessible surface, is the right place to put the final dots because two
-    molecules in contact have coincident van der Waals surfaces, whereas their accessible surfaces interpenetrate
-    by twice the probe radius. Coincidence at contact is what makes a distance-decay complementarity score
-    meaningful. A convenient side effect is that the outward normal at a dot is exactly the radial direction from
-    its parent atom.
-
-    Note that only the convex contact patches are produced; the concave reentrant patches that the probe sweeps out
-    where it bridges two atoms are not represented. Those are a minority of a protein surface, and omitting them
-    costs far less accuracy than including the crevices would.
-
-    Returns
-    -------
-    (dots, normals, parent_atom_indices)
-        Coordinates of the surviving dots on the van der Waals surface, their outward unit normals, and the index
-        (into ``coords``) of the atom each dot belongs to.
-    """
-    seed_indices = np.flatnonzero(seed_mask)
-    if seed_indices.size == 0 or coords.shape[0] == 0:
-        return np.zeros((0, 3), dtype=np.float64), np.zeros((0, 3), dtype=np.float64), np.zeros(0, dtype=np.int_)
-
-    expanded_radii = radii + probe_radius
-    n_points = unit_sphere.shape[0]
-    offsets = expanded_radii[seed_indices][:, None, None] * unit_sphere[None, :, :]
-    probe_centres = (coords[seed_indices][:, None, :] + offsets).reshape(-1, 3)
-    normals = np.tile(unit_sphere, (seed_indices.size, 1))
-    parents = np.repeat(seed_indices, n_points)
-
-    max_radius = float(expanded_radii.max())
-    cell_list = CellList(coords, cell_size=max(max_radius, 1e-3))
-
-    keep = np.ones(probe_centres.shape[0], dtype=bool)
-    for start in range(0, probe_centres.shape[0], chunk_size):
-        stop = min(start + chunk_size, probe_centres.shape[0])
-        block = probe_centres[start:stop]
-        neighbours = np.atleast_2d(cell_list.get_atoms(block, radius=max_radius))
-        if neighbours.shape[1] == 0:
-            continue
-        valid = neighbours >= 0
-        safe = np.where(valid, neighbours, 0)
-        distances = np.linalg.norm(block[:, None, :] - coords[safe], axis=-1)
-        occluded = valid & (safe != parents[start:stop, None]) & (distances < expanded_radii[safe] - 1e-9)
-        keep[start:stop] = ~occluded.any(axis=1)
-
-    # project each surviving probe centre inward onto the point where the probe touches the atom
-    dots = probe_centres[keep] - probe_radius * normals[keep]
-    return dots, normals[keep], parents[keep]
-
-
-def _smoothed_normals(
-    dots: npt.NDArray[np.float64],
-    coords: npt.NDArray[np.float64],
-    radii: npt.NDArray[np.float64],
-    smoothing: float,
-    chunk_size: int = 20000,
-) -> npt.NDArray[np.float64]:
-    """
-    Replaces the per-atom radial normal at each surface dot with a normal averaged over the nearby atoms.
-
-    The raw normal on a union-of-spheres surface points straight out of whichever single atom owns the dot, so it
-    swings through a large angle from one side of an atom to the other. A real solvent-excluded surface is far
-    smoother, because the reentrant patches swept out by the rolling probe bridge neighbouring atoms. Those patches
-    are not represented here, so their smoothing effect is imitated directly: the normal at a dot is the weighted
-    mean of the radial directions from all atoms within reach, each weighted by ``exp(-(d - r) / smoothing)`` in
-    its distance from that atom's surface.
-
-    Without this, complementarity is measured atom against atom and the resulting statistic is dominated by the
-    bumpiness of individual side chain atoms rather than by the shape of the interface as a whole.
-    """
-    normals = np.zeros_like(dots)
-    if dots.shape[0] == 0 or coords.shape[0] == 0:
-        return normals
-
-    reach = float(radii.max()) + 4.0 * smoothing
-    cell_list = CellList(coords, cell_size=max(reach, 1e-3))
-    for start in range(0, dots.shape[0], chunk_size):
-        stop = min(start + chunk_size, dots.shape[0])
-        block = dots[start:stop]
-        neighbours = np.atleast_2d(cell_list.get_atoms(block, radius=reach))
-        if neighbours.shape[1] == 0:
-            continue
-        valid = neighbours >= 0
-        safe = np.where(valid, neighbours, 0)
-        offsets = block[:, None, :] - coords[safe]
-        distances = np.maximum(np.linalg.norm(offsets, axis=-1), 1e-9)
-        weights = np.where(valid, np.exp(-np.clip(distances - radii[safe], 0.0, None) / smoothing), 0.0)
-        normals[start:stop] = np.sum(weights[..., None] * offsets / distances[..., None], axis=1)
-
-    lengths = np.linalg.norm(normals, axis=1, keepdims=True)
-    # a dot with no usable neighbourhood keeps a zero normal, which simply scores 0 rather than blowing up
-    return np.asarray(
-        np.divide(normals, lengths, out=np.zeros_like(normals), where=lengths > 1e-9),
-        dtype=np.float64,
-    )
-
-
-def _buried_by_partner(
-    dots: npt.NDArray[np.float64],
-    normals: npt.NDArray[np.float64],
-    partner_coords: npt.NDArray[np.float64],
-    partner_radii: npt.NDArray[np.float64],
-    probe_radius: float,
-    chunk_size: int = 20000,
-) -> npt.NDArray[np.bool_]:
-    """
-    Flags the surface dots that the partner group hides from the solvent, which is what defines the interface.
-
-    A dot is solvent accessible if a spherical probe of radius ``probe_radius`` can sit tangent to the surface
-    there, i.e. with its centre at ``dot + probe_radius * normal``. The dot is buried by the partner if that probe
-    centre clashes with any partner atom, that is if it lies within ``partner_radius + probe_radius`` of it.
-
-    Defining the interface this way, rather than by a plain distance cutoff, keeps out dots that merely happen to
-    be near the partner while pointing away from it - for example dots on the far side of an interface atom. Those
-    would otherwise be scored as badly matched and would dilute the statistic.
-    """
-    n_dots = dots.shape[0]
-    buried = np.zeros(n_dots, dtype=bool)
-    if n_dots == 0 or partner_coords.shape[0] == 0:
-        return buried
-
-    probe_centres = dots + probe_radius * normals
-    clash_radii = partner_radii + probe_radius
-    max_clash_radius = float(clash_radii.max())
-    cell_list = CellList(partner_coords, cell_size=max(max_clash_radius, 1e-3))
-
-    for start in range(0, n_dots, chunk_size):
-        stop = min(start + chunk_size, n_dots)
-        block = probe_centres[start:stop]
-        neighbours = np.atleast_2d(cell_list.get_atoms(block, radius=max_clash_radius))
-        if neighbours.shape[1] == 0:
-            continue
-        valid = neighbours >= 0
-        safe = np.where(valid, neighbours, 0)
-        distances = np.linalg.norm(block[:, None, :] - partner_coords[safe], axis=-1)
-        buried[start:stop] = (valid & (distances < clash_radii[safe] - 1e-9)).any(axis=1)
-
-    return buried
-
-
-def _nearest_dot(
-    query_dots: npt.NDArray[np.float64],
-    target_dots: npt.NDArray[np.float64],
-    cutoff: float,
-    chunk_size: int = 20000,
-) -> tuple[npt.NDArray[np.int_], npt.NDArray[np.float64]]:
-    """
-    For every dot in ``query_dots``, finds the closest dot in ``target_dots`` lying within ``cutoff``.
-
-    Returns
-    -------
-    (indices, distances)
-        Index into ``target_dots`` of the nearest dot, or -1 if none lies within ``cutoff``. The distance is
-        ``np.inf`` wherever the index is -1.
-    """
-    n_query = query_dots.shape[0]
-    indices = np.full(n_query, -1, dtype=np.int_)
-    distances = np.full(n_query, np.inf, dtype=np.float64)
-    if n_query == 0 or target_dots.shape[0] == 0:
-        return indices, distances
-
-    cell_list = CellList(target_dots, cell_size=max(cutoff, 1e-3))
-    for start in range(0, n_query, chunk_size):
-        stop = min(start + chunk_size, n_query)
-        block = query_dots[start:stop]
-        neighbours = np.atleast_2d(cell_list.get_atoms(block, radius=cutoff))
-        if neighbours.shape[1] == 0:
-            continue
-        valid = neighbours >= 0
-        safe = np.where(valid, neighbours, 0)
-        block_distances = np.where(valid, np.linalg.norm(block[:, None, :] - target_dots[safe], axis=-1), np.inf)
-        rows = np.arange(block.shape[0])
-        closest = np.argmin(block_distances, axis=1)
-        best_distance = block_distances[rows, closest]
-        found = np.isfinite(best_distance)
-        indices[start:stop] = np.where(found, safe[rows, closest], -1)
-        distances[start:stop] = best_distance
-
-    return indices, distances
-
-
-def _statistic(values: npt.NDArray[np.float64], statistic: Literal['mean', 'median']) -> float:
-    """Computes the mean or median of ``values``. Returns 0.0 if there is nothing to aggregate."""
-    if values.size == 0:
-        return 0.0
-    return float(np.mean(values) if statistic == 'mean' else np.median(values))
-
-
 class ShapeComplementarityEnergy(EnergyTerm):
     """
     Purely geometric energy measuring how well the surfaces of two groups of residues interlock - a "lock and
@@ -2040,3 +1842,594 @@ class ShapeComplementarityEnergy(EnergyTerm):
         else:
             value = -_statistic(scores, self.statistic)
         return value, value * self.weight
+
+
+class SAEnergy(EnergyTerm):
+    r"""
+    Linear energy over sparse-autoencoder (SAE) features of a protein.
+
+    The oracle (a :class:`~bagel.oracles.embedding.sae.SAE` oracle) returns one
+    per-protein feature vector :math:`f \in \mathbb{R}^{F}` — the max activation of
+    each of the :math:`F` SAE features across the residues. This term selects a
+    user-chosen subset of features and returns the **negated** weighted sum:
+
+    .. math::
+
+        E = -\sum_{i \in \mathcal{I}} c_i \, f_i
+
+    where :math:`\mathcal{I}` are the selected ``feature_indices`` and
+    :math:`c_i` are the ``coefficients`` (all ``1`` by default).
+
+    Two defaults make positive coefficients intuitive:
+
+    - **Sign** (``maximize=True``, the default): the linear combination is negated,
+      so — because BAGEL **minimizes** energy — a **positive** coefficient *promotes*
+      its feature (drives the activation up) and a negative coefficient suppresses
+      it. Set ``maximize=False`` to minimize the features instead (positive
+      coefficient suppresses).
+    - **Normalization** (``normalize_coefficients=True``, the default): the
+      coefficients are rescaled so that :math:`\sum_i |c_i| = 1`. This makes the
+      energy scale invariant to how many features you select and to the absolute
+      size of the coefficients, so ``weight`` alone controls the term's magnitude
+      relative to other energies. Only the *relative* coefficients matter.
+
+    This makes it easy to steer a design toward or away from the concepts encoded
+    by specific SAE features (e.g. a catalytic-motif feature, a beta-barrel
+    feature, etc.).
+    """
+
+    def __init__(
+        self,
+        oracle: EmbeddingOracle,
+        feature_indices: list[int],
+        coefficients: list[float] | None = None,
+        weight: float = 1.0,
+        name: str | None = None,
+        maximize: bool = True,
+        normalize_coefficients: bool = True,
+    ) -> None:
+        """
+        Initialises the SAE energy term.
+
+        Parameters
+        ----------
+        oracle: EmbeddingOracle
+            The SAE oracle whose result exposes a per-protein ``features`` vector.
+        feature_indices: list[int]
+            Indices of the SAE features to include in the energy. Must be
+            non-empty and unique.
+        coefficients: list[float] | None = None
+            Per-feature linear coefficients :math:`c_i`, aligned with
+            ``feature_indices``. Defaults to all ones.
+        weight: float = 1.0
+            Overall weight of the energy term.
+        name: str | None = None
+            Optional suffix appended to the energy term name.
+        maximize: bool = True
+            If ``True`` (default) the linear combination is negated so that, under
+            BAGEL's energy minimization, a positive coefficient *promotes* its
+            feature. Set to ``False`` to minimize the features instead.
+        normalize_coefficients: bool = True
+            If ``True`` (default) the coefficients are rescaled so that
+            :math:`\\sum_i |c_i| = 1`, making the energy invariant to the number of
+            selected features and the absolute coefficient scale. Requires at least
+            one non-zero coefficient.
+        """
+        if name is None:
+            name = 'sae'
+        else:
+            name = f'sae_{name}'
+        super().__init__(name=name, oracle=oracle, inheritable=True, weight=weight)
+
+        self.feature_indices, self.coefficients = _prepare_sae_feature_terms(
+            feature_indices, coefficients, normalize_coefficients
+        )
+        self.maximize = bool(maximize)
+
+        assert isinstance(self.oracle, EmbeddingOracle), 'Oracle must be an instance of EmbeddingOracle'
+        assert 'features' in self.oracle.result_class.model_fields, (
+            'SAEnergy requires the oracle to return a per-protein "features" vector in its result_class'
+        )
+        _require_supported_sae_model(self.oracle)
+
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        result = oracles_result[self.oracle]
+        features = np.asarray(getattr(result, 'features'), dtype=np.float64)
+        if features.ndim != 1:
+            raise ValueError(
+                f'SAE features are expected to be a 1D per-protein vector, not shape: {features.shape}. '
+                'This does not work with batches.'
+            )
+        max_index = int(self.feature_indices.max())
+        if max_index >= features.shape[0]:
+            raise IndexError(
+                f'feature index {max_index} is out of range for a feature vector of length {features.shape[0]}.'
+            )
+        linear_combination = float(np.sum(self.coefficients * features[self.feature_indices]))
+        value = -linear_combination if self.maximize else linear_combination
+        return value, value * self.weight
+
+
+class ResidueSAEnergy(EnergyTerm):
+    r"""
+    Linear energy over **per-residue** sparse-autoencoder (SAE) features.
+
+    Where :class:`SAEnergy` acts on the whole-protein max-pooled feature vector,
+    this term acts on the dense per-residue activations
+    :math:`A \in \mathbb{R}^{R \times F}` (``SAEResult.embeddings``), optionally
+    restricted to a group of residues, and pools them over the selected residues to
+    one scalar per feature:
+
+    .. math::
+
+        E = -\sum_{i \in \mathcal{I}} c_i \, \operatorname{pool}_{r \in \mathcal{R}} A_{r, i}
+
+    where :math:`\mathcal{R}` are the selected residues, :math:`\operatorname{pool}`
+    is ``max`` / ``mean`` / ``sum``, and the sign / normalization conventions match
+    :class:`SAEnergy` (positive coefficients *promote* their feature by default; the
+    coefficients are L1-normalized so :math:`\sum_i |c_i| = 1`).
+
+    The ``max`` pooling over *all* residues reproduces :class:`SAEnergy`; ``mean``
+    rewards a feature that is *pervasive* across the region, ``sum`` rewards total
+    feature mass (grows with the region size).
+
+    Residues are selected with BAGEL's usual idiom — a list of :class:`~bagel.chain.Residue`
+    objects — and their embedding rows are resolved automatically in the correct
+    multichain order (see :meth:`EnergyTerm.get_embedding_residue_mask`).
+
+    Requires the SAE **oracle** to be built with ``include_per_residue=True`` so the
+    per-residue activations are populated.
+    """
+
+    def __init__(
+        self,
+        oracle: EmbeddingOracle,
+        feature_indices: list[int],
+        coefficients: list[float] | None = None,
+        weight: float = 1.0,
+        name: str | None = None,
+        maximize: bool = True,
+        normalize_coefficients: bool = True,
+        residues: list[Residue] | None = None,
+        pooling: Literal['max', 'mean', 'sum'] = 'mean',
+    ) -> None:
+        """
+        Initialises the per-residue SAE energy term.
+
+        Parameters
+        ----------
+        oracle: EmbeddingOracle
+            The SAE oracle. Must be configured with ``include_per_residue=True`` so
+            its result exposes per-residue activations in ``embeddings``.
+        feature_indices: list[int]
+            Indices of the SAE features to include. Must be non-empty and unique.
+        coefficients: list[float] | None = None
+            Per-feature linear coefficients, aligned with ``feature_indices``.
+            Defaults to all ones.
+        weight: float = 1.0
+            Overall weight of the energy term.
+        name: str | None = None
+            Optional suffix appended to the energy term name.
+        maximize: bool = True
+            If ``True`` (default) the linear combination is negated so a positive
+            coefficient *promotes* its feature under BAGEL's minimization.
+        normalize_coefficients: bool = True
+            If ``True`` (default) coefficients are L1-normalized (:math:`\\sum_i |c_i| = 1`).
+        residues: list[Residue] | None = None
+            Residues over which to pool. ``None`` (default) uses **all** residues.
+        pooling: {'max', 'mean', 'sum'} = 'mean'
+            How to reduce the selected residues to one value per feature.
+        """
+        name = 'residue_sae' if name is None else f'residue_sae_{name}'
+        # Residue-selective term: freeze the residue set (do not inherit residues
+        # added later under grand-canonical moves).
+        super().__init__(name=name, oracle=oracle, inheritable=False, weight=weight)
+
+        self.feature_indices, self.coefficients = _prepare_sae_feature_terms(
+            feature_indices, coefficients, normalize_coefficients
+        )
+        self.maximize = bool(maximize)
+
+        if pooling not in ('max', 'mean', 'sum'):
+            raise ValueError(f"pooling must be 'max', 'mean', or 'sum'; got {pooling!r}.")
+        self.pooling = pooling
+
+        self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
+
+        assert isinstance(self.oracle, EmbeddingOracle), 'Oracle must be an instance of EmbeddingOracle'
+        # Require the SAE-specific "features" field (as SAEnergy does), not just the
+        # ubiquitous "embeddings"; otherwise a plain embedding oracle (e.g. ESMC)
+        # would pass and its raw hidden states would be scored as SAE activations.
+        assert {'embeddings', 'features'} <= set(self.oracle.result_class.model_fields), (
+            'ResidueSAEnergy requires an SAE oracle exposing per-residue "embeddings" and "features" '
+            'in its result_class'
+        )
+        _require_supported_sae_model(self.oracle)
+
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        result = oracles_result[self.oracle]
+        activations = getattr(result, 'embeddings', None)
+        if activations is None:
+            raise ValueError(
+                'ResidueSAEnergy needs per-residue activations; build the SAE oracle with include_per_residue=True.'
+            )
+        activations = np.asarray(activations, dtype=np.float64)
+        if activations.ndim != 2:
+            raise ValueError(
+                f'per-residue SAE activations must be 2D (residues, features); got shape {activations.shape}.'
+            )
+
+        if self.residue_groups:
+            mask = self.get_embedding_residue_mask(
+                result.input_chains,
+                0,
+                getattr(result, 'chain_index', None),
+                getattr(result, 'residue_index', None),
+            )
+            if mask.shape[0] != activations.shape[0]:
+                raise ValueError(
+                    f'residue mask length ({mask.shape[0]}) does not match the number of activation rows '
+                    f'({activations.shape[0]}).'
+                )
+            rows = activations[mask]
+            if rows.shape[0] == 0:
+                raise ValueError('No embedding rows matched the selected residues for ResidueSAEnergy.')
+        else:
+            # Pool over all residues; guard against padded/extra activation rows by
+            # reconciling the row count with the residues in input_chains (the
+            # selected-residues branch does the same via the mask length).
+            expected_rows = sum(len(chain.residues) for chain in result.input_chains)
+            if activations.shape[0] != expected_rows:
+                raise ValueError(
+                    f'per-residue SAE activations have {activations.shape[0]} rows but input_chains has '
+                    f'{expected_rows} residues; the activation rows may include padding.'
+                )
+            rows = activations
+
+        if self.pooling == 'max':
+            pooled = rows.max(axis=0)
+        elif self.pooling == 'mean':
+            pooled = rows.mean(axis=0)
+        else:  # 'sum'
+            pooled = rows.sum(axis=0)
+
+        max_index = int(self.feature_indices.max())
+        if max_index >= pooled.shape[0]:
+            raise IndexError(
+                f'feature index {max_index} is out of range for a feature vector of length {pooled.shape[0]}.'
+            )
+        linear_combination = float(np.sum(self.coefficients * pooled[self.feature_indices]))
+        value = -linear_combination if self.maximize else linear_combination
+        return value, value * self.weight
+
+
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
+
+
+def residue_list_to_group(residues: list[Residue]) -> ResidueGroup:
+    """Converts list of residue objects to ResidueGroup required by energy term objects"""
+    return (np.array([res.chain_ID for res in residues]), np.array([res.index for res in residues]))
+
+
+def _fibonacci_sphere(n_points: int) -> npt.NDArray[np.float64]:
+    """
+    Generates ``n_points`` approximately uniformly distributed unit vectors on a sphere using the golden-spiral
+    (Fibonacci) construction. This is deterministic, so repeated evaluations of an energy term that uses it return
+    exactly the same number. That matters for Monte Carlo, where a randomly fluctuating energy would be
+    indistinguishable from a real change in the landscape.
+    """
+    assert n_points > 0, 'n_points must be positive'
+    indices = np.arange(n_points, dtype=np.float64) + 0.5
+    z = 1.0 - 2.0 * indices / n_points
+    ring_radius = np.sqrt(np.clip(1.0 - z * z, 0.0, None))
+    golden_angle = np.pi * (1.0 + np.sqrt(5.0))
+    theta = golden_angle * indices
+    return np.stack([ring_radius * np.cos(theta), ring_radius * np.sin(theta), z], axis=-1)
+
+
+def _atom_vdw_radii(structure: AtomArray) -> npt.NDArray[np.float64]:
+    """Looks up the van der Waals radius of every atom in ``structure``, falling back to carbon for unknown elements."""
+    return np.array(
+        [vdw_radii.get(str(element).upper(), default_vdw_radius) for element in structure.element], dtype=np.float64
+    )
+
+
+def _has_neighbour_within(
+    coords: npt.NDArray[np.float64], other_coords: npt.NDArray[np.float64], radius: float
+) -> npt.NDArray[np.bool_]:
+    """Flags every coordinate in ``coords`` that has at least one of ``other_coords`` within ``radius`` of it."""
+    if coords.shape[0] == 0 or other_coords.shape[0] == 0:
+        return np.zeros(coords.shape[0], dtype=bool)
+    cell_list = CellList(other_coords, cell_size=max(radius, 1e-3))
+    neighbours = np.atleast_2d(cell_list.get_atoms(coords, radius=radius))
+    if neighbours.shape[1] == 0:
+        return np.zeros(coords.shape[0], dtype=bool)
+    return np.asarray((neighbours >= 0).any(axis=1), dtype=bool)
+
+
+def _molecular_surface_dots(
+    coords: npt.NDArray[np.float64],
+    radii: npt.NDArray[np.float64],
+    probe_radius: float,
+    unit_sphere: npt.NDArray[np.float64],
+    seed_mask: npt.NDArray[np.bool_],
+    chunk_size: int = 20000,
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.int_]]:
+    """
+    Builds a dot representation of the contact part of the solvent-excluded ("molecular") surface of a group of
+    atoms - the locus of points where a rolling solvent probe touches the group.
+
+    The construction is the standard one. Dots are laid on the solvent-accessible sphere of radius
+    (van der Waals + probe) around each atom flagged in ``seed_mask``, which is the surface traced by the probe
+    *centre*. A dot is discarded if it falls inside the accessible sphere of any *other* atom in the group, since
+    the probe cannot sit there. Each surviving probe centre is then projected inward by the probe radius onto the
+    point where the probe actually touches the atom, giving a dot on the van der Waals surface.
+
+    That last step is what distinguishes this from a plain van der Waals dot surface, and it matters a lot here.
+    Testing occlusion with the inflated radii removes the dots lining the narrow crevices between neighbouring
+    atoms, which no solvent can reach and which no partner protein can complement either. Left in, those dots
+    contribute badly matched, near-random normals and drag the complementarity statistic towards zero.
+
+    The van der Waals surface, not the accessible surface, is the right place to put the final dots because two
+    molecules in contact have coincident van der Waals surfaces, whereas their accessible surfaces interpenetrate
+    by twice the probe radius. Coincidence at contact is what makes a distance-decay complementarity score
+    meaningful. A convenient side effect is that the outward normal at a dot is exactly the radial direction from
+    its parent atom.
+
+    Note that only the convex contact patches are produced; the concave reentrant patches that the probe sweeps out
+    where it bridges two atoms are not represented. Those are a minority of a protein surface, and omitting them
+    costs far less accuracy than including the crevices would.
+
+    Returns
+    -------
+    (dots, normals, parent_atom_indices)
+        Coordinates of the surviving dots on the van der Waals surface, their outward unit normals, and the index
+        (into ``coords``) of the atom each dot belongs to.
+    """
+    seed_indices = np.flatnonzero(seed_mask)
+    if seed_indices.size == 0 or coords.shape[0] == 0:
+        return np.zeros((0, 3), dtype=np.float64), np.zeros((0, 3), dtype=np.float64), np.zeros(0, dtype=np.int_)
+
+    expanded_radii = radii + probe_radius
+    n_points = unit_sphere.shape[0]
+    offsets = expanded_radii[seed_indices][:, None, None] * unit_sphere[None, :, :]
+    probe_centres = (coords[seed_indices][:, None, :] + offsets).reshape(-1, 3)
+    normals = np.tile(unit_sphere, (seed_indices.size, 1))
+    parents = np.repeat(seed_indices, n_points)
+
+    max_radius = float(expanded_radii.max())
+    cell_list = CellList(coords, cell_size=max(max_radius, 1e-3))
+
+    keep = np.ones(probe_centres.shape[0], dtype=bool)
+    for start in range(0, probe_centres.shape[0], chunk_size):
+        stop = min(start + chunk_size, probe_centres.shape[0])
+        block = probe_centres[start:stop]
+        neighbours = np.atleast_2d(cell_list.get_atoms(block, radius=max_radius))
+        if neighbours.shape[1] == 0:
+            continue
+        valid = neighbours >= 0
+        safe = np.where(valid, neighbours, 0)
+        distances = np.linalg.norm(block[:, None, :] - coords[safe], axis=-1)
+        occluded = valid & (safe != parents[start:stop, None]) & (distances < expanded_radii[safe] - 1e-9)
+        keep[start:stop] = ~occluded.any(axis=1)
+
+    # project each surviving probe centre inward onto the point where the probe touches the atom
+    dots = probe_centres[keep] - probe_radius * normals[keep]
+    return dots, normals[keep], parents[keep]
+
+
+def _smoothed_normals(
+    dots: npt.NDArray[np.float64],
+    coords: npt.NDArray[np.float64],
+    radii: npt.NDArray[np.float64],
+    smoothing: float,
+    chunk_size: int = 20000,
+) -> npt.NDArray[np.float64]:
+    """
+    Replaces the per-atom radial normal at each surface dot with a normal averaged over the nearby atoms.
+
+    The raw normal on a union-of-spheres surface points straight out of whichever single atom owns the dot, so it
+    swings through a large angle from one side of an atom to the other. A real solvent-excluded surface is far
+    smoother, because the reentrant patches swept out by the rolling probe bridge neighbouring atoms. Those patches
+    are not represented here, so their smoothing effect is imitated directly: the normal at a dot is the weighted
+    mean of the radial directions from all atoms within reach, each weighted by ``exp(-(d - r) / smoothing)`` in
+    its distance from that atom's surface.
+
+    Without this, complementarity is measured atom against atom and the resulting statistic is dominated by the
+    bumpiness of individual side chain atoms rather than by the shape of the interface as a whole.
+    """
+    normals = np.zeros_like(dots)
+    if dots.shape[0] == 0 or coords.shape[0] == 0:
+        return normals
+
+    reach = float(radii.max()) + 4.0 * smoothing
+    cell_list = CellList(coords, cell_size=max(reach, 1e-3))
+    for start in range(0, dots.shape[0], chunk_size):
+        stop = min(start + chunk_size, dots.shape[0])
+        block = dots[start:stop]
+        neighbours = np.atleast_2d(cell_list.get_atoms(block, radius=reach))
+        if neighbours.shape[1] == 0:
+            continue
+        valid = neighbours >= 0
+        safe = np.where(valid, neighbours, 0)
+        offsets = block[:, None, :] - coords[safe]
+        distances = np.maximum(np.linalg.norm(offsets, axis=-1), 1e-9)
+        weights = np.where(valid, np.exp(-np.clip(distances - radii[safe], 0.0, None) / smoothing), 0.0)
+        normals[start:stop] = np.sum(weights[..., None] * offsets / distances[..., None], axis=1)
+
+    lengths = np.linalg.norm(normals, axis=1, keepdims=True)
+    # a dot with no usable neighbourhood keeps a zero normal, which simply scores 0 rather than blowing up
+    return np.asarray(
+        np.divide(normals, lengths, out=np.zeros_like(normals), where=lengths > 1e-9),
+        dtype=np.float64,
+    )
+
+
+def _buried_by_partner(
+    dots: npt.NDArray[np.float64],
+    normals: npt.NDArray[np.float64],
+    partner_coords: npt.NDArray[np.float64],
+    partner_radii: npt.NDArray[np.float64],
+    probe_radius: float,
+    chunk_size: int = 20000,
+) -> npt.NDArray[np.bool_]:
+    """
+    Flags the surface dots that the partner group hides from the solvent, which is what defines the interface.
+
+    A dot is solvent accessible if a spherical probe of radius ``probe_radius`` can sit tangent to the surface
+    there, i.e. with its centre at ``dot + probe_radius * normal``. The dot is buried by the partner if that probe
+    centre clashes with any partner atom, that is if it lies within ``partner_radius + probe_radius`` of it.
+
+    Defining the interface this way, rather than by a plain distance cutoff, keeps out dots that merely happen to
+    be near the partner while pointing away from it - for example dots on the far side of an interface atom. Those
+    would otherwise be scored as badly matched and would dilute the statistic.
+    """
+    n_dots = dots.shape[0]
+    buried = np.zeros(n_dots, dtype=bool)
+    if n_dots == 0 or partner_coords.shape[0] == 0:
+        return buried
+
+    probe_centres = dots + probe_radius * normals
+    clash_radii = partner_radii + probe_radius
+    max_clash_radius = float(clash_radii.max())
+    cell_list = CellList(partner_coords, cell_size=max(max_clash_radius, 1e-3))
+
+    for start in range(0, n_dots, chunk_size):
+        stop = min(start + chunk_size, n_dots)
+        block = probe_centres[start:stop]
+        neighbours = np.atleast_2d(cell_list.get_atoms(block, radius=max_clash_radius))
+        if neighbours.shape[1] == 0:
+            continue
+        valid = neighbours >= 0
+        safe = np.where(valid, neighbours, 0)
+        distances = np.linalg.norm(block[:, None, :] - partner_coords[safe], axis=-1)
+        buried[start:stop] = (valid & (distances < clash_radii[safe] - 1e-9)).any(axis=1)
+
+    return buried
+
+
+def _nearest_dot(
+    query_dots: npt.NDArray[np.float64],
+    target_dots: npt.NDArray[np.float64],
+    cutoff: float,
+    chunk_size: int = 20000,
+) -> tuple[npt.NDArray[np.int_], npt.NDArray[np.float64]]:
+    """
+    For every dot in ``query_dots``, finds the closest dot in ``target_dots`` lying within ``cutoff``.
+
+    Returns
+    -------
+    (indices, distances)
+        Index into ``target_dots`` of the nearest dot, or -1 if none lies within ``cutoff``. The distance is
+        ``np.inf`` wherever the index is -1.
+    """
+    n_query = query_dots.shape[0]
+    indices = np.full(n_query, -1, dtype=np.int_)
+    distances = np.full(n_query, np.inf, dtype=np.float64)
+    if n_query == 0 or target_dots.shape[0] == 0:
+        return indices, distances
+
+    cell_list = CellList(target_dots, cell_size=max(cutoff, 1e-3))
+    for start in range(0, n_query, chunk_size):
+        stop = min(start + chunk_size, n_query)
+        block = query_dots[start:stop]
+        neighbours = np.atleast_2d(cell_list.get_atoms(block, radius=cutoff))
+        if neighbours.shape[1] == 0:
+            continue
+        valid = neighbours >= 0
+        safe = np.where(valid, neighbours, 0)
+        block_distances = np.where(valid, np.linalg.norm(block[:, None, :] - target_dots[safe], axis=-1), np.inf)
+        rows = np.arange(block.shape[0])
+        closest = np.argmin(block_distances, axis=1)
+        best_distance = block_distances[rows, closest]
+        found = np.isfinite(best_distance)
+        indices[start:stop] = np.where(found, safe[rows, closest], -1)
+        distances[start:stop] = best_distance
+
+    return indices, distances
+
+
+def _statistic(values: npt.NDArray[np.float64], statistic: Literal['mean', 'median']) -> float:
+    """Computes the mean or median of ``values``. Returns 0.0 if there is nothing to aggregate."""
+    if values.size == 0:
+        return 0.0
+    return float(np.mean(values) if statistic == 'mean' else np.median(values))
+
+
+# SAE energy terms are only meaningful for the specific SAE they were designed
+# around: the ESMC-6B, layer-60, k64, codebook-16384 model. The feature indices and
+# their learned "concepts" are model-specific, so mixing in a different SAE would be
+# silently wrong.
+REQUIRED_SAE_MODEL = 'ESMC-6B-sae-layer60-k64-codebook16384'
+
+
+_REQUIRED_SAE_MODEL_TOKENS = ('6b', 'layer60', 'k64', 'codebook16384')
+
+
+def _require_supported_sae_model(oracle: Oracle) -> None:
+    """Raise unless the oracle is configured to use the required SAE model.
+
+    Checks the oracle's ``sae_model_id`` (set by :class:`~bagel.oracles.embedding.sae.SAE`).
+    Matching is done on normalized tokens so it is robust to the model's date tag
+    (e.g. ``esmc-6b-2024-12-sae-layer60-k64-codebook16384``). The oracle's
+    ``sae_identity_tokens`` (the local backend's layer / k / codebook / model, which
+    live in config rather than in the repo-id string) are folded in first, so a
+    local config that selects the *same* SAE as the Forge default is accepted even
+    though its repo id is spelled differently. If the oracle does not expose a model
+    id (e.g. a bare test double), the check is skipped.
+    """
+    model_id = getattr(oracle, 'sae_model_id', None)
+    if model_id is None:
+        return
+    normalized = re.sub(r'[^a-z0-9]', '', str(model_id).lower())
+    # Keep the two sources separate: concatenating them could synthesize a
+    # required token across the join boundary (e.g. a model id ending in 'k6'
+    # followed by identity tokens starting with '4' spuriously forming 'k64').
+    identity_tokens = getattr(oracle, 'sae_identity_tokens', '') or ''
+    if not all(token in normalized or token in identity_tokens for token in _REQUIRED_SAE_MODEL_TOKENS):
+        raise ValueError(
+            f'SAE energy terms require an oracle backed by the {REQUIRED_SAE_MODEL} model, '
+            f'but this oracle uses {model_id!r}. Build the SAE oracle with the default '
+            '(ESMC-6B / layer 60) configuration.'
+        )
+
+
+def _prepare_sae_feature_terms(
+    feature_indices: list[int],
+    coefficients: list[float] | None,
+    normalize_coefficients: bool,
+) -> tuple[npt.NDArray[np.int_], npt.NDArray[np.float64]]:
+    """Validate ``feature_indices`` / ``coefficients`` shared by the SAE energy terms.
+
+    Returns the validated integer index array and the coefficient array (L1-normalized
+    so :math:`\\sum_i |c_i| = 1` when ``normalize_coefficients`` is set). Raises on empty,
+    duplicate, or negative indices, mismatched lengths, or all-zero coefficients under
+    normalization.
+    """
+    feature_indices_array = np.asarray(feature_indices, dtype=int)
+    if feature_indices_array.ndim != 1 or feature_indices_array.size == 0:
+        raise ValueError('feature_indices must be a non-empty 1D list of feature indices.')
+    if np.any(feature_indices_array < 0):
+        raise ValueError('feature_indices must be non-negative.')
+    if np.unique(feature_indices_array).size != feature_indices_array.size:
+        raise ValueError('feature_indices must be unique.')
+
+    if coefficients is None:
+        coefficients_array = np.ones(feature_indices_array.size, dtype=np.float64)
+    else:
+        coefficients_array = np.asarray(coefficients, dtype=np.float64)
+        if coefficients_array.shape != feature_indices_array.shape:
+            raise ValueError(
+                f'coefficients length ({coefficients_array.size}) must match '
+                f'feature_indices length ({feature_indices_array.size}).'
+            )
+
+    if normalize_coefficients:
+        l1_norm = float(np.sum(np.abs(coefficients_array)))
+        if l1_norm == 0.0:
+            raise ValueError('coefficients must have at least one non-zero value to be normalized.')
+        coefficients_array = coefficients_array / l1_norm
+
+    return feature_indices_array, coefficients_array

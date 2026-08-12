@@ -28,5 +28,6 @@ docs/_build
 # Project specific
 data
 logs_step_*
+mc_minimizer_*
 .model_cache
 .wandb
