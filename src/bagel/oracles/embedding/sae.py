@@ -237,4 +237,5 @@ class SAE(EmbeddingOracle):
                 )
             arr = arr[0]
         arr = np.asarray(arr, dtype=int)
-        return arr[arr != -1]
+        unpadded: npt.NDArray[np.int_] = arr[arr != -1]
+        return unpadded

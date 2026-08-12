@@ -1589,7 +1589,7 @@ REQUIRED_SAE_MODEL = 'ESMC-6B-sae-layer60-k64-codebook16384'
 _REQUIRED_SAE_MODEL_TOKENS = ('6b', 'layer60', 'k64', 'codebook16384')
 
 
-def _require_supported_sae_model(oracle: 'EnergyTerm.oracle') -> None:  # type: ignore[name-defined]
+def _require_supported_sae_model(oracle: Oracle) -> None:
     """Raise unless the oracle is configured to use the required SAE model.
 
     Checks the oracle's ``sae_model_id`` (set by :class:`~bagel.oracles.embedding.sae.SAE`).
