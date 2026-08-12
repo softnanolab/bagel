@@ -94,7 +94,7 @@ class SAEResult(EmbeddingResult):
     embeddings: npt.NDArray[np.float64] | None = None  # type: ignore[assignment]
     features: npt.NDArray[np.float64]
     layer: int = -1
-    sae_model: str = ""
+    sae_model: str = ''
     # Per-residue identity of every embedding/activation row, as reported by
     # BoilerRoom: ``chain_index`` is the 0-based chain ordinal (in input order) and
     # ``residue_index`` is the 0-based index of the residue within its chain. These

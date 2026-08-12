@@ -843,9 +843,11 @@ def test_embeddings_similarity_energy(
                 (len(square_structure_residues) - 1, 1280)
             ),  # Using typical ESM2 embedding size
         )
-    assert 'Number of reference embeddings (1) does not match number of residues to include in energy term (2)' in str(
-        e.value
-    )
+    n_residues = len(square_structure_residues)
+    assert (
+        f'Number of reference embeddings ({n_residues - 1}) does not match '
+        f'number of residues to include in energy term ({n_residues})'
+    ) in str(e.value)
 
     # Test dynamic reference embeddings
     # Create initial two-chain multimer state
