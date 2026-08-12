@@ -1,0 +1,10 @@
+subset,n,rho,p,ci_low,ci_high
+"NON-ALANINE, all (repacked)",297,0.217,0.00016,0.096,0.332
+"non-alanine, mutation ADDS bulk",148,0.198,0.016,0.041,0.35
+"non-alanine, mutation REMOVES bulk",149,0.138,0.094,-0.039,0.303
+"non-alanine, hydrophobic wt residue",106,0.447,1.6e-06,0.274,0.591
+"non-alanine, polar/charged wt residue",191,0.068,0.35,-0.083,0.218
+"non-alanine, delta Sc (intensive)",297,0.092,0.11,-0.034,0.211
+"non-alanine, -delta buried SASA",291,0.164,0.0051,0.045,0.279
+"ALANINE control, WITH repacking",199,0.253,0.00032,0.116,0.382
+"ALANINE control, truncation only",199,0.326,2.6e-06,0.198,0.449

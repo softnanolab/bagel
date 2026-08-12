@@ -1,0 +1,6 @@
+predictor,spearman_rho,p_asymptotic,p_permutation,ci95_low,ci95_high
+"ShapeComplementarityEnergy (default, extensive)",0.388,0.091,0.0951,-0.155,0.783
+ShapeComplementarityEnergy (hydrophobic_weight=4),0.254,0.2796,0.2797,-0.282,0.717
+Sc statistic (intensive),-0.116,0.6269,0.6278,-0.532,0.35
+Buried SASA (classic baseline),0.37,0.1084,0.1091,-0.154,0.785
+Total residue count (null control),0.397,0.0831,0.0854,-0.121,0.795
