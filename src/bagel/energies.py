@@ -1804,13 +1804,12 @@ class ShapeComplementarityEnergy(EnergyTerm):
     angle, so a dot on an atom of radius :math:`r` represents :math:`4 \\pi r^2 / N` of it. The energy is therefore
     a surface integral over the buried interface rather than an average over it,
 
-    .. math:: E = -\\frac{1}{2 A_0} \\sum_{a \\in I_A \\cup I_B} \\varphi_a \\, s_a \\, \\delta A_a
+    .. math:: E = -\\frac{1}{2 A_0} \\sum_{a \\in I_A \\cup I_B} s_a \\, \\delta A_a
 
     where :math:`A_0` is ``area_scale`` and the half undoes the double counting from summing over both sides. Read
-    physically, this is an interfacial free energy: :math:`\\varphi` plays the role of an energy per unit area that
-    depends on the chemistry of the contact, and :math:`s` discounts it wherever the surfaces fit badly. Doubling a
-    well-packed interface doubles the energy, and :math:`\\lambda` genuinely scales the result rather than merely
-    redistributing it. On flat test interfaces the energy follows :math:`a n^2 + b n` - a bulk term plus a
+    physically, this is an interfacial free energy per unit area, discounted by :math:`s` wherever the surfaces fit
+    badly. Doubling a well-packed interface doubles the energy, so ``weight`` genuinely scales the result rather
+    than merely redistributing it. On flat test interfaces the energy follows :math:`a n^2 + b n` - a bulk term plus a
     perimeter correction - to within 1% over a sixteenfold range of area, with the perimeter share falling from
     about 20% of a 16-residue patch to 6% of a 256-residue one.
 

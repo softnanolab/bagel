@@ -1426,10 +1426,13 @@ def test_ShapeComplementarityEnergy_ranks_a_real_interface_above_a_decoy(
     chain_ids = list(pd.unique(formolase_structure.chain_id))[:2]
     groups = []
     for chain_id in chain_ids:
-        sequence = bg.oracles.folding.utils.sequence_from_atomarray(
-            formolase_structure[formolase_structure.chain_id == chain_id]
-        )
-        groups.append([bg.Residue(name=aa, chain_ID=chain_id, index=i) for i, aa in enumerate(sequence)])
+        chain = formolase_structure[formolase_structure.chain_id == chain_id]
+        sequence = bg.oracles.folding.utils.sequence_from_atomarray(chain)
+        # index must be the structure's res_id, not a 0-based position: get_atom_mask matches
+        # bg.Residue.index against AtomArray.res_id, so enumerate() would drop the residues whose
+        # res_id falls outside 0..len-1 (here res_id runs 2..564).
+        res_ids = list(dict.fromkeys(int(r) for r in chain.res_id))
+        groups.append([bg.Residue(name=aa, chain_ID=chain_id, index=res_id) for aa, res_id in zip(sequence, res_ids)])
     native_groups = (groups[0], groups[1])
 
     native = shape_complementarity(fake_esmfold, formolase_structure, native_groups, scaling=scaling)
