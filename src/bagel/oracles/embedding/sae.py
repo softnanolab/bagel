@@ -8,6 +8,7 @@ turns into an energy.
 """
 
 import logging
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -40,6 +41,35 @@ def _resolve_sae_model_id(config: dict[str, Any]) -> str:
     if source == 'local':
         return str(config.get('sae_repo_id', ''))
     return str(config.get('forge_sae_model', DEFAULT_FORGE_SAE_MODEL))
+
+
+def _resolve_sae_identity_tokens(config: dict[str, Any]) -> str:
+    """Extra normalized identity tokens for the SAE energy-term guard.
+
+    The Forge model id (e.g. ``esmc-6b-2024-12-sae-layer60-k64-codebook16384``)
+    spells out model / layer / k / codebook in one string, but the local backend
+    splits them across config: the layer lives in ``sae_layer`` and is *not* part
+    of the ``sae_repo_id`` (e.g. ``biohub/ESMC-6B-sae-k64-codebook16384``). So an
+    otherwise-identical local SAE would fail a purely name-based check.
+
+    This returns the local SAE's ``esmc_model_name`` / ``sae_layer`` / ``k`` /
+    ``num_features`` as normalized tokens (e.g. ``'esmc6blayer60k64codebook16384'``)
+    that :func:`bagel.energies._require_supported_sae_model` folds in before
+    matching, so a local config selecting the same SAE as the Forge default is
+    accepted regardless of repo-id spelling. Empty for the Forge source, whose id
+    already encodes every component.
+    """
+    if str(config.get('feature_source', 'forge')) != 'local':
+        return ''
+    parts: list[str] = []
+    model_name = config.get('esmc_model_name')
+    if model_name is not None:
+        parts.append(str(model_name))
+    for key, prefix in (('sae_layer', 'layer'), ('k', 'k'), ('num_features', 'codebook')):
+        value = config.get(key)
+        if value is not None:
+            parts.append(f'{prefix}{int(value)}')
+    return re.sub(r'[^a-z0-9]', '', ''.join(parts).lower())
 
 
 class SAEResult(EmbeddingResult):
@@ -135,6 +165,10 @@ class SAE(EmbeddingOracle):
         # layer 60 via Forge). Exposed so energy terms can require a specific SAE
         # model. Kept torch-free: we do not import SAECore just to read its default.
         self.sae_model_id = _resolve_sae_model_id(cfg)
+        # Extra identity tokens (local layer / k / codebook / model) so SAE energy
+        # terms can recognize a genuine 6B/layer-60 SAE even when the local repo id
+        # spells it differently than the Forge model id. See _resolve_sae_identity_tokens.
+        self.sae_identity_tokens = _resolve_sae_identity_tokens(cfg)
 
         # Pass config straight through so BoilerRoom's SAE defaults apply
         # (ESMC-6B / layer 60 via Forge). Use feature_source="local" for the

@@ -1594,13 +1594,18 @@ def _require_supported_sae_model(oracle: 'EnergyTerm.oracle') -> None:  # type: 
 
     Checks the oracle's ``sae_model_id`` (set by :class:`~bagel.oracles.embedding.sae.SAE`).
     Matching is done on normalized tokens so it is robust to the model's date tag
-    (e.g. ``esmc-6b-2024-12-sae-layer60-k64-codebook16384``). If the oracle does not
-    expose a model id (e.g. a bare test double), the check is skipped.
+    (e.g. ``esmc-6b-2024-12-sae-layer60-k64-codebook16384``). The oracle's
+    ``sae_identity_tokens`` (the local backend's layer / k / codebook / model, which
+    live in config rather than in the repo-id string) are folded in first, so a
+    local config that selects the *same* SAE as the Forge default is accepted even
+    though its repo id is spelled differently. If the oracle does not expose a model
+    id (e.g. a bare test double), the check is skipped.
     """
     model_id = getattr(oracle, 'sae_model_id', None)
     if model_id is None:
         return
     normalized = re.sub(r'[^a-z0-9]', '', str(model_id).lower())
+    normalized += getattr(oracle, 'sae_identity_tokens', '') or ''
     if not all(token in normalized for token in _REQUIRED_SAE_MODEL_TOKENS):
         raise ValueError(
             f'SAE energy terms require an oracle backed by the {REQUIRED_SAE_MODEL} model, '

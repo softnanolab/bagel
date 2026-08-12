@@ -11,11 +11,16 @@ from bagel.oracles.embedding.sae import SAE, SAEResult
 VALID_SAE_MODEL = 'esmc-6b-2024-12-sae-layer60-k64-codebook16384'
 
 
-def _oracle_with_features(features: np.ndarray, sae_model_id: str | None = VALID_SAE_MODEL):
+def _oracle_with_features(
+    features: np.ndarray,
+    sae_model_id: str | None = VALID_SAE_MODEL,
+    sae_identity_tokens: str = '',
+):
     """Return a (fake) SAE oracle and an OraclesResultDict holding ``features``."""
     oracle = SAE.__new__(SAE)
     oracle.result_class = SAEResult
     oracle.sae_model_id = sae_model_id
+    oracle.sae_identity_tokens = sae_identity_tokens
     chains = [bg.Chain([bg.Residue(name='A', chain_ID='A', index=0)])]
     result = SAEResult(input_chains=chains, features=np.asarray(features, dtype=np.float64))
     oracles_result = OraclesResultDict()
@@ -161,3 +166,27 @@ def test_model_check_skipped_when_id_absent():
     oracle, _ = _oracle_with_features(np.ones(3), sae_model_id=None)
     # No model id on the oracle -> check is skipped, no error.
     assert bg.energies.SAEnergy(oracle=oracle, feature_indices=[0]).name == 'sae'
+
+
+def test_local_6b_config_accepted_despite_repo_naming():
+    # A local config selecting the same SAE as the Forge default: the repo id has
+    # no 'layer60' token (the layer lives in sae_layer), but the folded identity
+    # tokens supply it, so the guard must accept it.
+    oracle, _ = _oracle_with_features(
+        np.ones(3),
+        sae_model_id='biohub/ESMC-6B-sae-k64-codebook16384',
+        sae_identity_tokens='esmc6blayer60k64codebook16384',
+    )
+    assert bg.energies.SAEnergy(oracle=oracle, feature_indices=[0]).name == 'sae'
+
+
+def test_local_600m_still_rejected_with_identity_tokens():
+    # A genuinely different local SAE (600M / layer 27) must still be rejected even
+    # with identity tokens present.
+    oracle, _ = _oracle_with_features(
+        np.ones(3),
+        sae_model_id='biohub/ESMC-600M-sae-k64-codebook16384',
+        sae_identity_tokens='esmc600mlayer27k64codebook16384',
+    )
+    with pytest.raises(ValueError, match='ESMC-6B'):
+        bg.energies.SAEnergy(oracle=oracle, feature_indices=[0])

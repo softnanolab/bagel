@@ -7,7 +7,13 @@ import pytest
 
 import bagel as bg
 from bagel.oracles.base import OraclesResultDict
-from bagel.oracles.embedding.sae import SAE, SAEResult, _resolve_sae_model_id, DEFAULT_FORGE_SAE_MODEL
+from bagel.oracles.embedding.sae import (
+    SAE,
+    SAEResult,
+    _resolve_sae_identity_tokens,
+    _resolve_sae_model_id,
+    DEFAULT_FORGE_SAE_MODEL,
+)
 
 
 class TestResolveSAEModelId:
@@ -24,6 +30,34 @@ class TestResolveSAEModelId:
 
     def test_local_without_repo_is_empty(self):
         assert _resolve_sae_model_id({'feature_source': 'local'}) == ''
+
+
+class TestResolveSAEIdentityTokens:
+    def test_forge_has_no_extra_tokens(self):
+        # Forge model ids already encode every component, so no extra tokens.
+        assert _resolve_sae_identity_tokens({}) == ''
+        assert _resolve_sae_identity_tokens({'feature_source': 'forge'}) == ''
+
+    def test_local_folds_layer_k_codebook_and_model(self):
+        cfg = {
+            'feature_source': 'local',
+            'esmc_model_name': 'esmc_6b',
+            'sae_layer': 60,
+            'k': 64,
+            'num_features': 16384,
+        }
+        tokens = _resolve_sae_identity_tokens(cfg)
+        for expected in ('6b', 'layer60', 'k64', 'codebook16384'):
+            assert expected in tokens
+
+    def test_local_600m_tokens_lack_6b_and_layer60(self):
+        cfg = {'feature_source': 'local', 'esmc_model_name': 'esmc_600m', 'sae_layer': 27}
+        tokens = _resolve_sae_identity_tokens(cfg)
+        assert '600m' in tokens and 'layer27' in tokens
+        assert '6b' not in tokens and 'layer60' not in tokens
+
+    def test_local_without_fields_is_empty(self):
+        assert _resolve_sae_identity_tokens({'feature_source': 'local'}) == ''
 
 
 @dataclass
