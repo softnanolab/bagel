@@ -147,6 +147,28 @@ class TestSAEOracle:
         assert result.embeddings is not None
         assert result.embeddings.shape == (3, 4)
 
+    def test_embed_trims_padded_activation_rows(self):
+        # features has a padded 4th row that chain_index marks as -1; it must be
+        # dropped so activation rows line up with the 3 real residues.
+        pooled = np.ones((1, 2), dtype=np.float64)
+        per_residue = np.arange(4 * 2, dtype=np.float64).reshape(1, 4, 2)
+        chain_index = np.array([[0, 0, 0, -1]], dtype=np.int64)
+        residue_index = np.array([[0, 1, 2, -1]], dtype=np.int64)
+        oracle = _make_oracle(
+            _FakeSAEOutput(
+                pooled_features=pooled,
+                features=per_residue,
+                chain_index=chain_index,
+                residue_index=residue_index,
+            )
+        )
+        chains = [bg.Chain([bg.Residue(name='A', chain_ID='A', index=i) for i in range(3)])]
+        result = oracle.embed(chains)
+        assert result.embeddings is not None
+        assert result.embeddings.shape == (3, 2)
+        np.testing.assert_array_equal(result.embeddings, per_residue[0][:3])
+        np.testing.assert_array_equal(result.chain_index, [0, 0, 0])
+
     def test_embed_rejects_batched_pooled_features(self):
         pooled = np.ones((2, 4), dtype=np.float64)  # batch > 1
         oracle = _make_oracle(_FakeSAEOutput(pooled_features=pooled))

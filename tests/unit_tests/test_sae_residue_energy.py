@@ -58,6 +58,17 @@ def test_all_residues_mean_pool_default():
     assert unweighted == pytest.approx(-5.0)
 
 
+def test_all_residues_row_count_mismatch_raises():
+    # 6 activation rows but only 5 residues in input_chains -> reject rather than
+    # silently pool padded/extra rows.
+    chain_a, chain_b = _multichain_chains()
+    emb = np.ones((6, 4), dtype=np.float64)
+    oracle, results = _oracle_with_embeddings(emb, (chain_a, chain_b))
+    energy = bg.energies.ResidueSAEnergy(oracle=oracle, feature_indices=[0])
+    with pytest.raises(ValueError, match='input_chains has'):
+        energy.compute(results)
+
+
 def test_max_pool_over_all_residues_matches_whole_protein():
     chain_a, chain_b = _multichain_chains()
     oracle, results = _oracle_with_embeddings(_EMB, (chain_a, chain_b), _CI, _RI)

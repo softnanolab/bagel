@@ -1605,8 +1605,11 @@ def _require_supported_sae_model(oracle: Oracle) -> None:
     if model_id is None:
         return
     normalized = re.sub(r'[^a-z0-9]', '', str(model_id).lower())
-    normalized += getattr(oracle, 'sae_identity_tokens', '') or ''
-    if not all(token in normalized for token in _REQUIRED_SAE_MODEL_TOKENS):
+    # Keep the two sources separate: concatenating them could synthesize a
+    # required token across the join boundary (e.g. a model id ending in 'k6'
+    # followed by identity tokens starting with '4' spuriously forming 'k64').
+    identity_tokens = getattr(oracle, 'sae_identity_tokens', '') or ''
+    if not all(token in normalized or token in identity_tokens for token in _REQUIRED_SAE_MODEL_TOKENS):
         raise ValueError(
             f'SAE energy terms require an oracle backed by the {REQUIRED_SAE_MODEL} model, '
             f'but this oracle uses {model_id!r}. Build the SAE oracle with the default '
@@ -1846,8 +1849,12 @@ class ResidueSAEnergy(EnergyTerm):
         self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
 
         assert isinstance(self.oracle, EmbeddingOracle), 'Oracle must be an instance of EmbeddingOracle'
-        assert 'embeddings' in self.oracle.result_class.model_fields, (
-            'ResidueSAEnergy requires the oracle to expose per-residue "embeddings" in its result_class'
+        # Require the SAE-specific "features" field (as SAEnergy does), not just the
+        # ubiquitous "embeddings"; otherwise a plain embedding oracle (e.g. ESMC)
+        # would pass and its raw hidden states would be scored as SAE activations.
+        assert {'embeddings', 'features'} <= set(self.oracle.result_class.model_fields), (
+            'ResidueSAEnergy requires an SAE oracle exposing per-residue "embeddings" and "features" '
+            'in its result_class'
         )
         _require_supported_sae_model(self.oracle)
 
@@ -1881,6 +1888,15 @@ class ResidueSAEnergy(EnergyTerm):
             if rows.shape[0] == 0:
                 raise ValueError('No embedding rows matched the selected residues for ResidueSAEnergy.')
         else:
+            # Pool over all residues; guard against padded/extra activation rows by
+            # reconciling the row count with the residues in input_chains (the
+            # selected-residues branch does the same via the mask length).
+            expected_rows = sum(len(chain.residues) for chain in result.input_chains)
+            if activations.shape[0] != expected_rows:
+                raise ValueError(
+                    f'per-residue SAE activations have {activations.shape[0]} rows but input_chains has '
+                    f'{expected_rows} residues; the activation rows may include padding.'
+                )
             rows = activations
 
         if self.pooling == 'max':

@@ -200,13 +200,28 @@ class SAE(EmbeddingOracle):
                 'BAGEL does not support embedding batches.'
             )
         features = pooled[0]
+        raw_chain_index = getattr(output, 'chain_index', None)
         per_residue = getattr(output, 'features', None)
         embeddings = None
         if per_residue is not None:
             per_residue = np.asarray(per_residue, dtype=np.float64)
             # Drop the leading batch axis for the single sample.
             embeddings = per_residue[0] if per_residue.ndim == 3 else per_residue
-        chain_index = self._single_sample_indices(getattr(output, 'chain_index', None))
+            # BoilerRoom pads the per-residue axis to the batch max. Trim those
+            # padding rows with the same -1 chain_index mask used for the index
+            # arrays, so the activation rows line up with the (unpadded) residues
+            # and input_chains rather than silently entering the pooled energy.
+            if raw_chain_index is not None:
+                padded_chain = np.asarray(raw_chain_index)
+                padded_chain = padded_chain[0] if padded_chain.ndim == 2 else padded_chain
+                valid = padded_chain != -1
+                if embeddings.shape[0] != valid.shape[0]:
+                    raise ValueError(
+                        f'per-residue activation rows ({embeddings.shape[0]}) do not match the padded '
+                        f'residue count ({valid.shape[0]}).'
+                    )
+                embeddings = embeddings[valid]
+        chain_index = self._single_sample_indices(raw_chain_index)
         residue_index = self._single_sample_indices(getattr(output, 'residue_index', None))
         return self.result_class(
             input_chains=chains,
