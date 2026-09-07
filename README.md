@@ -38,7 +38,7 @@ pip install biobagel
 
 **Optional Extras:**
 
-- For development (testing, linting, documentation):
+- For development (testing and linting):
 ```bash
 pip install biobagel[dev]
 ```
@@ -76,7 +76,7 @@ uv sync
 
 **Optional Extras:**
 
-- For development (testing, linting, documentation):
+- For development (testing and linting):
 ```bash
 uv sync --extra dev
 ```

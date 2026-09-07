@@ -32,14 +32,6 @@ Host-side model dependencies are supplied by BoilerRoom's images. To run an
 oracle locally, install Apptainer on the host and use a suitable GPU; no separate
 Python `local` extra is required.
 
-## Documentation [Work In Progress]
-
-Generate documentation:
-
-```bash
-uv run pydoclint src/bagel/* --style=sphinx
-```
-
 ## Testing
 
 To run the tests, you must specify how to handle Oracles, i.e. whether to run remotely or locally.
