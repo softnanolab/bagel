@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 import copy
 import inspect
 import pytest
-from typing import Any
+from typing import Any, Callable
 
 
 def test_residue_list_to_group_function(residues: list[bg.Residue]) -> None:
@@ -1974,3 +1974,228 @@ def test_ShapeComplementarityEnergy_rejects_invalid_scaling(fake_esmfold: bg.ora
         bg.energies.ShapeComplementarityEnergy(oracle=fake_esmfold, residues=groups, scaling='wrong')  # type: ignore[arg-type]
     with pytest.raises(AssertionError):
         bg.energies.ShapeComplementarityEnergy(oracle=fake_esmfold, residues=groups, area_scale=0.0)
+
+
+# ---- BinderRMSDEnergy ----
+
+
+class _FakeBackboneOracle(bg.oracles.folding.FoldingOracle):
+    """Folding oracle that lays residues on a line, displacing chosen residues, with a chosen pLDDT profile."""
+
+    result_class = bg.oracles.folding.base.ConfidenceFoldingResult
+
+    def __init__(
+        self, displacements: dict[tuple[str, int], float], plddt_function: Callable[[int], np.ndarray]
+    ) -> None:
+        self.displacements = displacements
+        self.plddt_function = plddt_function
+
+    def fold(self, chains: list[bg.Chain]) -> bg.oracles.folding.base.ConfidenceFoldingResult:
+        atoms = []
+        for chain in chains:
+            for residue in chain.residues:
+                for atom_name, offset in (('N', -0.5), ('CA', 0.0), ('C', 0.5)):
+                    position = [
+                        3.8 * residue.index + offset,
+                        self.displacements.get((chain.chain_ID, residue.index), 0.0),
+                        0.0,
+                    ]
+                    atoms.append(
+                        Atom(
+                            position,
+                            chain_id=chain.chain_ID,
+                            res_id=residue.index,
+                            res_name=residue.three_letter_name,
+                            atom_name=atom_name,
+                            element='C',
+                        )
+                    )
+        n_residues = sum(len(chain.residues) for chain in chains)
+        return bg.oracles.folding.base.ConfidenceFoldingResult(
+            input_chains=chains,
+            structure=array(atoms),
+            local_plddt=np.array([self.plddt_function(n_residues)]),
+            ptm=np.array([0.5]),
+            pae=np.zeros((1, n_residues, n_residues)),
+        )
+
+
+def _binder_and_target() -> tuple[bg.Chain, bg.Chain]:
+    binder = bg.Chain([bg.Residue(aa, 'A', i) for i, aa in enumerate('ACDEF')])
+    target = bg.Chain([bg.Residue(aa, 'B', i) for i, aa in enumerate('GHIK')])
+    return binder, target
+
+
+def _rmsd_setup(
+    displacements: dict[tuple[str, int], float],
+    plddt: np.ndarray | None = None,
+    **energy_kwargs: Any,
+) -> tuple[bg.State, bg.State, bg.energies.BinderRMSDEnergy, _FakeBackboneOracle]:
+    """Reference state: binder alone, flat. Complex state: binder + target, binder residues displaced in y."""
+    binder, target = _binder_and_target()
+    profile = (lambda n: np.full(n, 0.5)) if plddt is None else (lambda n: np.resize(plddt, n))
+    reference_oracle = _FakeBackboneOracle({}, profile)
+    complex_oracle = _FakeBackboneOracle(displacements, lambda n: np.full(n, 0.5))
+    reference_state = bg.State('reference', [binder], [bg.energies.PLDDTEnergy(reference_oracle, None)])
+    energy = bg.energies.BinderRMSDEnergy(complex_oracle, binder.residues, reference_state, **energy_kwargs)
+    complex_state = bg.State('complex', [binder, target], [energy])
+    return complex_state, reference_state, energy, complex_oracle
+
+
+def _kabsch_deviations(moving: np.ndarray, fixed: np.ndarray) -> np.ndarray:
+    """Independent implementation of the per-point distances after the optimal rigid superposition of moving on fixed."""
+    moving_centered = moving - moving.mean(axis=0)
+    fixed_centered = fixed - fixed.mean(axis=0)
+    u, _, vt = np.linalg.svd(moving_centered.T @ fixed_centered)
+    sign = np.sign(np.linalg.det(u @ vt))
+    rotation = u @ np.diag([1.0, 1.0, sign]) @ vt
+    return np.linalg.norm(moving_centered @ rotation - fixed_centered, axis=1)
+
+
+BINDER_DISPLACEMENTS = {('A', 2): 4.0, ('A', 4): -2.0}
+BINDER_CA = np.array([[3.8 * i, 0.0, 0.0] for i in range(5)])
+
+
+def _displaced_binder_ca() -> np.ndarray:
+    coords = BINDER_CA.copy()
+    for (_, index), shift in BINDER_DISPLACEMENTS.items():
+        coords[index, 1] = shift
+    return coords
+
+
+def test_BinderRMSDEnergy_is_zero_for_identical_structures() -> None:
+    complex_state, _, _, _ = _rmsd_setup(displacements={})
+    assert complex_state.energy_term_values['binder_rmsd'] < 1e-6
+
+
+def test_BinderRMSDEnergy_is_invariant_to_rigid_motion_of_the_binder() -> None:
+    # moving every binder residue by the same amount is a pure translation, removed by the superposition
+    complex_state, _, _, _ = _rmsd_setup(displacements={('A', i): 7.0 for i in range(5)})
+    assert complex_state.energy_term_values['binder_rmsd'] < 1e-6
+
+
+def test_BinderRMSDEnergy_matches_independent_superposition() -> None:
+    complex_state, _, energy, _ = _rmsd_setup(BINDER_DISPLACEMENTS)
+    expected = np.sqrt(np.mean(_kabsch_deviations(BINDER_CA, _displaced_binder_ca()) ** 2))
+    value = complex_state.energy_term_values['binder_rmsd']
+    assert np.isclose(value, expected), f'got {value}, expected {expected}'
+    assert np.isclose(complex_state.energy, value * energy.weight), 'weighted energy must be value * weight'
+
+
+def test_BinderRMSDEnergy_weight_is_applied() -> None:
+    unweighted_state, _, _, _ = _rmsd_setup(BINDER_DISPLACEMENTS)
+    weighted_state, _, _, _ = _rmsd_setup(BINDER_DISPLACEMENTS, weight=3.0)
+    assert np.isclose(weighted_state.energy, 3.0 * unweighted_state.energy)
+
+
+def test_BinderRMSDEnergy_plddt_scaling_is_a_weighted_mean() -> None:
+    plddt = np.array([0.9, 0.8, 0.2, 0.7, 0.4])  # for the binder, which is the first chain of the reference state
+    exponent = 2.0
+    complex_state, _, _, _ = _rmsd_setup(BINDER_DISPLACEMENTS, plddt=plddt, plddt_scaled=True, plddt_exponent=exponent)
+    deviations = _kabsch_deviations(BINDER_CA, _displaced_binder_ca())
+    weights = plddt**exponent
+    expected = np.sqrt(np.sum(weights * deviations**2) / np.sum(weights))
+    assert np.isclose(complex_state.energy_term_values['binder_rmsd'], expected)
+
+
+def test_BinderRMSDEnergy_plddt_scaling_uniform_plddt_gives_plain_rmsd() -> None:
+    # a weighted mean with equal weights is the plain RMSD, whatever the level of confidence and exponent
+    plain_state, _, _, _ = _rmsd_setup(BINDER_DISPLACEMENTS)
+    scaled_state, _, _, _ = _rmsd_setup(
+        BINDER_DISPLACEMENTS, plddt=np.full(5, 0.3), plddt_scaled=True, plddt_exponent=3.0
+    )
+    assert np.isclose(plain_state.energy_term_values['binder_rmsd'], scaled_state.energy_term_values['binder_rmsd'])
+
+
+def test_BinderRMSDEnergy_lowering_reference_plddt_does_not_lower_energy_below_best_residue() -> None:
+    # weighting by pLDDT must only re-distribute importance between residues: the result stays between the smallest
+    # and largest per-residue deviation, so making the whole reference less confident cannot reduce it towards 0
+    deviations = _kabsch_deviations(BINDER_CA, _displaced_binder_ca())
+    for level in (0.9, 0.5, 0.05):
+        state, _, _, _ = _rmsd_setup(
+            BINDER_DISPLACEMENTS, plddt=np.full(5, level), plddt_scaled=True, plddt_exponent=2.0
+        )
+        value = state.energy_term_values['binder_rmsd']
+        assert deviations.min() <= value <= deviations.max()
+
+
+def test_BinderRMSDEnergy_plddt_scaling_falls_back_to_plain_rmsd_if_all_plddt_are_zero() -> None:
+    plain_state, _, _, _ = _rmsd_setup(BINDER_DISPLACEMENTS)
+    zero_state, _, _, _ = _rmsd_setup(BINDER_DISPLACEMENTS, plddt=np.zeros(5), plddt_scaled=True)
+    assert np.isclose(plain_state.energy_term_values['binder_rmsd'], zero_state.energy_term_values['binder_rmsd'])
+
+
+def test_BinderRMSDEnergy_uses_only_the_selected_residues() -> None:
+    binder, target = _binder_and_target()
+    reference_oracle = _FakeBackboneOracle({}, lambda n: np.full(n, 0.5))
+    complex_oracle = _FakeBackboneOracle(BINDER_DISPLACEMENTS, lambda n: np.full(n, 0.5))
+    reference_state = bg.State('reference', [binder], [bg.energies.PLDDTEnergy(reference_oracle, None)])
+    selected = [binder.residues[i] for i in (0, 1, 3)]  # leaves out the displaced residues 2 and 4
+    energy = bg.energies.BinderRMSDEnergy(complex_oracle, selected, reference_state)
+    state = bg.State('complex', [binder, target], [energy])
+    assert np.isclose(state.energy_term_values['binder_rmsd'], 0.0, atol=1e-6)
+
+
+def test_BinderRMSDEnergy_works_when_residue_groups_span_chains_of_the_reference_state() -> None:
+    binder, target = _binder_and_target()
+    reference_oracle = _FakeBackboneOracle({}, lambda n: np.full(n, 0.5))
+    complex_oracle = _FakeBackboneOracle({('B', 1): 5.0}, lambda n: np.full(n, 0.5))
+    # reference state lists the chains in the opposite order to the complex state
+    reference_state = bg.State('reference', [target, binder], [bg.energies.PLDDTEnergy(reference_oracle, None)])
+    residues = [binder.residues[0], target.residues[1], binder.residues[3], target.residues[3]]
+    energy = bg.energies.BinderRMSDEnergy(complex_oracle, residues, reference_state)
+    state = bg.State('complex', [binder, target], [energy])
+    assert state.energy_term_values['binder_rmsd'] > 0.1, 'the displaced residue of chain B must be seen'
+
+
+@pytest.mark.parametrize('exponent', [0.0, -1.0])
+def test_BinderRMSDEnergy_rejects_non_positive_plddt_exponent(exponent: float) -> None:
+    with pytest.raises(ValueError, match='plddt_exponent'):
+        _rmsd_setup({}, plddt_scaled=True, plddt_exponent=exponent)
+
+
+def test_BinderRMSDEnergy_rejects_residues_not_in_reference_state() -> None:
+    binder, target = _binder_and_target()
+    oracle = _FakeBackboneOracle({}, lambda n: np.full(n, 0.5))
+    reference_state = bg.State('reference', [binder], [bg.energies.PLDDTEnergy(oracle, None)])
+    with pytest.raises(ValueError, match='chain'):  # chain B is not in the reference state
+        bg.energies.BinderRMSDEnergy(oracle, binder.residues + target.residues[:1], reference_state)
+    with pytest.raises(ValueError, match='not in reference state'):  # index 9 is not in chain A
+        bg.energies.BinderRMSDEnergy(oracle, [bg.Residue('A', 'A', 9)], reference_state)
+    with pytest.raises(ValueError, match='reference state'):  # index 0 is 'A' in the reference state, not 'W'
+        bg.energies.BinderRMSDEnergy(oracle, [bg.Residue('W', 'A', 0)], reference_state)
+    with pytest.raises(ValueError):
+        bg.energies.BinderRMSDEnergy(oracle, [], reference_state)
+
+
+def test_BinderRMSDEnergy_requires_reference_oracle_if_reference_state_is_ambiguous() -> None:
+    binder, target = _binder_and_target()
+    oracle_1 = _FakeBackboneOracle({}, lambda n: np.full(n, 0.5))
+    oracle_2 = _FakeBackboneOracle({('A', 0): 3.0}, lambda n: np.full(n, 0.5))
+    reference_state = bg.State(
+        'reference', [binder], [bg.energies.PLDDTEnergy(oracle_1, None), bg.energies.PTMEnergy(oracle_2)]
+    )
+    ambiguous = bg.energies.BinderRMSDEnergy(oracle_1, binder.residues, reference_state)
+    with pytest.raises(ValueError, match='reference_oracle'):
+        bg.State('complex', [binder, target], [ambiguous]).energy
+    explicit = bg.energies.BinderRMSDEnergy(oracle_1, binder.residues, reference_state, reference_oracle=oracle_2)
+    assert bg.State('complex', [binder, target], [explicit]).energy_term_values['binder_rmsd'] > 0.1
+
+
+def test_BinderRMSDEnergy_rejects_reference_state_containing_the_term() -> None:
+    complex_state, _, energy, _ = _rmsd_setup({})
+    energy.reference_state = complex_state
+    with pytest.raises(ValueError, match='cannot be the state'):
+        _ = complex_state.energy
+
+
+def test_BinderRMSDEnergy_follows_mutations_in_a_copied_system() -> None:
+    complex_state, reference_state, _, _ = _rmsd_setup(BINDER_DISPLACEMENTS)
+    system = bg.System(states=[complex_state, reference_state])
+    copied = system.__copy__()
+    assert copied.states[0].energy_terms[0].reference_state is copied.states[1], (
+        'copy must keep the link to its own copy'
+    )
+    copied.states[0].chains[0].mutate_residue(index=1, amino_acid='W')
+    assert copied.states[1].chains[0].sequence == copied.states[0].chains[0].sequence
+    assert np.isfinite(copied.get_total_energy())

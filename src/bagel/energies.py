@@ -13,7 +13,7 @@ import warnings
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
-from typing import Literal, Callable, Any
+from typing import Literal, Callable, Any, TYPE_CHECKING
 from biotite.structure import AtomArray, CellList, sasa, annotate_sse, superimpose
 from .constants import (
     hydrophobic_residues,
@@ -33,6 +33,9 @@ from .oracles import Oracle, OracleResult, OraclesResultDict
 from .oracles.folding import FoldingResult, FoldingOracle
 from .oracles.embedding import EmbeddingResult, EmbeddingOracle
 from .oracles.folding.utils import reorder_atoms_in_template
+
+if TYPE_CHECKING:  # State imports this module, so it can only be imported for type checking
+    from .state import State
 
 
 # first row is chain_ids and second row is corresponding residue indices.
@@ -2714,3 +2717,191 @@ def _prepare_sae_feature_terms(
         coefficients_array = coefficients_array / l1_norm
 
     return feature_indices_array, coefficients_array
+
+
+class BinderRMSDEnergy(EnergyTerm):
+    """
+    Root mean square deviation (RMSD) between the structure of a group of residues in this state and in a
+    *reference state*. A typical use is to score a binder by how much it must change shape upon binding: the reference
+    state holds the binder folded alone and the state this term belongs to holds the binder co-folded with its target.
+    A low value means the binder is already pre-organised in its bound conformation, which is expected to lower the
+    entropic cost of binding.
+
+    The C-alpha atoms of the selected residues are superimposed, using the rotation and translation that minimise the
+    RMSD, and the distance between the two positions of each residue is then measured.
+
+    Optionally, the mean over residues is weighted by :math:`w_i = \\mathrm{pLDDT}_i^n`, so that residues the model is
+    confident about in the reference state count for more, and those whose isolated structure is a guess for less.
+    The pLDDT is always taken from the reference state. The result is
+
+    .. math:: \\sqrt{\\frac{\\sum_i w_i \\, d_i^2}{\\sum_i w_i}}
+
+    where :math:`d_i` is the C-alpha distance after superposition. pLDDT is on a 0-1 scale. Because the weights are
+    normalised, a low pLDDT only removes a residue from the average: it does not lower the energy, so the optimizer
+    gains nothing from making the reference fold less confident. (If every pLDDT is 0, the plain RMSD is returned.)
+
+    .. note::
+        The reference state is evaluated through its own ``energy`` property, so it must have at least one energy term
+        and its results are cached as for any other state. It must be a member of the same
+        :class:`~bagel.system.System` as the state this term is in, and contain the **same** :class:`~bagel.chain.Chain`
+        objects for the selected residues: the system is deep-copied at every minimization step, and this is what keeps
+        the two states in sync when a residue is mutated. It cannot be the state that contains this term.
+    """
+
+    def __init__(
+        self,
+        oracle: FoldingOracle,
+        residues: list[Residue],
+        reference_state: 'State',
+        reference_oracle: FoldingOracle | None = None,
+        plddt_scaled: bool = False,
+        plddt_exponent: float = 2.0,
+        inheritable: bool = True,
+        weight: float = 1.0,
+        name: str | None = None,
+    ) -> None:
+        """
+        Initialises the RMSD energy class.
+
+        Parameters
+        ----------
+        oracle: FoldingOracle
+            The oracle used to fold the state this term belongs to.
+        residues: list[Residue]
+            The residues to compare. All of them must exist in ``reference_state``.
+        reference_state: State
+            The state whose structure is the reference, e.g. the binder alone. Must contain every residue in
+            ``residues``, with the same chain ID, index and amino acid type.
+        reference_oracle: FoldingOracle | None, default=None
+            The oracle of ``reference_state`` whose structure (and pLDDT) is used. It may differ from ``oracle``, e.g.
+            ESMFold for the isolated binder and Boltz2 for the complex. If None, the reference state must use exactly
+            one folding oracle, which is then chosen.
+        plddt_scaled: bool, default=False
+            Whether to weight the contribution of each residue to the mean by its pLDDT in the reference state,
+            raised to ``plddt_exponent``.
+        plddt_exponent: float, default=2.0
+            The exponent n in :math:`\\mathrm{pLDDT}^n`. Must be greater than 0. Only used if ``plddt_scaled``.
+        inheritable: bool, default=True
+            If a new residue is added next to a residue included in this energy term, this dictates whether that new
+            residue could then be added to this energy term.
+        weight: float = 1.0
+            The weight of the energy term.
+        name: str | None = None
+            Optional name to append to the energy term name.
+        """
+        name = 'binder_rmsd' if name is None else f'binder_rmsd_{name}'
+        super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight)
+        if not plddt_exponent > 0:
+            raise ValueError(f'plddt_exponent must be greater than 0, got {plddt_exponent}')
+        if len(residues) == 0:
+            raise ValueError('At least one residue is required to calculate the RMSD')
+        self.reference_state = reference_state
+        self.reference_oracle = reference_oracle
+        self.plddt_scaled = plddt_scaled
+        self.plddt_exponent = plddt_exponent
+        self.residue_groups = [residue_list_to_group(residues)]
+        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
+        assert 'structure' in self.oracle.result_class.model_fields, (
+            'BinderRMSDEnergy requires oracle to return structure in result_class'
+        )
+        if reference_oracle is not None:
+            assert isinstance(reference_oracle, FoldingOracle), 'reference_oracle must be an instance of FoldingOracle'
+        self._check_residues_in_reference_state(residues)
+
+    def _check_residues_in_reference_state(self, residues: list[Residue]) -> None:
+        """Raise if any residue is missing from ``reference_state`` or has a different amino acid type there."""
+        reference_chains = {chain.chain_ID: chain for chain in self.reference_state.chains}
+        for residue in residues:
+            chain = reference_chains.get(residue.chain_ID)
+            if chain is None:
+                raise ValueError(
+                    f"Residue {residue.chain_ID}:{residue.index} is selected, but chain '{residue.chain_ID}' is not in "
+                    f"reference state '{self.reference_state.name}' (chains: {sorted(reference_chains)})"
+                )
+            match = [r for r in chain.residues if r.index == residue.index]
+            if len(match) != 1:
+                raise ValueError(
+                    f'Residue {residue.chain_ID}:{residue.index} is selected, but is not in reference state '
+                    f"'{self.reference_state.name}'"
+                )
+            if match[0].name != residue.name:
+                raise ValueError(
+                    f'Residue {residue.chain_ID}:{residue.index} is {residue.name} in this state but '
+                    f"{match[0].name} in reference state '{self.reference_state.name}'"
+                )
+
+    def _get_reference_result(self) -> FoldingResult:
+        """Fold the reference state if needed (through its cache) and return the result of the reference oracle."""
+        if self in self.reference_state.energy_terms:
+            raise ValueError('reference_state cannot be the state that contains this energy term')
+        _ = self.reference_state.energy  # runs the oracles of the reference state, or reuses its cache
+        oracle = self.reference_oracle
+        if oracle is None:
+            candidates = [o for o in self.reference_state.oracles_list if isinstance(o, FoldingOracle)]
+            if len(candidates) != 1:
+                raise ValueError(
+                    f"Reference state '{self.reference_state.name}' has {len(candidates)} folding oracles; "
+                    'specify which one to use with reference_oracle'
+                )
+            oracle = candidates[0]
+        elif oracle not in self.reference_state.oracles_list:
+            raise ValueError(
+                f"reference_oracle is not used by any energy term of reference state '{self.reference_state.name}', "
+                'so it is never run'
+            )
+        result = self.reference_state._oracles_result[oracle]
+        assert isinstance(result, FoldingResult), 'Result must be a FoldingResult'
+        return result
+
+    @staticmethod
+    def _ca_indices(structure: AtomArray, chain_ids: npt.NDArray[np.str_], res_ids: npt.NDArray[np.int_]) -> list[int]:
+        """Indices in ``structure`` of the C-alpha of each requested residue, in the requested order."""
+        ca_position = {
+            (str(c), int(r)): i
+            for i, (c, r, a) in enumerate(zip(structure.chain_id, structure.res_id, structure.atom_name))
+            if a == 'CA'
+        }
+        missing = [(c, r) for c, r in zip(chain_ids, res_ids) if (str(c), int(r)) not in ca_position]
+        if missing:
+            raise ValueError(f'No C-alpha found in the structure for residues (chain, index): {missing}')
+        return [ca_position[(str(c), int(r))] for c, r in zip(chain_ids, res_ids)]
+
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        chain_ids, res_ids = self.residue_groups[0]
+        if len(res_ids) == 0:
+            return 0.0, 0.0
+        # residues can be added or removed during a grand canonical run, so check again that the reference state
+        # still has every selected residue
+        reference_chains = {chain.chain_ID: {r.index for r in chain.residues} for chain in self.reference_state.chains}
+        absent = [(c, i) for c, i in zip(chain_ids, res_ids) if int(i) not in reference_chains.get(str(c), set())]
+        if absent:
+            raise ValueError(
+                f"Residues (chain, index) {absent} are not in reference state '{self.reference_state.name}'"
+            )
+        reference_result = self._get_reference_result()
+
+        structure = oracles_result.get_structure(self.oracle)
+        reference = reference_result.structure
+        state_ca = structure[self._ca_indices(structure, chain_ids, res_ids)]
+        reference_ca = reference[self._ca_indices(reference, chain_ids, res_ids)]
+
+        reference_ca = superimpose(fixed=state_ca, mobile=reference_ca)[0]  # translation and rotation fit
+        deviations = np.linalg.norm(state_ca.coord - reference_ca.coord, axis=1)
+
+        weights = np.ones_like(deviations)
+        if self.plddt_scaled:
+            assert hasattr(reference_result, 'local_plddt'), 'local_plddt metric not returned by folding algorithm'
+            assert reference_result.local_plddt.shape[0] == 1, 'batch size equal to 1 is required'
+            plddt = reference_result.local_plddt[0]
+            # pLDDT is stored per residue, in the order chains and residues appear in the reference structure
+            plddt_position: dict[tuple[str, int], int] = {}
+            for chain in pd.unique(reference.chain_id):
+                for res in pd.unique(reference.res_id[reference.chain_id == chain]):
+                    plddt_position[(str(chain), int(res))] = len(plddt_position)
+            selected_plddt = np.array([plddt[plddt_position[(str(c), int(r))]] for c, r in zip(chain_ids, res_ids)])
+            scaled_weights = selected_plddt**self.plddt_exponent
+            if scaled_weights.sum() > 0:  # otherwise keep the plain RMSD
+                weights = scaled_weights
+
+        value = float(np.sqrt(np.sum(weights * deviations**2) / np.sum(weights)))
+        return value, value * self.weight
