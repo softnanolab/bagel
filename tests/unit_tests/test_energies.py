@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 import copy
 import inspect
 import pytest
+from typing import Any, Callable
 
 
 def test_residue_list_to_group_function(residues: list[bg.Residue]) -> None:
@@ -500,6 +501,60 @@ def test_ChemicalPotentialEnergy(
     assert np.isclose(weighted_energy, value * 2), 'weighted energy is incorrect'
 
 
+def _chemical_potential_value(fake_esm2: bg.oracles.embedding.ESM2, n_residues: int, **energy_kwargs: Any) -> float:
+    fake_embedding_result = Mock(bg.oracles.embedding.ESM2Result)
+    residues = [bg.Residue(name='A', chain_ID='X', index=i) for i in range(n_residues)]
+    fake_embedding_result.input_chains = [bg.Chain(residues=residues)]
+    energy = bg.energies.ChemicalPotentialEnergy(oracle=fake_esm2, **energy_kwargs)
+    unweighted_energy, weighted_energy = energy.compute(
+        oracles_result=OraclesResultDict({fake_esm2: fake_embedding_result})
+    )
+    assert np.isclose(weighted_energy, unweighted_energy * energy.weight), 'weighted energy is incorrect'
+    return unweighted_energy
+
+
+@pytest.mark.parametrize('n_residues', [5, 6, 7, 8, 9, 10])
+def test_ChemicalPotentialEnergy_is_zero_within_size_range(
+    fake_esm2: bg.oracles.embedding.ESM2, n_residues: int
+) -> None:
+    value = _chemical_potential_value(fake_esm2, n_residues, target_size=(5, 10), chemical_potential=3.0)
+    assert value == 0.0, 'energy must be zero anywhere in the range, boundaries included'
+
+
+@pytest.mark.parametrize(
+    'n_residues, distance', [(4, 1), (3, 2), (1, 4), (11, 1), (12, 2), (20, 10)]
+)  # distances from the closest boundary of the range (5, 10)
+@pytest.mark.parametrize('power', [0.5, 1.0, 2.0])
+def test_ChemicalPotentialEnergy_grows_with_distance_from_closest_boundary(
+    fake_esm2: bg.oracles.embedding.ESM2, n_residues: int, distance: int, power: float
+) -> None:
+    value = _chemical_potential_value(
+        fake_esm2, n_residues, target_size=(5, 10), power=power, chemical_potential=1.5, weight=2.0
+    )
+    assert np.isclose(value, 1.5 * distance**power), f'expected {1.5 * distance**power}, found {value}'
+
+
+def test_ChemicalPotentialEnergy_range_with_equal_bounds_matches_single_target(
+    fake_esm2: bg.oracles.embedding.ESM2,
+) -> None:
+    for n_residues in range(1, 12):
+        single = _chemical_potential_value(fake_esm2, n_residues, target_size=6, power=1.7, chemical_potential=0.8)
+        ranged = _chemical_potential_value(fake_esm2, n_residues, target_size=(6, 6), power=1.7, chemical_potential=0.8)
+        assert np.isclose(single, ranged), f'a range with equal bounds must match a single size at N={n_residues}'
+        assert np.isclose(single, 0.8 * abs(n_residues - 6) ** 1.7), 'single-size behaviour must not change'
+
+
+def test_ChemicalPotentialEnergy_rejects_invalid_arguments(fake_esm2: bg.oracles.embedding.ESM2) -> None:
+    with pytest.raises(AssertionError):
+        bg.energies.ChemicalPotentialEnergy(oracle=fake_esm2, target_size=(10, 5))
+    with pytest.raises(AssertionError):
+        bg.energies.ChemicalPotentialEnergy(oracle=fake_esm2, target_size=(1, 2, 3))  # type: ignore[arg-type]
+    with pytest.raises(AssertionError):
+        bg.energies.ChemicalPotentialEnergy(oracle=fake_esm2, power=0.0)
+    with pytest.raises(AssertionError):
+        bg.energies.ChemicalPotentialEnergy(oracle=fake_esm2, power=-1.0)
+
+
 def test_ChemicalPotentialEnergy_with_embedding_oracle(
     fake_esm2: bg.oracles.embedding.ESM2,
 ):
@@ -521,6 +576,178 @@ def test_ChemicalPotentialEnergy_with_embedding_oracle(
     # Should be: 1.5 * (abs(3-5))**2 = 1.5 * 4 = 6.0
     assert np.isclose(unweighted_energy, 6.0), f'unweighted energy is incorrect: {unweighted_energy}'
     assert np.isclose(weighted_energy, 12.0), f'weighted energy is incorrect: {weighted_energy}'
+
+
+SALT_BRIDGE_ATOMS = {
+    'D': ('ASP', ('OD1', 'OD2')),
+    'E': ('GLU', ('OE1', 'OE2')),
+    'K': ('LYS', ('NZ',)),
+    'R': ('ARG', ('NE', 'NH1', 'NH2')),
+    'H': ('HIS', ('ND1', 'NE2')),
+    'A': ('ALA', ('CB',)),
+}
+
+
+def _salt_bridge_value(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    group_1: list[tuple[str, float]],
+    group_2: list[tuple[str, float]],
+    **energy_kwargs: Any,
+) -> float:
+    """
+    Builds residues of the given 1-letter types, each at a position x (in Angstrom) along the x axis, in chain A for
+    the first group and chain B for the second group. Charged atoms of a residue are spaced by 2 A in y, so the
+    smallest distance between the charged atoms of two residues is exactly their separation in x.
+    """
+    atoms, residues = [], []
+    for chain_id, group in (('A', group_1), ('B', group_2)):
+        group_residues = []
+        for index, (letter, x) in enumerate(group):
+            residue = bg.Residue(name=letter, chain_ID=chain_id, index=index)
+            group_residues.append(residue)
+            res_name, atom_names = SALT_BRIDGE_ATOMS[letter]
+            for k, atom_name in enumerate(('CA',) + atom_names):
+                atoms.append(
+                    Atom(
+                        [x, 2.0 * k, 0.0],
+                        chain_id=chain_id,
+                        res_id=index,
+                        res_name=res_name,
+                        atom_name=atom_name,
+                        element='C',
+                    )
+                )
+        residues.append(group_residues)
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = array(atoms)
+    energy = bg.energies.SaltBridgeEnergy(oracle=fake_esmfold, residues=residues, **energy_kwargs)
+    unweighted_energy, weighted_energy = energy.compute(
+        oracles_result=OraclesResultDict({fake_esmfold: mock_folding_result})
+    )
+    assert np.isclose(weighted_energy, unweighted_energy * energy.weight), 'weighted energy is incorrect'
+    return unweighted_energy
+
+
+@pytest.mark.parametrize(
+    'acid, base', [('D', 'K'), ('D', 'R'), ('D', 'H'), ('E', 'K'), ('E', 'R'), ('E', 'H')]
+)  # every acidic-basic combination
+@pytest.mark.parametrize('swap_groups', [False, True])
+def test_SaltBridgeEnergy_counts_a_salt_bridge_in_either_direction(
+    fake_esmfold: bg.oracles.folding.ESMFold, acid: str, base: str, swap_groups: bool
+) -> None:
+    group_1, group_2 = [(acid, 0.0)], [(base, 3.0)]
+    if swap_groups:
+        group_1, group_2 = group_2, group_1
+    assert _salt_bridge_value(fake_esmfold, group_1, group_2) == -1.0
+
+
+@pytest.mark.parametrize('distance, expected', [(3.0, -1.0), (3.99, -1.0), (4.0, -1.0), (4.01, 0.0), (8.0, 0.0)])
+def test_SaltBridgeEnergy_uses_a_hard_cutoff_that_includes_the_boundary(
+    fake_esmfold: bg.oracles.folding.ESMFold, distance: float, expected: float
+) -> None:
+    assert _salt_bridge_value(fake_esmfold, [('D', 0.0)], [('K', distance)]) == expected
+
+
+def test_SaltBridgeEnergy_distance_cutoff_can_be_changed(fake_esmfold: bg.oracles.folding.ESMFold) -> None:
+    assert _salt_bridge_value(fake_esmfold, [('D', 0.0)], [('K', 5.0)], distance_cutoff=5.5) == -1.0
+    assert _salt_bridge_value(fake_esmfold, [('D', 0.0)], [('K', 5.0)], distance_cutoff=4.5) == 0.0
+
+
+@pytest.mark.parametrize('first, second', [('D', 'E'), ('D', 'D'), ('K', 'R'), ('K', 'K'), ('H', 'R'), ('H', 'K')])
+def test_SaltBridgeEnergy_counts_negative_bridges_for_residues_of_same_charge(
+    fake_esmfold: bg.oracles.folding.ESMFold, first: str, second: str
+) -> None:
+    assert _salt_bridge_value(fake_esmfold, [(first, 0.0)], [(second, 3.0)]) == 1.0, 'a negative bridge is +1 energy'
+    assert _salt_bridge_value(fake_esmfold, [(first, 0.0)], [(second, 5.0)]) == 0.0, 'too far to be a negative bridge'
+    assert _salt_bridge_value(fake_esmfold, [(first, 0.0)], [(second, 3.0)], count_same_charge=False) == 0.0
+
+
+def test_SaltBridgeEnergy_is_minus_the_signed_number_of_bridges(fake_esmfold: bg.oracles.folding.ESMFold) -> None:
+    # group 1: D at x=0, E at x=20, K at x=40; group 2: K at x=3 (salt bridge with D), R at x=23 (salt bridge with E),
+    # D at x=43 (salt bridge with K), E at x=1 (negative bridge with D, and only D, as it is 19 A from E)
+    group_1 = [('D', 0.0), ('E', 20.0), ('K', 40.0)]
+    group_2 = [('K', 3.0), ('R', 23.0), ('D', 43.0), ('E', 1.0)]
+    # salt bridges: D0-K3, E20-R23, K40-D43; negative bridges: D0-E1. Signed number 3 - 1 = 2
+    assert _salt_bridge_value(fake_esmfold, group_1, group_2) == -2.0
+    assert _salt_bridge_value(fake_esmfold, group_1, group_2, count_same_charge=False) == -3.0
+
+
+def test_SaltBridgeEnergy_counts_each_pair_of_residues_once_but_each_partner_of_a_residue(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+) -> None:
+    # all three charged nitrogens of Arg and both oxygens of Asp are in contact at x=3, which is still only one bridge
+    assert _salt_bridge_value(fake_esmfold, [('R', 0.0)], [('D', 3.0)]) == -1.0
+    # an Arg with two Glu in the other group makes two bridges, and one with two Lys makes two negative bridges
+    assert _salt_bridge_value(fake_esmfold, [('R', 0.0)], [('E', 3.0), ('E', -3.0)]) == -2.0
+    assert _salt_bridge_value(fake_esmfold, [('R', 0.0)], [('K', 3.0), ('K', -3.0)]) == 2.0
+
+
+def test_SaltBridgeEnergy_ignores_bridges_within_a_group(fake_esmfold: bg.oracles.folding.ESMFold) -> None:
+    # D and K are in contact, but both are in the first group, and the second group is far away
+    assert _salt_bridge_value(fake_esmfold, [('D', 0.0), ('K', 3.0)], [('E', 30.0)]) == 0.0
+    # same for residues of the same charge
+    assert _salt_bridge_value(fake_esmfold, [('D', 0.0), ('E', 3.0)], [('K', 30.0)]) == 0.0
+
+
+def test_SaltBridgeEnergy_ignores_uncharged_residues(fake_esmfold: bg.oracles.folding.ESMFold) -> None:
+    assert _salt_bridge_value(fake_esmfold, [('A', 0.0)], [('K', 3.0)]) == 0.0
+    assert _salt_bridge_value(fake_esmfold, [('D', 0.0)], [('A', 3.0)]) == 0.0
+
+
+def test_SaltBridgeEnergy_includes_all_charged_residue_types_by_default(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+) -> None:
+    group_1 = [('D', 0.0), ('E', 20.0), ('K', 40.0), ('R', 60.0), ('H', 80.0)]
+    group_2 = [('K', 3.0), ('R', 23.0), ('D', 43.0), ('E', 63.0), ('D', 83.0)]
+    assert _salt_bridge_value(fake_esmfold, group_1, group_2) == -5.0
+
+
+@pytest.mark.parametrize(
+    'residue_types, n_bridges',
+    [
+        (['D', 'E', 'K', 'R'], 4),  # no histidine: H80-D83 is dropped
+        (['D', 'K'], 2),  # only D0-K3 and K40-D43
+        (('E', 'R', 'H'), 2),  # tuples work too: E20-R23 and R60-E63; H80-D83 is dropped as D is not considered
+        (['H'], 0),  # a single type cannot form a bridge with the other group's different residues
+    ],
+)
+def test_SaltBridgeEnergy_residue_types_selects_which_residues_are_considered(
+    fake_esmfold: bg.oracles.folding.ESMFold, residue_types: list[str], n_bridges: int
+) -> None:
+    # bridges: D0-K3, E20-R23, K40-D43, R60-E63, H80-D83
+    group_1 = [('D', 0.0), ('E', 20.0), ('K', 40.0), ('R', 60.0), ('H', 80.0)]
+    group_2 = [('K', 3.0), ('R', 23.0), ('D', 43.0), ('E', 63.0), ('D', 83.0)]
+    value = _salt_bridge_value(fake_esmfold, group_1, group_2, residue_types=residue_types)
+    assert value == -float(n_bridges), f'expected {-n_bridges}, found {value}'
+
+
+def test_SaltBridgeEnergy_restricting_residue_types_also_limits_negative_bridges(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+) -> None:
+    # D-E in contact would be a negative bridge, but E is not considered
+    assert _salt_bridge_value(fake_esmfold, [('D', 0.0)], [('E', 3.0)]) == 1.0
+    assert _salt_bridge_value(fake_esmfold, [('D', 0.0)], [('E', 3.0)], residue_types=['D', 'K', 'R']) == 0.0
+
+
+def test_SaltBridgeEnergy_weight_and_name(fake_esmfold: bg.oracles.folding.ESMFold) -> None:
+    assert _salt_bridge_value(fake_esmfold, [('D', 0.0)], [('K', 3.0)], weight=3.0) == -1.0  # also checks weighting
+    residues = [[bg.Residue('D', 'A', 0)], [bg.Residue('K', 'B', 0)]]
+    assert bg.energies.SaltBridgeEnergy(oracle=fake_esmfold, residues=residues).name == 'salt_bridge'
+    assert bg.energies.SaltBridgeEnergy(oracle=fake_esmfold, residues=residues, name='x').name == 'salt_bridge_x'
+
+
+def test_SaltBridgeEnergy_rejects_invalid_arguments(fake_esmfold: bg.oracles.folding.ESMFold) -> None:
+    group_1, group_2 = [bg.Residue('D', 'A', 0)], [bg.Residue('K', 'B', 0)]
+    with pytest.raises(AssertionError):
+        bg.energies.SaltBridgeEnergy(oracle=fake_esmfold, residues=[group_1])  # needs two groups
+    with pytest.raises(AssertionError):
+        bg.energies.SaltBridgeEnergy(oracle=fake_esmfold, residues=[group_1, group_1])  # groups share residues
+    with pytest.raises(AssertionError):
+        bg.energies.SaltBridgeEnergy(oracle=fake_esmfold, residues=[group_1, group_2], residue_types=['D', 'A'])
+    with pytest.raises(AssertionError):
+        bg.energies.SaltBridgeEnergy(oracle=fake_esmfold, residues=[group_1, group_2], residue_types=[])
+    with pytest.raises(AssertionError):
+        bg.energies.SaltBridgeEnergy(oracle=fake_esmfold, residues=[group_1, group_2], distance_cutoff=0.0)
 
 
 def test_RingSymmetryEnergy_with_direct_neighbours_only(
@@ -933,6 +1160,181 @@ def test_LISEnergy(
     assert np.isclose(weighted_energy, 2.0 * expected), (
         f'weighted energy is incorrect, expected {2.0 * expected}, found {weighted_energy}'
     )
+
+
+def _reference_ipsae(pae: np.ndarray, aligned: list[int], scored: list[int], cutoff: float = 10.0) -> float:
+    """Direct, loop-based transcription of the definition of ipSAE, used to check the vectorised implementation."""
+    per_residue = []
+    for i in aligned:
+        partners = [j for j in scored if j != i and pae[i, j] < cutoff]
+        if not partners:
+            continue
+        d0 = max(1.0, 1.24 * (max(len(partners), 27) - 15) ** (1 / 3) - 1.8)
+        per_residue.append(np.mean([1 / (1 + (pae[i, j] / d0) ** 2) for j in partners]))
+    return max(per_residue) if per_residue else 0.0
+
+
+def _ipsae_energy_and_result(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    mixed_structure_state: bg.State,
+    pae: np.ndarray,
+    groups: tuple[slice, slice] = (slice(0, 3), slice(3, 7)),
+    **energy_kwargs: Any,
+) -> tuple[bg.energies.ipSAEEnergy, OraclesResultDict]:
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.pae = pae.reshape((1, *pae.shape))
+    mock_folding_result.structure = mixed_structure_state._oracles_result[fake_esmfold].structure
+    residues = sum([chain.residues for chain in mixed_structure_state.chains], start=[])
+    energy = bg.energies.ipSAEEnergy(
+        oracle=fake_esmfold, residues=[residues[groups[0]], residues[groups[1]]], **energy_kwargs
+    )
+    return energy, OraclesResultDict({fake_esmfold: mock_folding_result})
+
+
+def test_ipSAEEnergy_uniform_pae_matches_closed_form(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    mixed_structure_state: bg.State,
+) -> None:
+    # every inter-group PAE is 3 A, so every partner passes the cutoff and n0 < 27 gives the smallest d0
+    pae = np.full((7, 7), 3.0)
+    energy, oracles_result = _ipsae_energy_and_result(fake_esmfold, mixed_structure_state, pae, weight=2.0)
+    d0 = 1.24 * (27 - 15) ** (1 / 3) - 1.8
+    expected = -1 / (1 + (3.0 / d0) ** 2)
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
+    assert np.isclose(unweighted_energy, expected), f'expected {expected}, found {unweighted_energy}'
+    assert np.isclose(weighted_energy, 2.0 * expected), 'weighted energy is incorrect'
+
+
+def test_ipSAEEnergy_is_zero_if_no_pair_is_below_cutoff(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    mixed_structure_state: bg.State,
+) -> None:
+    pae = np.full((7, 7), 10.0)  # the cutoff is strict: PAE must be *below* it
+    energy, oracles_result = _ipsae_energy_and_result(fake_esmfold, mixed_structure_state, pae)
+    assert energy.compute(oracles_result=oracles_result) == (0.0, 0.0)
+
+
+@pytest.mark.parametrize('direction', ['max', 'mean', '1to2', '2to1'])
+@pytest.mark.parametrize('cutoff', [5.0, 10.0, 25.0])
+def test_ipSAEEnergy_matches_reference_implementation(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    mixed_structure_state: bg.State,
+    direction: str,
+    cutoff: float,
+) -> None:
+    rng = np.random.default_rng(seed=0)
+    pae = rng.uniform(0.5, 30.0, size=(7, 7))  # asymmetric, like a real PAE matrix
+    energy, oracles_result = _ipsae_energy_and_result(
+        fake_esmfold, mixed_structure_state, pae, pae_cutoff=cutoff, direction=direction
+    )
+    forward = _reference_ipsae(pae, aligned=[0, 1, 2], scored=[3, 4, 5, 6], cutoff=cutoff)
+    backward = _reference_ipsae(pae, aligned=[3, 4, 5, 6], scored=[0, 1, 2], cutoff=cutoff)
+    expected = {
+        'max': max(forward, backward),
+        'mean': (forward + backward) / 2,
+        '1to2': forward,
+        '2to1': backward,
+    }[direction]
+    unweighted_energy, _ = energy.compute(oracles_result=oracles_result)
+    assert np.isclose(unweighted_energy, -expected), f'expected {-expected}, found {unweighted_energy}'
+
+
+def test_ipSAEEnergy_ignores_pairs_outside_the_groups_and_within_a_group(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    mixed_structure_state: bg.State,
+) -> None:
+    pae = np.full((7, 7), 3.0)
+    energy, oracles_result = _ipsae_energy_and_result(
+        fake_esmfold, mixed_structure_state, pae, groups=(slice(0, 2), slice(3, 5))
+    )
+    baseline, _ = energy.compute(oracles_result=oracles_result)
+    # change every entry that does not link group 1 to group 2 (intra-group, or involving residues 2, 5, 6)
+    pae_changed = np.full((7, 7), 40.0)
+    pae_changed[np.ix_([0, 1], [3, 4])] = 3.0
+    pae_changed[np.ix_([3, 4], [0, 1])] = 3.0
+    energy, oracles_result = _ipsae_energy_and_result(
+        fake_esmfold, mixed_structure_state, pae_changed, groups=(slice(0, 2), slice(3, 5))
+    )
+    changed, _ = energy.compute(oracles_result=oracles_result)
+    assert np.isclose(baseline, changed), 'only pairs between the two groups may contribute'
+
+
+def test_ipSAEEnergy_ignores_bad_residues_far_from_the_interface(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    mixed_structure_state: bg.State,
+) -> None:
+    # the point of ipSAE over ipTM: one confidently placed pair is enough, however bad the rest of the groups are
+    pae = np.full((7, 7), 25.0)
+    pae[0, 3] = 2.0
+    energy, oracles_result = _ipsae_energy_and_result(fake_esmfold, mixed_structure_state, pae, direction='1to2')
+    d0 = 1.24 * (27 - 15) ** (1 / 3) - 1.8
+    unweighted_energy, _ = energy.compute(oracles_result=oracles_result)
+    assert np.isclose(unweighted_energy, -1 / (1 + (2.0 / d0) ** 2))
+
+
+def test_ipSAEEnergy_is_lower_for_more_confident_interface(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    mixed_structure_state: bg.State,
+) -> None:
+    values = []
+    for level in (8.0, 5.0, 2.0):
+        energy, oracles_result = _ipsae_energy_and_result(fake_esmfold, mixed_structure_state, np.full((7, 7), level))
+        values.append(energy.compute(oracles_result=oracles_result)[0])
+    assert values[0] > values[1] > values[2], f'a lower PAE must give a lower energy, found {values}'
+    assert all(-1.0 <= value <= 0.0 for value in values), 'ipSAE must be between 0 and 1'
+
+
+def test_ipSAEEnergy_max_direction_is_the_larger_of_the_two_directions(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    mixed_structure_state: bg.State,
+) -> None:
+    pae = np.full((7, 7), 20.0)
+    pae[0, 3] = 2.0  # confident only when aligning on group 1
+    results = {}
+    for direction in ('max', 'mean', '1to2', '2to1'):
+        energy, oracles_result = _ipsae_energy_and_result(fake_esmfold, mixed_structure_state, pae, direction=direction)
+        results[direction] = energy.compute(oracles_result=oracles_result)[0]
+    assert results['2to1'] == 0.0
+    assert results['1to2'] < 0.0
+    assert results['max'] == results['1to2']
+    assert np.isclose(results['mean'], results['1to2'] / 2)
+
+
+def test_ipSAEEnergy_single_group_excludes_self_pairs(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    mixed_structure_state: bg.State,
+) -> None:
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    pae = np.full((7, 7), 25.0)
+    np.fill_diagonal(pae, 0.0)  # would be a perfect pair if the diagonal were counted
+    mock_folding_result.pae = pae.reshape((1, 7, 7))
+    mock_folding_result.structure = mixed_structure_state._oracles_result[fake_esmfold].structure
+    residues = sum([chain.residues for chain in mixed_structure_state.chains], start=[])
+    energy = bg.energies.ipSAEEnergy(oracle=fake_esmfold, residues=[residues[1:6:2]])
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    assert energy.compute(oracles_result=oracles_result)[0] == 0.0
+
+
+def test_ipSAEEnergy_rejects_invalid_arguments(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    mixed_structure_state: bg.State,
+) -> None:
+    residues = sum([chain.residues for chain in mixed_structure_state.chains], start=[])
+    groups = [residues[0:3], residues[3:7]]
+    with pytest.raises(AssertionError):
+        bg.energies.ipSAEEnergy(oracle=fake_esmfold, residues=groups, pae_cutoff=0.0)
+    with pytest.raises(AssertionError):
+        bg.energies.ipSAEEnergy(oracle=fake_esmfold, residues=groups, direction='wrong')  # type: ignore[arg-type]
+
+
+def test_ipSAEEnergy_name_follows_naming_convention(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    mixed_structure_state: bg.State,
+) -> None:
+    residues = sum([chain.residues for chain in mixed_structure_state.chains], start=[])
+    groups = [residues[0:3], residues[3:7]]
+    assert bg.energies.ipSAEEnergy(oracle=fake_esmfold, residues=groups).name == 'ipSAE'
+    assert bg.energies.ipSAEEnergy(oracle=fake_esmfold, residues=groups, name='binder').name == 'ipSAE_binder'
 
 
 def test_HydropathyEnergy_all_mode(
@@ -1572,3 +1974,228 @@ def test_ShapeComplementarityEnergy_rejects_invalid_scaling(fake_esmfold: bg.ora
         bg.energies.ShapeComplementarityEnergy(oracle=fake_esmfold, residues=groups, scaling='wrong')  # type: ignore[arg-type]
     with pytest.raises(AssertionError):
         bg.energies.ShapeComplementarityEnergy(oracle=fake_esmfold, residues=groups, area_scale=0.0)
+
+
+# ---- BinderRMSDEnergy ----
+
+
+class _FakeBackboneOracle(bg.oracles.folding.FoldingOracle):
+    """Folding oracle that lays residues on a line, displacing chosen residues, with a chosen pLDDT profile."""
+
+    result_class = bg.oracles.folding.base.ConfidenceFoldingResult
+
+    def __init__(
+        self, displacements: dict[tuple[str, int], float], plddt_function: Callable[[int], np.ndarray]
+    ) -> None:
+        self.displacements = displacements
+        self.plddt_function = plddt_function
+
+    def fold(self, chains: list[bg.Chain]) -> bg.oracles.folding.base.ConfidenceFoldingResult:
+        atoms = []
+        for chain in chains:
+            for residue in chain.residues:
+                for atom_name, offset in (('N', -0.5), ('CA', 0.0), ('C', 0.5)):
+                    position = [
+                        3.8 * residue.index + offset,
+                        self.displacements.get((chain.chain_ID, residue.index), 0.0),
+                        0.0,
+                    ]
+                    atoms.append(
+                        Atom(
+                            position,
+                            chain_id=chain.chain_ID,
+                            res_id=residue.index,
+                            res_name=residue.three_letter_name,
+                            atom_name=atom_name,
+                            element='C',
+                        )
+                    )
+        n_residues = sum(len(chain.residues) for chain in chains)
+        return bg.oracles.folding.base.ConfidenceFoldingResult(
+            input_chains=chains,
+            structure=array(atoms),
+            local_plddt=np.array([self.plddt_function(n_residues)]),
+            ptm=np.array([0.5]),
+            pae=np.zeros((1, n_residues, n_residues)),
+        )
+
+
+def _binder_and_target() -> tuple[bg.Chain, bg.Chain]:
+    binder = bg.Chain([bg.Residue(aa, 'A', i) for i, aa in enumerate('ACDEF')])
+    target = bg.Chain([bg.Residue(aa, 'B', i) for i, aa in enumerate('GHIK')])
+    return binder, target
+
+
+def _rmsd_setup(
+    displacements: dict[tuple[str, int], float],
+    plddt: np.ndarray | None = None,
+    **energy_kwargs: Any,
+) -> tuple[bg.State, bg.State, bg.energies.BinderRMSDEnergy, _FakeBackboneOracle]:
+    """Reference state: binder alone, flat. Complex state: binder + target, binder residues displaced in y."""
+    binder, target = _binder_and_target()
+    profile = (lambda n: np.full(n, 0.5)) if plddt is None else (lambda n: np.resize(plddt, n))
+    reference_oracle = _FakeBackboneOracle({}, profile)
+    complex_oracle = _FakeBackboneOracle(displacements, lambda n: np.full(n, 0.5))
+    reference_state = bg.State('reference', [binder], [bg.energies.PLDDTEnergy(reference_oracle, None)])
+    energy = bg.energies.BinderRMSDEnergy(complex_oracle, binder.residues, reference_state, **energy_kwargs)
+    complex_state = bg.State('complex', [binder, target], [energy])
+    return complex_state, reference_state, energy, complex_oracle
+
+
+def _kabsch_deviations(moving: np.ndarray, fixed: np.ndarray) -> np.ndarray:
+    """Independent implementation of the per-point distances after the optimal rigid superposition of moving on fixed."""
+    moving_centered = moving - moving.mean(axis=0)
+    fixed_centered = fixed - fixed.mean(axis=0)
+    u, _, vt = np.linalg.svd(moving_centered.T @ fixed_centered)
+    sign = np.sign(np.linalg.det(u @ vt))
+    rotation = u @ np.diag([1.0, 1.0, sign]) @ vt
+    return np.linalg.norm(moving_centered @ rotation - fixed_centered, axis=1)
+
+
+BINDER_DISPLACEMENTS = {('A', 2): 4.0, ('A', 4): -2.0}
+BINDER_CA = np.array([[3.8 * i, 0.0, 0.0] for i in range(5)])
+
+
+def _displaced_binder_ca() -> np.ndarray:
+    coords = BINDER_CA.copy()
+    for (_, index), shift in BINDER_DISPLACEMENTS.items():
+        coords[index, 1] = shift
+    return coords
+
+
+def test_BinderRMSDEnergy_is_zero_for_identical_structures() -> None:
+    complex_state, _, _, _ = _rmsd_setup(displacements={})
+    assert complex_state.energy_term_values['binder_rmsd'] < 1e-6
+
+
+def test_BinderRMSDEnergy_is_invariant_to_rigid_motion_of_the_binder() -> None:
+    # moving every binder residue by the same amount is a pure translation, removed by the superposition
+    complex_state, _, _, _ = _rmsd_setup(displacements={('A', i): 7.0 for i in range(5)})
+    assert complex_state.energy_term_values['binder_rmsd'] < 1e-6
+
+
+def test_BinderRMSDEnergy_matches_independent_superposition() -> None:
+    complex_state, _, energy, _ = _rmsd_setup(BINDER_DISPLACEMENTS)
+    expected = np.sqrt(np.mean(_kabsch_deviations(BINDER_CA, _displaced_binder_ca()) ** 2))
+    value = complex_state.energy_term_values['binder_rmsd']
+    assert np.isclose(value, expected), f'got {value}, expected {expected}'
+    assert np.isclose(complex_state.energy, value * energy.weight), 'weighted energy must be value * weight'
+
+
+def test_BinderRMSDEnergy_weight_is_applied() -> None:
+    unweighted_state, _, _, _ = _rmsd_setup(BINDER_DISPLACEMENTS)
+    weighted_state, _, _, _ = _rmsd_setup(BINDER_DISPLACEMENTS, weight=3.0)
+    assert np.isclose(weighted_state.energy, 3.0 * unweighted_state.energy)
+
+
+def test_BinderRMSDEnergy_plddt_scaling_is_a_weighted_mean() -> None:
+    plddt = np.array([0.9, 0.8, 0.2, 0.7, 0.4])  # for the binder, which is the first chain of the reference state
+    exponent = 2.0
+    complex_state, _, _, _ = _rmsd_setup(BINDER_DISPLACEMENTS, plddt=plddt, plddt_scaled=True, plddt_exponent=exponent)
+    deviations = _kabsch_deviations(BINDER_CA, _displaced_binder_ca())
+    weights = plddt**exponent
+    expected = np.sqrt(np.sum(weights * deviations**2) / np.sum(weights))
+    assert np.isclose(complex_state.energy_term_values['binder_rmsd'], expected)
+
+
+def test_BinderRMSDEnergy_plddt_scaling_uniform_plddt_gives_plain_rmsd() -> None:
+    # a weighted mean with equal weights is the plain RMSD, whatever the level of confidence and exponent
+    plain_state, _, _, _ = _rmsd_setup(BINDER_DISPLACEMENTS)
+    scaled_state, _, _, _ = _rmsd_setup(
+        BINDER_DISPLACEMENTS, plddt=np.full(5, 0.3), plddt_scaled=True, plddt_exponent=3.0
+    )
+    assert np.isclose(plain_state.energy_term_values['binder_rmsd'], scaled_state.energy_term_values['binder_rmsd'])
+
+
+def test_BinderRMSDEnergy_lowering_reference_plddt_does_not_lower_energy_below_best_residue() -> None:
+    # weighting by pLDDT must only re-distribute importance between residues: the result stays between the smallest
+    # and largest per-residue deviation, so making the whole reference less confident cannot reduce it towards 0
+    deviations = _kabsch_deviations(BINDER_CA, _displaced_binder_ca())
+    for level in (0.9, 0.5, 0.05):
+        state, _, _, _ = _rmsd_setup(
+            BINDER_DISPLACEMENTS, plddt=np.full(5, level), plddt_scaled=True, plddt_exponent=2.0
+        )
+        value = state.energy_term_values['binder_rmsd']
+        assert deviations.min() <= value <= deviations.max()
+
+
+def test_BinderRMSDEnergy_plddt_scaling_falls_back_to_plain_rmsd_if_all_plddt_are_zero() -> None:
+    plain_state, _, _, _ = _rmsd_setup(BINDER_DISPLACEMENTS)
+    zero_state, _, _, _ = _rmsd_setup(BINDER_DISPLACEMENTS, plddt=np.zeros(5), plddt_scaled=True)
+    assert np.isclose(plain_state.energy_term_values['binder_rmsd'], zero_state.energy_term_values['binder_rmsd'])
+
+
+def test_BinderRMSDEnergy_uses_only_the_selected_residues() -> None:
+    binder, target = _binder_and_target()
+    reference_oracle = _FakeBackboneOracle({}, lambda n: np.full(n, 0.5))
+    complex_oracle = _FakeBackboneOracle(BINDER_DISPLACEMENTS, lambda n: np.full(n, 0.5))
+    reference_state = bg.State('reference', [binder], [bg.energies.PLDDTEnergy(reference_oracle, None)])
+    selected = [binder.residues[i] for i in (0, 1, 3)]  # leaves out the displaced residues 2 and 4
+    energy = bg.energies.BinderRMSDEnergy(complex_oracle, selected, reference_state)
+    state = bg.State('complex', [binder, target], [energy])
+    assert np.isclose(state.energy_term_values['binder_rmsd'], 0.0, atol=1e-6)
+
+
+def test_BinderRMSDEnergy_works_when_residue_groups_span_chains_of_the_reference_state() -> None:
+    binder, target = _binder_and_target()
+    reference_oracle = _FakeBackboneOracle({}, lambda n: np.full(n, 0.5))
+    complex_oracle = _FakeBackboneOracle({('B', 1): 5.0}, lambda n: np.full(n, 0.5))
+    # reference state lists the chains in the opposite order to the complex state
+    reference_state = bg.State('reference', [target, binder], [bg.energies.PLDDTEnergy(reference_oracle, None)])
+    residues = [binder.residues[0], target.residues[1], binder.residues[3], target.residues[3]]
+    energy = bg.energies.BinderRMSDEnergy(complex_oracle, residues, reference_state)
+    state = bg.State('complex', [binder, target], [energy])
+    assert state.energy_term_values['binder_rmsd'] > 0.1, 'the displaced residue of chain B must be seen'
+
+
+@pytest.mark.parametrize('exponent', [0.0, -1.0])
+def test_BinderRMSDEnergy_rejects_non_positive_plddt_exponent(exponent: float) -> None:
+    with pytest.raises(ValueError, match='plddt_exponent'):
+        _rmsd_setup({}, plddt_scaled=True, plddt_exponent=exponent)
+
+
+def test_BinderRMSDEnergy_rejects_residues_not_in_reference_state() -> None:
+    binder, target = _binder_and_target()
+    oracle = _FakeBackboneOracle({}, lambda n: np.full(n, 0.5))
+    reference_state = bg.State('reference', [binder], [bg.energies.PLDDTEnergy(oracle, None)])
+    with pytest.raises(ValueError, match='chain'):  # chain B is not in the reference state
+        bg.energies.BinderRMSDEnergy(oracle, binder.residues + target.residues[:1], reference_state)
+    with pytest.raises(ValueError, match='not in reference state'):  # index 9 is not in chain A
+        bg.energies.BinderRMSDEnergy(oracle, [bg.Residue('A', 'A', 9)], reference_state)
+    with pytest.raises(ValueError, match='reference state'):  # index 0 is 'A' in the reference state, not 'W'
+        bg.energies.BinderRMSDEnergy(oracle, [bg.Residue('W', 'A', 0)], reference_state)
+    with pytest.raises(ValueError):
+        bg.energies.BinderRMSDEnergy(oracle, [], reference_state)
+
+
+def test_BinderRMSDEnergy_requires_reference_oracle_if_reference_state_is_ambiguous() -> None:
+    binder, target = _binder_and_target()
+    oracle_1 = _FakeBackboneOracle({}, lambda n: np.full(n, 0.5))
+    oracle_2 = _FakeBackboneOracle({('A', 0): 3.0}, lambda n: np.full(n, 0.5))
+    reference_state = bg.State(
+        'reference', [binder], [bg.energies.PLDDTEnergy(oracle_1, None), bg.energies.PTMEnergy(oracle_2)]
+    )
+    ambiguous = bg.energies.BinderRMSDEnergy(oracle_1, binder.residues, reference_state)
+    with pytest.raises(ValueError, match='reference_oracle'):
+        bg.State('complex', [binder, target], [ambiguous]).energy
+    explicit = bg.energies.BinderRMSDEnergy(oracle_1, binder.residues, reference_state, reference_oracle=oracle_2)
+    assert bg.State('complex', [binder, target], [explicit]).energy_term_values['binder_rmsd'] > 0.1
+
+
+def test_BinderRMSDEnergy_rejects_reference_state_containing_the_term() -> None:
+    complex_state, _, energy, _ = _rmsd_setup({})
+    energy.reference_state = complex_state
+    with pytest.raises(ValueError, match='cannot be the state'):
+        _ = complex_state.energy
+
+
+def test_BinderRMSDEnergy_follows_mutations_in_a_copied_system() -> None:
+    complex_state, reference_state, _, _ = _rmsd_setup(BINDER_DISPLACEMENTS)
+    system = bg.System(states=[complex_state, reference_state])
+    copied = system.__copy__()
+    assert copied.states[0].energy_terms[0].reference_state is copied.states[1], (
+        'copy must keep the link to its own copy'
+    )
+    copied.states[0].chains[0].mutate_residue(index=1, amino_acid='W')
+    assert copied.states[1].chains[0].sequence == copied.states[0].chains[0].sequence
+    assert np.isfinite(copied.get_total_energy())

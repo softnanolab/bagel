@@ -39,6 +39,16 @@ hydrophobic_residues = ('VAL', 'ILE', 'LEU', 'PHE', 'MET', 'TRP')
 
 backbone_atoms = ('CA', 'N', 'C')
 
+# Charged side chains that can form salt bridges, following Barlow & Thornton (1983): for each 1-letter residue type,
+# the sign of its charge and the names of the atoms carrying it (carboxylate oxygens, or nitrogens of basic groups)
+salt_bridge_residues = {
+    'D': (-1, ('OD1', 'OD2')),  # aspartic acid
+    'E': (-1, ('OE1', 'OE2')),  # glutamic acid
+    'K': (+1, ('NZ',)),  # lysine
+    'R': (+1, ('NE', 'NH1', 'NH2')),  # arginine
+    'H': (+1, ('ND1', 'NE2')),  # histidine
+}
+
 angstrom = 1.0  # Units of measure for distances
 nm = 10.0  # nm value in units of measure for distances
 
