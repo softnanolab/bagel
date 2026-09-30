@@ -34,7 +34,7 @@ For **each state**, pin down the list of terms. For **each term**:
 - **Weight** (relative; negative to discourage). Confirm the intended sign, especially in
   negative-design states.
 - **Residue group(s)** it applies to. Single-group terms (`PLDDTEnergy`, `HydrophobicEnergy`)
-  take a flat `residues=[...]`; **interface terms** (`PAEEnergy`, `SeparationEnergy`, `LISEnergy`, `ipSAEEnergy`)
+  take a flat `residues=[...]`; **interface terms** (`PAEEnergy`, `SeparationEnergy`, `LISEnergy`, `ipSAEEnergy`, `SaltBridgeEnergy`)
   take a list of **two** groups `residues=[group_a, group_b]`. Confirm exactly which residues form
   each group (hotspot/epitope/catalytic set/whole chain).
 - **Oracle** that evaluates it — folding (`ESMFold`, …) for structure/confidence/geometry terms;

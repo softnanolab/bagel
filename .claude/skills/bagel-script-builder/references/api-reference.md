@@ -102,6 +102,9 @@ but recommended — it labels the term in per-term logs.
 - `ipSAEEnergy(oracle, residues=[group_a, group_b], pae_cutoff=10.0, direction='max', weight=1.0, name=None)`
   — ipSAE (Dunbrack 2025): ipTM-like score using only confidently placed inter-group pairs; `direction`
   is 'max' (default), 'mean', '1to2' or '2to1'. Returned as a negative value (energy).
+- `SaltBridgeEnergy(oracle, residues=[group_a, group_b], residue_types=('D','E','K','R','H'), distance_cutoff=4.0, count_same_charge=True, weight=1.0, name=None)`
+  — minus the signed number of inter-group salt bridges (Barlow & Thornton: carboxylate O to basic N within 4 Å);
+  same-charge contacts count -1 unless `count_same_charge=False`. Groups must not share residues.
 - `FlexEvoBindEnergy(oracle, residues, plddt_weighted, symmetrized, ...)`.
 
 ### Developability (folding oracle)
@@ -226,7 +229,7 @@ These come from the real API and cost debugging time if missed:
   pass `config={'glycine_linker': 'G'*25, 'position_ids_skip': 1024}` (512 or 1024 are the
   in-repo values). Without it the chains fold as one fused sequence.
 - **Interface terms take a list of two groups**: `PAEEnergy(residues=[group_a, group_b])`, same
-  for `SeparationEnergy` / `LISEnergy` / `ipSAEEnergy`. Single-group terms (`PLDDTEnergy`, `HydrophobicEnergy`)
+  for `SeparationEnergy` / `LISEnergy` / `ipSAEEnergy` / `SaltBridgeEnergy`. Single-group terms (`PLDDTEnergy`, `HydrophobicEnergy`)
   take a flat `residues=[...]`. Mixing these up is the most common error.
 - **Negative design = negative weights** on the off-target state's interface terms
   (`weight=-5.0`), with the mutable binder chain shared across both states.

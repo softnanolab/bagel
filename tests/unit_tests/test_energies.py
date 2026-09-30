@@ -578,6 +578,178 @@ def test_ChemicalPotentialEnergy_with_embedding_oracle(
     assert np.isclose(weighted_energy, 12.0), f'weighted energy is incorrect: {weighted_energy}'
 
 
+SALT_BRIDGE_ATOMS = {
+    'D': ('ASP', ('OD1', 'OD2')),
+    'E': ('GLU', ('OE1', 'OE2')),
+    'K': ('LYS', ('NZ',)),
+    'R': ('ARG', ('NE', 'NH1', 'NH2')),
+    'H': ('HIS', ('ND1', 'NE2')),
+    'A': ('ALA', ('CB',)),
+}
+
+
+def _salt_bridge_value(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    group_1: list[tuple[str, float]],
+    group_2: list[tuple[str, float]],
+    **energy_kwargs: Any,
+) -> float:
+    """
+    Builds residues of the given 1-letter types, each at a position x (in Angstrom) along the x axis, in chain A for
+    the first group and chain B for the second group. Charged atoms of a residue are spaced by 2 A in y, so the
+    smallest distance between the charged atoms of two residues is exactly their separation in x.
+    """
+    atoms, residues = [], []
+    for chain_id, group in (('A', group_1), ('B', group_2)):
+        group_residues = []
+        for index, (letter, x) in enumerate(group):
+            residue = bg.Residue(name=letter, chain_ID=chain_id, index=index)
+            group_residues.append(residue)
+            res_name, atom_names = SALT_BRIDGE_ATOMS[letter]
+            for k, atom_name in enumerate(('CA',) + atom_names):
+                atoms.append(
+                    Atom(
+                        [x, 2.0 * k, 0.0],
+                        chain_id=chain_id,
+                        res_id=index,
+                        res_name=res_name,
+                        atom_name=atom_name,
+                        element='C',
+                    )
+                )
+        residues.append(group_residues)
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = array(atoms)
+    energy = bg.energies.SaltBridgeEnergy(oracle=fake_esmfold, residues=residues, **energy_kwargs)
+    unweighted_energy, weighted_energy = energy.compute(
+        oracles_result=OraclesResultDict({fake_esmfold: mock_folding_result})
+    )
+    assert np.isclose(weighted_energy, unweighted_energy * energy.weight), 'weighted energy is incorrect'
+    return unweighted_energy
+
+
+@pytest.mark.parametrize(
+    'acid, base', [('D', 'K'), ('D', 'R'), ('D', 'H'), ('E', 'K'), ('E', 'R'), ('E', 'H')]
+)  # every acidic-basic combination
+@pytest.mark.parametrize('swap_groups', [False, True])
+def test_SaltBridgeEnergy_counts_a_salt_bridge_in_either_direction(
+    fake_esmfold: bg.oracles.folding.ESMFold, acid: str, base: str, swap_groups: bool
+) -> None:
+    group_1, group_2 = [(acid, 0.0)], [(base, 3.0)]
+    if swap_groups:
+        group_1, group_2 = group_2, group_1
+    assert _salt_bridge_value(fake_esmfold, group_1, group_2) == -1.0
+
+
+@pytest.mark.parametrize('distance, expected', [(3.0, -1.0), (3.99, -1.0), (4.0, -1.0), (4.01, 0.0), (8.0, 0.0)])
+def test_SaltBridgeEnergy_uses_a_hard_cutoff_that_includes_the_boundary(
+    fake_esmfold: bg.oracles.folding.ESMFold, distance: float, expected: float
+) -> None:
+    assert _salt_bridge_value(fake_esmfold, [('D', 0.0)], [('K', distance)]) == expected
+
+
+def test_SaltBridgeEnergy_distance_cutoff_can_be_changed(fake_esmfold: bg.oracles.folding.ESMFold) -> None:
+    assert _salt_bridge_value(fake_esmfold, [('D', 0.0)], [('K', 5.0)], distance_cutoff=5.5) == -1.0
+    assert _salt_bridge_value(fake_esmfold, [('D', 0.0)], [('K', 5.0)], distance_cutoff=4.5) == 0.0
+
+
+@pytest.mark.parametrize('first, second', [('D', 'E'), ('D', 'D'), ('K', 'R'), ('K', 'K'), ('H', 'R'), ('H', 'K')])
+def test_SaltBridgeEnergy_counts_negative_bridges_for_residues_of_same_charge(
+    fake_esmfold: bg.oracles.folding.ESMFold, first: str, second: str
+) -> None:
+    assert _salt_bridge_value(fake_esmfold, [(first, 0.0)], [(second, 3.0)]) == 1.0, 'a negative bridge is +1 energy'
+    assert _salt_bridge_value(fake_esmfold, [(first, 0.0)], [(second, 5.0)]) == 0.0, 'too far to be a negative bridge'
+    assert _salt_bridge_value(fake_esmfold, [(first, 0.0)], [(second, 3.0)], count_same_charge=False) == 0.0
+
+
+def test_SaltBridgeEnergy_is_minus_the_signed_number_of_bridges(fake_esmfold: bg.oracles.folding.ESMFold) -> None:
+    # group 1: D at x=0, E at x=20, K at x=40; group 2: K at x=3 (salt bridge with D), R at x=23 (salt bridge with E),
+    # D at x=43 (salt bridge with K), E at x=1 (negative bridge with D, and only D, as it is 19 A from E)
+    group_1 = [('D', 0.0), ('E', 20.0), ('K', 40.0)]
+    group_2 = [('K', 3.0), ('R', 23.0), ('D', 43.0), ('E', 1.0)]
+    # salt bridges: D0-K3, E20-R23, K40-D43; negative bridges: D0-E1. Signed number 3 - 1 = 2
+    assert _salt_bridge_value(fake_esmfold, group_1, group_2) == -2.0
+    assert _salt_bridge_value(fake_esmfold, group_1, group_2, count_same_charge=False) == -3.0
+
+
+def test_SaltBridgeEnergy_counts_each_pair_of_residues_once_but_each_partner_of_a_residue(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+) -> None:
+    # all three charged nitrogens of Arg and both oxygens of Asp are in contact at x=3, which is still only one bridge
+    assert _salt_bridge_value(fake_esmfold, [('R', 0.0)], [('D', 3.0)]) == -1.0
+    # an Arg with two Glu in the other group makes two bridges, and one with two Lys makes two negative bridges
+    assert _salt_bridge_value(fake_esmfold, [('R', 0.0)], [('E', 3.0), ('E', -3.0)]) == -2.0
+    assert _salt_bridge_value(fake_esmfold, [('R', 0.0)], [('K', 3.0), ('K', -3.0)]) == 2.0
+
+
+def test_SaltBridgeEnergy_ignores_bridges_within_a_group(fake_esmfold: bg.oracles.folding.ESMFold) -> None:
+    # D and K are in contact, but both are in the first group, and the second group is far away
+    assert _salt_bridge_value(fake_esmfold, [('D', 0.0), ('K', 3.0)], [('E', 30.0)]) == 0.0
+    # same for residues of the same charge
+    assert _salt_bridge_value(fake_esmfold, [('D', 0.0), ('E', 3.0)], [('K', 30.0)]) == 0.0
+
+
+def test_SaltBridgeEnergy_ignores_uncharged_residues(fake_esmfold: bg.oracles.folding.ESMFold) -> None:
+    assert _salt_bridge_value(fake_esmfold, [('A', 0.0)], [('K', 3.0)]) == 0.0
+    assert _salt_bridge_value(fake_esmfold, [('D', 0.0)], [('A', 3.0)]) == 0.0
+
+
+def test_SaltBridgeEnergy_includes_all_charged_residue_types_by_default(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+) -> None:
+    group_1 = [('D', 0.0), ('E', 20.0), ('K', 40.0), ('R', 60.0), ('H', 80.0)]
+    group_2 = [('K', 3.0), ('R', 23.0), ('D', 43.0), ('E', 63.0), ('D', 83.0)]
+    assert _salt_bridge_value(fake_esmfold, group_1, group_2) == -5.0
+
+
+@pytest.mark.parametrize(
+    'residue_types, n_bridges',
+    [
+        (['D', 'E', 'K', 'R'], 4),  # no histidine: H80-D83 is dropped
+        (['D', 'K'], 2),  # only D0-K3 and K40-D43
+        (('E', 'R', 'H'), 2),  # tuples work too: E20-R23 and R60-E63; H80-D83 is dropped as D is not considered
+        (['H'], 0),  # a single type cannot form a bridge with the other group's different residues
+    ],
+)
+def test_SaltBridgeEnergy_residue_types_selects_which_residues_are_considered(
+    fake_esmfold: bg.oracles.folding.ESMFold, residue_types: list[str], n_bridges: int
+) -> None:
+    # bridges: D0-K3, E20-R23, K40-D43, R60-E63, H80-D83
+    group_1 = [('D', 0.0), ('E', 20.0), ('K', 40.0), ('R', 60.0), ('H', 80.0)]
+    group_2 = [('K', 3.0), ('R', 23.0), ('D', 43.0), ('E', 63.0), ('D', 83.0)]
+    value = _salt_bridge_value(fake_esmfold, group_1, group_2, residue_types=residue_types)
+    assert value == -float(n_bridges), f'expected {-n_bridges}, found {value}'
+
+
+def test_SaltBridgeEnergy_restricting_residue_types_also_limits_negative_bridges(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+) -> None:
+    # D-E in contact would be a negative bridge, but E is not considered
+    assert _salt_bridge_value(fake_esmfold, [('D', 0.0)], [('E', 3.0)]) == 1.0
+    assert _salt_bridge_value(fake_esmfold, [('D', 0.0)], [('E', 3.0)], residue_types=['D', 'K', 'R']) == 0.0
+
+
+def test_SaltBridgeEnergy_weight_and_name(fake_esmfold: bg.oracles.folding.ESMFold) -> None:
+    assert _salt_bridge_value(fake_esmfold, [('D', 0.0)], [('K', 3.0)], weight=3.0) == -1.0  # also checks weighting
+    residues = [[bg.Residue('D', 'A', 0)], [bg.Residue('K', 'B', 0)]]
+    assert bg.energies.SaltBridgeEnergy(oracle=fake_esmfold, residues=residues).name == 'salt_bridge'
+    assert bg.energies.SaltBridgeEnergy(oracle=fake_esmfold, residues=residues, name='x').name == 'salt_bridge_x'
+
+
+def test_SaltBridgeEnergy_rejects_invalid_arguments(fake_esmfold: bg.oracles.folding.ESMFold) -> None:
+    group_1, group_2 = [bg.Residue('D', 'A', 0)], [bg.Residue('K', 'B', 0)]
+    with pytest.raises(AssertionError):
+        bg.energies.SaltBridgeEnergy(oracle=fake_esmfold, residues=[group_1])  # needs two groups
+    with pytest.raises(AssertionError):
+        bg.energies.SaltBridgeEnergy(oracle=fake_esmfold, residues=[group_1, group_1])  # groups share residues
+    with pytest.raises(AssertionError):
+        bg.energies.SaltBridgeEnergy(oracle=fake_esmfold, residues=[group_1, group_2], residue_types=['D', 'A'])
+    with pytest.raises(AssertionError):
+        bg.energies.SaltBridgeEnergy(oracle=fake_esmfold, residues=[group_1, group_2], residue_types=[])
+    with pytest.raises(AssertionError):
+        bg.energies.SaltBridgeEnergy(oracle=fake_esmfold, residues=[group_1, group_2], distance_cutoff=0.0)
+
+
 def test_RingSymmetryEnergy_with_direct_neighbours_only(
     fake_esmfold: bg.oracles.folding.ESMFold,
     square_structure_residues: list[bg.Residue],

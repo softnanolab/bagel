@@ -25,6 +25,8 @@ from .constants import (
     max_residue_sasa,
     vdw_radii,
     default_vdw_radius,
+    salt_bridge_residues,
+    aa_dict,
 )
 from .chain import Residue, Chain
 from .oracles import Oracle, OracleResult, OraclesResultDict
@@ -1124,6 +1126,135 @@ class ipSAEEnergy(EnergyTerm):
             ipsae = max(both) if self.direction == 'max' else float(np.mean(both))
 
         value = -ipsae  # negative because you want it to be interpreted as an energy
+        return value, value * self.weight
+
+
+class SaltBridgeEnergy(EnergyTerm):
+    r"""
+    Energy that rewards salt bridges *between* two groups of residues, and optionally penalises the repulsive contacts
+    between residues of the same charge.
+
+    Following the classic definition of Barlow & Thornton (1983, J. Mol. Biol. 168, 867),
+    two charged residues form a salt bridge when any carboxylate oxygen of an acidic residue (Asp: OD1, OD2; Glu: OE1,
+    OE2) is within ``distance_cutoff`` (4 Angstrom) of any nitrogen of a basic residue (Lys: NZ; Arg: NE, NH1, NH2; His:
+    ND1, NE2). Here, the same atoms and cutoff are used to detect the opposite: two residues of the **same** charge that
+    are this close, here called a negative bridge. A pair of residues is counted at most once, however many atom pairs
+    are within the cutoff, and only pairs with one residue in each of the two groups count, so bridges internal to a
+    group are ignored. The signed number of bridges is
+
+    .. math:: n = n_{\mathrm{salt}} - n_{\mathrm{negative}}
+
+    and the energy is :math:`-n`, which decreases as there are more salt bridges and fewer negative bridges. It is
+    a count: it changes in steps, and is unbounded.
+
+    .. note::
+        The positions of side chains come from the folding model and are less reliable than those of the backbone,
+        especially at interfaces. Histidine is included by default as in the original definition, but it is mostly
+        neutral at physiological pH: remove ``'H'`` from ``residue_types`` to ignore it. Charges are assigned by residue
+        type only, termini are ignored, and no account is taken of desolvation.
+    """
+
+    def __init__(
+        self,
+        oracle: FoldingOracle,
+        residues: list[list[Residue]],
+        residue_types: list[str] | tuple[str, ...] = ('D', 'E', 'K', 'R', 'H'),
+        distance_cutoff: float = 4.0,
+        count_same_charge: bool = True,
+        inheritable: bool = True,
+        weight: float = 1.0,
+        name: str | None = None,
+    ) -> None:
+        """
+        Initialises the salt bridge energy class.
+
+        Parameters
+        ----------
+        oracle: FoldingOracle
+            The oracle to use for the energy term.
+        residues: list[list[Residue]]
+            Which residues to include in the first and second group. Bridges are counted between the two groups only,
+            so the groups cannot share residues.
+        residue_types: list[str], default=('D', 'E', 'K', 'R', 'H')
+            The types of residue considered, as 1-letter codes. Must be a subset of D, E, K, R and H, the residues with
+            a charged group defined. Residues of any other type in the groups are never counted.
+        distance_cutoff: float, default=4.0
+            Distance in Angstrom between charged atoms, up to and including which two residues are in contact.
+        count_same_charge: bool, default=True
+            Whether contacts between residues of the same charge count as negative bridges, each subtracting one from
+            the number of salt bridges. If False, only salt bridges are counted.
+        inheritable: bool, default=True
+            If a new residue is added next to a residue included in this energy term, this dictates whether that new
+            residue could then be added to this energy term.
+        weight: float = 1.0
+            The weight of the energy term.
+        name: str | None = None
+            Optional name to append to the energy term name.
+        """
+        base_name = 'salt_bridge'
+
+        if name is None:
+            name = base_name
+        else:
+            name = f'{base_name}_{name}'
+
+        super().__init__(name=name, inheritable=inheritable, oracle=oracle, weight=weight)
+        assert len(residues) == 2, 'SaltBridgeEnergy requires exactly two groups of residues'
+        unsupported = [r for r in residue_types if r not in salt_bridge_residues]
+        assert len(unsupported) == 0, (
+            f'residue_types can only contain {list(salt_bridge_residues)}, found unsupported types: {unsupported}'
+        )
+        assert len(residue_types) > 0, 'residue_types cannot be empty'
+        assert distance_cutoff > 0, 'distance_cutoff must be positive'
+        group_1, group_2 = [set(zip(*residue_list_to_group(group))) for group in residues]
+        assert group_1.isdisjoint(group_2), (
+            f'the two groups cannot share residues, found shared: {sorted(group_1 & group_2)}'
+        )
+        self.residue_types = tuple(residue_types)
+        self.distance_cutoff = distance_cutoff
+        self.count_same_charge = count_same_charge
+        self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
+        # keyed by the 3-letter name in the structure: the sign of the charge and the atoms that carry it
+        self._charged_atoms = {aa_dict[letter]: salt_bridge_residues[letter] for letter in self.residue_types}
+        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
+        assert 'structure' in self.oracle.result_class.model_fields, (
+            'SaltBridgeEnergy requires oracle to return structure in result_class'
+        )
+
+    def _charged_sites(
+        self, structure: AtomArray, residue_group_index: int
+    ) -> list[tuple[int, npt.NDArray[np.float64]]]:
+        """The charge sign and the coordinates of the charged atoms of each considered residue in a group."""
+        chain_ids, res_ids = self.residue_groups[residue_group_index]
+        sites = []
+        for chain_id, res_id in dict.fromkeys(zip(chain_ids, res_ids)):  # unique, in order
+            residue_atoms = structure[(structure.chain_id == chain_id) & (structure.res_id == res_id)]
+            if len(residue_atoms) == 0 or str(residue_atoms.res_name[0]) not in self._charged_atoms:
+                continue
+            charge, atom_names = self._charged_atoms[str(residue_atoms.res_name[0])]
+            coordinates = residue_atoms.coord[np.isin(residue_atoms.atom_name, atom_names)]
+            if len(coordinates) > 0:
+                sites.append((charge, coordinates))
+        return sites
+
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        structure = oracles_result.get_structure(self.oracle)
+        sites_1 = self._charged_sites(structure, residue_group_index=0)
+        sites_2 = self._charged_sites(structure, residue_group_index=1)
+
+        n_salt_bridges = 0
+        n_negative_bridges = 0
+        for charge_1, coordinates_1 in sites_1:
+            for charge_2, coordinates_2 in sites_2:
+                separations = np.linalg.norm(coordinates_1[:, np.newaxis, :] - coordinates_2[np.newaxis, :, :], axis=2)
+                if np.min(separations) > self.distance_cutoff:
+                    continue
+                if charge_1 != charge_2:
+                    n_salt_bridges += 1
+                elif self.count_same_charge:
+                    n_negative_bridges += 1
+
+        value = float(n_negative_bridges - n_salt_bridges)  # minus the signed number of salt bridges
         return value, value * self.weight
 
 
