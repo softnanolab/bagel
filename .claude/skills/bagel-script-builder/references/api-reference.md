@@ -123,7 +123,10 @@ but recommended — it labels the term in per-term logs.
 - `EmbeddingsSimilarityEnergy(oracle, residues, reference_embeddings, weight=1.0, name=None)`
   — keep the group's embeddings near a captured reference (conservation / mimicry).
 - `ChemicalPotentialEnergy(oracle, power, target_size, chemical_potential, weight=1.0, name=None)`
-  — controls sequence length; pair with `GrandCanonical`.
+  — controls sequence length; pair with `GrandCanonical`. Energy is `chemical_potential * d**power`
+  with `d` the distance from the total residue count to `target_size`, which is an int or a
+  `(min_size, max_size)` range (energy is 0 inside the range). Use a positive `chemical_potential`
+  to restrain the length.
 
 > Signatures above reflect the current source but arguments drift — open
 > `src/bagel/energies.py` and grep for the class to confirm before relying on an argument.

@@ -294,13 +294,25 @@ class ChemicalPotentialEnergy(EnergyTerm):
 
     where :math:`\Omega` is the grand potential, :math:`E` is the energy, :math:`\mu` is the chemical potential,
     and :math:`N` is the number of residues.
+
+    The energy of this term is
+
+    .. math::
+
+        \mu \, d^{p}, \qquad d = \max(N_{\min} - N, \, 0, \, N - N_{\max})
+
+    where :math:`p` is ``power`` and :math:`d` is the distance from :math:`N` to the allowed range of sizes
+    :math:`[N_{\min}, N_{\max}]`, given by ``target_size``. The energy is therefore zero anywhere inside the range,
+    and outside it grows with the deviation from the closest boundary. If ``target_size`` is a single number the range
+    is that one size, and :math:`d = |N - N_{\mathrm{target}}|`. For the term to restrain the size, ``chemical_potential``
+    must be positive, otherwise it rewards moving away from the range.
     """
 
     def __init__(
         self,
         oracle: Oracle,
         power: float = 1.0,
-        target_size: int = 0,
+        target_size: int | tuple[int, int] = 0,
         chemical_potential: float = 1.0,
         weight: float = 1.0,
         name: str | None = None,
@@ -313,9 +325,10 @@ class ChemicalPotentialEnergy(EnergyTerm):
         oracle: Oracle
             The oracle to use for the energy term.
         power: float
-            The power to raise the number of residues to.
-        target_size: int
-            The target size of the system.
+            The exponent to which the distance from the allowed range of sizes is raised. Must be positive.
+        target_size: int | tuple[int, int]
+            The target size of the system, in number of residues. Either a single size, or a range
+            (min_size, max_size), both included, within which the energy is zero.
         chemical_potential: float
             The chemical potential of the system.
         weight: float
@@ -328,6 +341,13 @@ class ChemicalPotentialEnergy(EnergyTerm):
         else:
             name = f'chem_pot_{name}'
         super().__init__(name=name, inheritable=True, oracle=oracle, weight=weight)
+        if isinstance(target_size, (tuple, list)):
+            assert len(target_size) == 2, 'a target_size range must be given as (min_size, max_size)'
+            self.min_size, self.max_size = target_size
+        else:
+            self.min_size = self.max_size = target_size
+        assert self.min_size <= self.max_size, 'min_size of target_size cannot be larger than max_size'
+        assert power > 0, 'power must be positive'
         self.power = power
         self.target_size = target_size
         self.chemical_potential = chemical_potential
@@ -341,7 +361,9 @@ class ChemicalPotentialEnergy(EnergyTerm):
 
         # Count all residues in all input chains
         num_residues = sum(chain.length for chain in input_chains)
-        value = self.chemical_potential * (abs(num_residues - self.target_size)) ** self.power
+        # distance from the allowed range of sizes: zero inside it, and from the closest boundary outside it
+        distance = max(self.min_size - num_residues, 0, num_residues - self.max_size)
+        value = self.chemical_potential * distance**self.power
 
         return value, value * self.weight
 

@@ -501,6 +501,60 @@ def test_ChemicalPotentialEnergy(
     assert np.isclose(weighted_energy, value * 2), 'weighted energy is incorrect'
 
 
+def _chemical_potential_value(fake_esm2: bg.oracles.embedding.ESM2, n_residues: int, **energy_kwargs: Any) -> float:
+    fake_embedding_result = Mock(bg.oracles.embedding.ESM2Result)
+    residues = [bg.Residue(name='A', chain_ID='X', index=i) for i in range(n_residues)]
+    fake_embedding_result.input_chains = [bg.Chain(residues=residues)]
+    energy = bg.energies.ChemicalPotentialEnergy(oracle=fake_esm2, **energy_kwargs)
+    unweighted_energy, weighted_energy = energy.compute(
+        oracles_result=OraclesResultDict({fake_esm2: fake_embedding_result})
+    )
+    assert np.isclose(weighted_energy, unweighted_energy * energy.weight), 'weighted energy is incorrect'
+    return unweighted_energy
+
+
+@pytest.mark.parametrize('n_residues', [5, 6, 7, 8, 9, 10])
+def test_ChemicalPotentialEnergy_is_zero_within_size_range(
+    fake_esm2: bg.oracles.embedding.ESM2, n_residues: int
+) -> None:
+    value = _chemical_potential_value(fake_esm2, n_residues, target_size=(5, 10), chemical_potential=3.0)
+    assert value == 0.0, 'energy must be zero anywhere in the range, boundaries included'
+
+
+@pytest.mark.parametrize(
+    'n_residues, distance', [(4, 1), (3, 2), (1, 4), (11, 1), (12, 2), (20, 10)]
+)  # distances from the closest boundary of the range (5, 10)
+@pytest.mark.parametrize('power', [0.5, 1.0, 2.0])
+def test_ChemicalPotentialEnergy_grows_with_distance_from_closest_boundary(
+    fake_esm2: bg.oracles.embedding.ESM2, n_residues: int, distance: int, power: float
+) -> None:
+    value = _chemical_potential_value(
+        fake_esm2, n_residues, target_size=(5, 10), power=power, chemical_potential=1.5, weight=2.0
+    )
+    assert np.isclose(value, 1.5 * distance**power), f'expected {1.5 * distance**power}, found {value}'
+
+
+def test_ChemicalPotentialEnergy_range_with_equal_bounds_matches_single_target(
+    fake_esm2: bg.oracles.embedding.ESM2,
+) -> None:
+    for n_residues in range(1, 12):
+        single = _chemical_potential_value(fake_esm2, n_residues, target_size=6, power=1.7, chemical_potential=0.8)
+        ranged = _chemical_potential_value(fake_esm2, n_residues, target_size=(6, 6), power=1.7, chemical_potential=0.8)
+        assert np.isclose(single, ranged), f'a range with equal bounds must match a single size at N={n_residues}'
+        assert np.isclose(single, 0.8 * abs(n_residues - 6) ** 1.7), 'single-size behaviour must not change'
+
+
+def test_ChemicalPotentialEnergy_rejects_invalid_arguments(fake_esm2: bg.oracles.embedding.ESM2) -> None:
+    with pytest.raises(AssertionError):
+        bg.energies.ChemicalPotentialEnergy(oracle=fake_esm2, target_size=(10, 5))
+    with pytest.raises(AssertionError):
+        bg.energies.ChemicalPotentialEnergy(oracle=fake_esm2, target_size=(1, 2, 3))  # type: ignore[arg-type]
+    with pytest.raises(AssertionError):
+        bg.energies.ChemicalPotentialEnergy(oracle=fake_esm2, power=0.0)
+    with pytest.raises(AssertionError):
+        bg.energies.ChemicalPotentialEnergy(oracle=fake_esm2, power=-1.0)
+
+
 def test_ChemicalPotentialEnergy_with_embedding_oracle(
     fake_esm2: bg.oracles.embedding.ESM2,
 ):
