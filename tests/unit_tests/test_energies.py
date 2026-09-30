@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 import copy
 import inspect
 import pytest
+from typing import Any
 
 
 def test_residue_list_to_group_function(residues: list[bg.Residue]) -> None:
@@ -933,6 +934,181 @@ def test_LISEnergy(
     assert np.isclose(weighted_energy, 2.0 * expected), (
         f'weighted energy is incorrect, expected {2.0 * expected}, found {weighted_energy}'
     )
+
+
+def _reference_ipsae(pae: np.ndarray, aligned: list[int], scored: list[int], cutoff: float = 10.0) -> float:
+    """Direct, loop-based transcription of the definition of ipSAE, used to check the vectorised implementation."""
+    per_residue = []
+    for i in aligned:
+        partners = [j for j in scored if j != i and pae[i, j] < cutoff]
+        if not partners:
+            continue
+        d0 = max(1.0, 1.24 * (max(len(partners), 27) - 15) ** (1 / 3) - 1.8)
+        per_residue.append(np.mean([1 / (1 + (pae[i, j] / d0) ** 2) for j in partners]))
+    return max(per_residue) if per_residue else 0.0
+
+
+def _ipsae_energy_and_result(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    mixed_structure_state: bg.State,
+    pae: np.ndarray,
+    groups: tuple[slice, slice] = (slice(0, 3), slice(3, 7)),
+    **energy_kwargs: Any,
+) -> tuple[bg.energies.ipSAEEnergy, OraclesResultDict]:
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.pae = pae.reshape((1, *pae.shape))
+    mock_folding_result.structure = mixed_structure_state._oracles_result[fake_esmfold].structure
+    residues = sum([chain.residues for chain in mixed_structure_state.chains], start=[])
+    energy = bg.energies.ipSAEEnergy(
+        oracle=fake_esmfold, residues=[residues[groups[0]], residues[groups[1]]], **energy_kwargs
+    )
+    return energy, OraclesResultDict({fake_esmfold: mock_folding_result})
+
+
+def test_ipSAEEnergy_uniform_pae_matches_closed_form(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    mixed_structure_state: bg.State,
+) -> None:
+    # every inter-group PAE is 3 A, so every partner passes the cutoff and n0 < 27 gives the smallest d0
+    pae = np.full((7, 7), 3.0)
+    energy, oracles_result = _ipsae_energy_and_result(fake_esmfold, mixed_structure_state, pae, weight=2.0)
+    d0 = 1.24 * (27 - 15) ** (1 / 3) - 1.8
+    expected = -1 / (1 + (3.0 / d0) ** 2)
+    unweighted_energy, weighted_energy = energy.compute(oracles_result=oracles_result)
+    assert np.isclose(unweighted_energy, expected), f'expected {expected}, found {unweighted_energy}'
+    assert np.isclose(weighted_energy, 2.0 * expected), 'weighted energy is incorrect'
+
+
+def test_ipSAEEnergy_is_zero_if_no_pair_is_below_cutoff(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    mixed_structure_state: bg.State,
+) -> None:
+    pae = np.full((7, 7), 10.0)  # the cutoff is strict: PAE must be *below* it
+    energy, oracles_result = _ipsae_energy_and_result(fake_esmfold, mixed_structure_state, pae)
+    assert energy.compute(oracles_result=oracles_result) == (0.0, 0.0)
+
+
+@pytest.mark.parametrize('direction', ['max', 'mean', '1to2', '2to1'])
+@pytest.mark.parametrize('cutoff', [5.0, 10.0, 25.0])
+def test_ipSAEEnergy_matches_reference_implementation(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    mixed_structure_state: bg.State,
+    direction: str,
+    cutoff: float,
+) -> None:
+    rng = np.random.default_rng(seed=0)
+    pae = rng.uniform(0.5, 30.0, size=(7, 7))  # asymmetric, like a real PAE matrix
+    energy, oracles_result = _ipsae_energy_and_result(
+        fake_esmfold, mixed_structure_state, pae, pae_cutoff=cutoff, direction=direction
+    )
+    forward = _reference_ipsae(pae, aligned=[0, 1, 2], scored=[3, 4, 5, 6], cutoff=cutoff)
+    backward = _reference_ipsae(pae, aligned=[3, 4, 5, 6], scored=[0, 1, 2], cutoff=cutoff)
+    expected = {
+        'max': max(forward, backward),
+        'mean': (forward + backward) / 2,
+        '1to2': forward,
+        '2to1': backward,
+    }[direction]
+    unweighted_energy, _ = energy.compute(oracles_result=oracles_result)
+    assert np.isclose(unweighted_energy, -expected), f'expected {-expected}, found {unweighted_energy}'
+
+
+def test_ipSAEEnergy_ignores_pairs_outside_the_groups_and_within_a_group(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    mixed_structure_state: bg.State,
+) -> None:
+    pae = np.full((7, 7), 3.0)
+    energy, oracles_result = _ipsae_energy_and_result(
+        fake_esmfold, mixed_structure_state, pae, groups=(slice(0, 2), slice(3, 5))
+    )
+    baseline, _ = energy.compute(oracles_result=oracles_result)
+    # change every entry that does not link group 1 to group 2 (intra-group, or involving residues 2, 5, 6)
+    pae_changed = np.full((7, 7), 40.0)
+    pae_changed[np.ix_([0, 1], [3, 4])] = 3.0
+    pae_changed[np.ix_([3, 4], [0, 1])] = 3.0
+    energy, oracles_result = _ipsae_energy_and_result(
+        fake_esmfold, mixed_structure_state, pae_changed, groups=(slice(0, 2), slice(3, 5))
+    )
+    changed, _ = energy.compute(oracles_result=oracles_result)
+    assert np.isclose(baseline, changed), 'only pairs between the two groups may contribute'
+
+
+def test_ipSAEEnergy_ignores_bad_residues_far_from_the_interface(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    mixed_structure_state: bg.State,
+) -> None:
+    # the point of ipSAE over ipTM: one confidently placed pair is enough, however bad the rest of the groups are
+    pae = np.full((7, 7), 25.0)
+    pae[0, 3] = 2.0
+    energy, oracles_result = _ipsae_energy_and_result(fake_esmfold, mixed_structure_state, pae, direction='1to2')
+    d0 = 1.24 * (27 - 15) ** (1 / 3) - 1.8
+    unweighted_energy, _ = energy.compute(oracles_result=oracles_result)
+    assert np.isclose(unweighted_energy, -1 / (1 + (2.0 / d0) ** 2))
+
+
+def test_ipSAEEnergy_is_lower_for_more_confident_interface(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    mixed_structure_state: bg.State,
+) -> None:
+    values = []
+    for level in (8.0, 5.0, 2.0):
+        energy, oracles_result = _ipsae_energy_and_result(fake_esmfold, mixed_structure_state, np.full((7, 7), level))
+        values.append(energy.compute(oracles_result=oracles_result)[0])
+    assert values[0] > values[1] > values[2], f'a lower PAE must give a lower energy, found {values}'
+    assert all(-1.0 <= value <= 0.0 for value in values), 'ipSAE must be between 0 and 1'
+
+
+def test_ipSAEEnergy_max_direction_is_the_larger_of_the_two_directions(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    mixed_structure_state: bg.State,
+) -> None:
+    pae = np.full((7, 7), 20.0)
+    pae[0, 3] = 2.0  # confident only when aligning on group 1
+    results = {}
+    for direction in ('max', 'mean', '1to2', '2to1'):
+        energy, oracles_result = _ipsae_energy_and_result(fake_esmfold, mixed_structure_state, pae, direction=direction)
+        results[direction] = energy.compute(oracles_result=oracles_result)[0]
+    assert results['2to1'] == 0.0
+    assert results['1to2'] < 0.0
+    assert results['max'] == results['1to2']
+    assert np.isclose(results['mean'], results['1to2'] / 2)
+
+
+def test_ipSAEEnergy_single_group_excludes_self_pairs(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    mixed_structure_state: bg.State,
+) -> None:
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    pae = np.full((7, 7), 25.0)
+    np.fill_diagonal(pae, 0.0)  # would be a perfect pair if the diagonal were counted
+    mock_folding_result.pae = pae.reshape((1, 7, 7))
+    mock_folding_result.structure = mixed_structure_state._oracles_result[fake_esmfold].structure
+    residues = sum([chain.residues for chain in mixed_structure_state.chains], start=[])
+    energy = bg.energies.ipSAEEnergy(oracle=fake_esmfold, residues=[residues[1:6:2]])
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+    assert energy.compute(oracles_result=oracles_result)[0] == 0.0
+
+
+def test_ipSAEEnergy_rejects_invalid_arguments(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    mixed_structure_state: bg.State,
+) -> None:
+    residues = sum([chain.residues for chain in mixed_structure_state.chains], start=[])
+    groups = [residues[0:3], residues[3:7]]
+    with pytest.raises(AssertionError):
+        bg.energies.ipSAEEnergy(oracle=fake_esmfold, residues=groups, pae_cutoff=0.0)
+    with pytest.raises(AssertionError):
+        bg.energies.ipSAEEnergy(oracle=fake_esmfold, residues=groups, direction='wrong')  # type: ignore[arg-type]
+
+
+def test_ipSAEEnergy_name_follows_naming_convention(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    mixed_structure_state: bg.State,
+) -> None:
+    residues = sum([chain.residues for chain in mixed_structure_state.chains], start=[])
+    groups = [residues[0:3], residues[3:7]]
+    assert bg.energies.ipSAEEnergy(oracle=fake_esmfold, residues=groups).name == 'ipSAE'
+    assert bg.energies.ipSAEEnergy(oracle=fake_esmfold, residues=groups, name='binder').name == 'ipSAE_binder'
 
 
 def test_HydropathyEnergy_all_mode(

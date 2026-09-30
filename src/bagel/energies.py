@@ -977,6 +977,134 @@ class LISEnergy(EnergyTerm):
         return value, value * self.weight
 
 
+class ipSAEEnergy(EnergyTerm):
+    r"""
+    Energy representing the ipSAE score of Dunbrack (2025, bioRxiv), a function of
+    the PAE matrix that measures the confidence in the relative placement of two groups of residues, focusing on the
+    pairs that the model is confident about.
+
+    Like ipTM, ipSAE is a predicted TM-score restricted to inter-group residue pairs. Unlike ipTM, for each residue *i*
+    of the first group (the one the structures are aligned on) only the residues *j* of the second group with
+    :math:`\mathrm{PAE}_{ij} <` ``pae_cutoff`` are used, and the TM-score length scale :math:`d_0` is set by how many
+    there are, rather than by the size of the whole complex:
+
+    .. math:: n_0(i) = |\{j : \mathrm{PAE}_{ij} < \mathrm{cutoff}\}|, \quad
+        d_0(i) = \max\left(1, 1.24\,(\max(n_0(i), 27) - 15)^{1/3} - 1.8\right)
+
+    .. math:: \mathrm{ipSAE}_{1\to 2} = \max_{i} \frac{1}{n_0(i)} \sum_{j:\, \mathrm{PAE}_{ij} < \mathrm{cutoff}}
+        \frac{1}{1 + (\mathrm{PAE}_{ij} / d_0(i))^2}
+
+    The maximum is over residues *i* with at least one such partner. This makes the score insensitive to parts of the
+    groups that are far from the interface, or disordered, which dilute ipTM even when the interface is well predicted.
+    The score is between 0 and 1, and is returned with a negative sign so that it is an energy to minimise.
+
+    The score is directional, since the PAE matrix is not symmetric: row *i* is the residue the structures are aligned
+    on and column *j* the residue whose position error is measured. ``direction`` selects the direction used, or how
+    the two directions are combined. The default, 'max', is the ipSAE_max of the original implementation.
+    """
+
+    def __init__(
+        self,
+        oracle: FoldingOracle,
+        residues: list[list[Residue]],
+        pae_cutoff: float = 10.0,
+        direction: Literal['max', 'mean', '1to2', '2to1'] = 'max',
+        inheritable: bool = True,
+        weight: float = 1.0,
+        name: str | None = None,
+    ) -> None:
+        """
+        Initialises the ipSAE energy class.
+
+        Parameters
+        ----------
+        oracle: Oracle
+            The oracle to use for the energy term.
+        residues: tuple[list[Residue], list[Residue]]
+            Which residues to include in the first and second group.
+        pae_cutoff: float = 10.0
+            The cutoff value for the PAE, in Angstroms, below which a residue pair is used. The default is that of the
+            original implementation.
+        direction: {'max', 'mean', '1to2', '2to1'}, default='max'
+            '1to2' aligns on residues of the first group and scores those of the second; '2to1' does the opposite.
+            'max' and 'mean' are the larger and the average of the two.
+        inheritable: bool, default=True
+            If a new residue is added next to a residue included in this energy term, this dictates whether that new
+            residue could then be added to this energy term.
+        weight: float = 1.0
+            The weight of the energy term.
+        name: str | None = None
+            Optional name to append to the energy term name.
+        """
+        base_name = 'ipSAE'
+
+        if name is None:
+            name = base_name
+        else:
+            name = f'{base_name}_{name}'
+
+        assert pae_cutoff > 0, 'pae_cutoff must be positive'
+        assert direction in ('max', 'mean', '1to2', '2to1'), "direction must be 'max', 'mean', '1to2' or '2to1'"
+        self.pae_cutoff = pae_cutoff
+        self.direction = direction
+
+        super().__init__(name=name, inheritable=inheritable, oracle=oracle, weight=weight)
+        if len(residues) == 1:
+            self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[0])]
+        else:
+            self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
+        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
+        assert 'pae' in self.oracle.result_class.model_fields, (
+            'ipSAEEnergy requires oracle to return pae in result_class'
+        )
+
+    def _directional_ipsae(
+        self,
+        pae: npt.NDArray[np.float64],
+        aligned_mask: npt.NDArray[np.bool_],
+        scored_mask: npt.NDArray[np.bool_],
+    ) -> float:
+        """ipSAE aligning on the residues in ``aligned_mask`` and scoring those in ``scored_mask``."""
+        pair_mask = aligned_mask[:, np.newaxis] & scored_mask[np.newaxis, :]
+        pair_mask &= ~np.eye(len(pae), dtype=bool)  # uncertainty in distance between a residue and itself is ignored
+        valid = pair_mask & (pae < self.pae_cutoff)
+
+        n0 = valid.sum(axis=1)  # for each aligned residue, how many scored residues are confidently placed
+        has_partner = n0 > 0
+        if not np.any(has_partner):
+            return 0.0
+
+        # d0 of the TM-score, with the same lower bounds as the original implementation
+        d0 = np.maximum(1.0, 1.24 * (np.maximum(n0, 27) - 15.0) ** (1.0 / 3.0) - 1.8)
+        tm_terms = 1.0 / (1.0 + (pae / d0[:, np.newaxis]) ** 2)
+        per_residue = np.sum(tm_terms * valid, axis=1) / np.maximum(n0, 1)
+        return float(np.max(per_residue[has_partner]))
+
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        folding_result = oracles_result[self.oracle]
+        structure = oracles_result.get_structure(self.oracle)
+        assert hasattr(folding_result, 'pae'), 'pae metric not returned by folding algorithm'
+        assert folding_result.pae.shape[0] == 1, 'batch size equal to 1 is required'
+        pae = np.asarray(folding_result.pae[0], dtype=np.float64)  # [n_residues, n_residues], in Angstroms
+
+        group_1_mask = self.get_residue_mask(structure, residue_group_index=0)
+        group_2_mask = self.get_residue_mask(structure, residue_group_index=1)
+
+        if self.direction == '1to2':
+            ipsae = self._directional_ipsae(pae, group_1_mask, group_2_mask)
+        elif self.direction == '2to1':
+            ipsae = self._directional_ipsae(pae, group_2_mask, group_1_mask)
+        else:
+            both = [
+                self._directional_ipsae(pae, group_1_mask, group_2_mask),
+                self._directional_ipsae(pae, group_2_mask, group_1_mask),
+            ]
+            ipsae = max(both) if self.direction == 'max' else float(np.mean(both))
+
+        value = -ipsae  # negative because you want it to be interpreted as an energy
+        return value, value * self.weight
+
+
 class RingSymmetryEnergy(EnergyTerm):
     """
     Energy that maximises the symmetry of different groups. Symmetry is measured by finding the centroid of the backbone
