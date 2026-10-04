@@ -13,7 +13,7 @@ from .chain import Chain
 from .system import System
 from .constants import mutation_bias_no_cystein
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 from abc import ABC, abstractmethod
 import logging
 
@@ -392,3 +392,108 @@ class GrandCanonical(MutationProtocol):
 
         mutation_record = MutationRecord(mutations=mutations)
         return mutated_system, mutation_record
+
+
+class InverseFoldingSampling(MutationProtocol):
+    """
+    Substitution protocol that proposes the new residue by inverse folding.
+
+    For each mutation: (1) a random mutable residue is masked while all others stay fixed, (2) the inverse
+    folding model gives the probability of every amino acid at that position, conditioned on the rest of the
+    sequence and the currently folded structure, (3) the probability of the current amino acid is set to 0, the
+    distribution renormalised, and the new residue sampled from it. Chains cannot be added or removed.
+
+    The structure is taken from the (cached, else freshly computed) result of a folding oracle used by a State
+    containing the chosen chain; if several States contain it, one is picked at random. The ``mutation_bias`` of
+    the base class is not used.
+
+    Parameters
+    ----------
+    inverse_folding_method : str, optional
+        Inverse folding model to use. Only ``'ESM3'`` is currently supported; anything else raises ValueError.
+    oracle : ESM3, optional
+        ESM3 oracle to use. If None, ``bagel.oracles.embedding.ESM3()`` is created on first use.
+    n_mutations : int, optional
+        Number of mutations to perform in each step.
+    """
+
+    SUPPORTED_METHODS = ('ESM3',)
+
+    def __init__(
+        self,
+        inverse_folding_method: str = 'ESM3',
+        oracle: Any = None,
+        n_mutations: int = 1,
+    ):
+        if inverse_folding_method not in self.SUPPORTED_METHODS:
+            raise ValueError(
+                f'Unsupported inverse folding method {inverse_folding_method!r}. '
+                f'Supported methods: {list(self.SUPPORTED_METHODS)}'
+            )
+        self.inverse_folding_method = inverse_folding_method
+        self.oracle = oracle
+        self.n_mutations = n_mutations
+        self.exclude_self = True
+
+    def _get_oracle(self) -> Any:
+        if self.oracle is None:
+            from .oracles.embedding.esm3 import ESM3
+
+            self.oracle = ESM3()
+        return self.oracle
+
+    @staticmethod
+    def _get_structure(state: Any) -> Any:
+        """Folded structure of the state's current sequence (cached if valid, else computed)."""
+        from .oracles.folding.base import FoldingOracle
+
+        folding_oracles = [oracle for oracle in state.oracles_list if isinstance(oracle, FoldingOracle)]
+        if not folding_oracles:
+            raise ValueError(f"State '{state.name}' has no folding oracle, so no structure is available.")
+        oracle = folding_oracles[0]
+        state._invalidate_cache_if_needed()
+        if oracle not in state._oracles_result:
+            state._oracles_result[oracle] = oracle.predict(chains=state.chains)
+        return state._oracles_result.get_structure(oracle)
+
+    def propose_amino_acid(self, probabilities: Dict[str, float], current_aa: str) -> str:
+        """Zero the probability of ``current_aa``, renormalise, and sample a new amino acid."""
+        aa_keys = list(probabilities.keys())
+        probs = np.array([0.0 if a == current_aa else probabilities[a] for a in aa_keys], dtype=float)
+        total = probs.sum()
+        if total <= 0:
+            raise ValueError(f'No valid mutation targets after excluding current AA={current_aa}.')
+        return str(np.random.choice(aa_keys, p=probs / total))
+
+    def one_step(
+        self,
+        system: System,
+    ) -> tuple[System, MutationRecord]:
+        mutated_system = system.__copy__()
+        mutations: list[Mutation] = []
+        structures: dict[str, Any] = {}  # per step, so later mutations reuse the structure of the unmutated system
+
+        for _ in range(self.n_mutations):
+            chain = self.choose_chain(mutated_system)
+            index = int(np.random.choice(chain.mutable_residue_indexes))
+            current_aa = chain.residues[index].name
+
+            candidate_states = [s for s in mutated_system.states if any(c is chain for c in s.chains)]
+            state = candidate_states[np.random.randint(len(candidate_states))]
+            if state.name not in structures:
+                structures[state.name] = self._get_structure(state)
+            probabilities = self._get_oracle().inverse_fold(
+                chains=state.chains, structure=structures[state.name], chain_id=chain.chain_ID, residue_index=index
+            )
+            amino_acid = self.propose_amino_acid(probabilities, current_aa)
+            chain.mutate_residue(index=index, amino_acid=amino_acid)
+            mutations.append(
+                Mutation(
+                    chain_id=chain.chain_ID,
+                    move_type='substitution',
+                    residue_index=index,
+                    old_amino_acid=current_aa,
+                    new_amino_acid=amino_acid,
+                )
+            )
+        return mutated_system, MutationRecord(mutations=mutations)

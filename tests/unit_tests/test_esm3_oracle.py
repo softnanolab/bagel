@@ -137,3 +137,108 @@ class TestESM3Oracle:
 
         with pytest.raises(ValueError, match=message):
             oracle._post_process(_Output(), chains)
+
+
+def _backbone_structure(chains, offset_per_chain=100.0):
+    """Structure with N, CA, C atoms per residue; coord = (chain_no*100 + residue, atom_no, 0)."""
+    from biotite.structure import Atom, array
+
+    atoms = []
+    for c, chain in enumerate(chains):
+        for residue in chain.residues:
+            for a, name in enumerate(['N', 'CA', 'C', 'O']):
+                atoms.append(
+                    Atom(
+                        coord=[c * offset_per_chain + residue.index, a, 0.0],
+                        chain_id=chain.chain_ID,
+                        res_id=residue.index,
+                        res_name='ALA',
+                        atom_name=name,
+                        element='C',
+                    )
+                )
+    return array(atoms)
+
+
+def _two_chains():
+    chain_a = bg.Chain([bg.Residue(name='A', chain_ID='A', index=i) for i in range(3)])
+    chain_b = bg.Chain([bg.Residue(name='G', chain_ID='B', index=i) for i in range(2)])
+    return [chain_a, chain_b]
+
+
+class TestBackboneCoordinates:
+    def test_extracts_n_ca_c_in_chain_order(self):
+        from bagel.oracles.embedding.esm3 import backbone_coordinates
+
+        chains = _two_chains()
+        coords = backbone_coordinates(chains, _backbone_structure(chains))
+        assert coords.shape == (5, 3, 3)
+        assert coords[:, 1, 0].tolist() == [0, 1, 2, 100, 101]  # CA x = chain*100 + residue
+        assert coords[0, :, 1].tolist() == [0, 1, 2]  # N, CA, C (no O)
+
+    def test_missing_backbone_atom_is_nan(self):
+        from bagel.oracles.embedding.esm3 import backbone_coordinates
+
+        chains = _two_chains()
+        structure = _backbone_structure(chains)
+        structure = structure[~((structure.chain_id == 'A') & (structure.res_id == 1) & (structure.atom_name == 'C'))]
+        coords = backbone_coordinates(chains, structure)
+        assert np.isnan(coords[1, 2]).all()
+        assert not np.isnan(coords[1, :2]).any()
+
+    def test_residue_count_mismatch_raises(self):
+        from bagel.oracles.embedding.esm3 import backbone_coordinates
+
+        chains = _two_chains()
+        structure = _backbone_structure(chains)
+        structure = structure[~((structure.chain_id == 'B') & (structure.res_id == 1))]
+        with pytest.raises(ValueError, match="chain 'B'"):
+            backbone_coordinates(chains, structure)
+
+
+class TestInverseFold:
+    @staticmethod
+    def _oracle(monkeypatch, logits, calls):
+        from types import SimpleNamespace
+
+        monkeypatch.setattr(ESM3, '_load', lambda self, config=None: None)
+        oracle = ESM3()
+
+        def inverse_fold(sequence, coordinates, positions):
+            calls.append((sequence, coordinates, positions))
+            return SimpleNamespace(logits=logits, amino_acids='ACDEFGHIKLMNPQRSTVWY')
+
+        oracle.model = SimpleNamespace(inverse_fold=inverse_fold)
+        return oracle
+
+    def test_returns_softmax_probabilities_and_passes_global_position(self, monkeypatch):
+        calls = []
+        logits = np.zeros((1, 20))
+        logits[0, 3] = np.log(19.0)  # 'E' gets 19/(19+19)=0.5 after softmax over 19 ones + 19
+        oracle = self._oracle(monkeypatch, logits, calls)
+        chains = _two_chains()
+
+        probabilities = oracle.inverse_fold(chains, _backbone_structure(chains), chain_id='B', residue_index=1)
+
+        sequence, coordinates, positions = calls[0]
+        assert sequence == 'AAA:GG'
+        assert coordinates.shape == (5, 3, 3)
+        assert positions == [4]  # chain A has 3 residues, so B[1] -> global 4
+        assert list(probabilities) == list('ACDEFGHIKLMNPQRSTVWY')
+        assert np.isclose(sum(probabilities.values()), 1.0)
+        assert np.isclose(probabilities['E'], 0.5)
+
+    def test_unknown_chain_and_bad_index_raise(self, monkeypatch):
+        oracle = self._oracle(monkeypatch, np.zeros((1, 20)), [])
+        chains = _two_chains()
+        structure = _backbone_structure(chains)
+        with pytest.raises(ValueError, match='not found'):
+            oracle.inverse_fold(chains, structure, chain_id='Z', residue_index=0)
+        with pytest.raises(ValueError, match='out of range'):
+            oracle.inverse_fold(chains, structure, chain_id='B', residue_index=2)
+
+    def test_unexpected_logits_shape_raises(self, monkeypatch):
+        oracle = self._oracle(monkeypatch, np.zeros((2, 20)), [])
+        chains = _two_chains()
+        with pytest.raises(ValueError, match='shape'):
+            oracle.inverse_fold(chains, _backbone_structure(chains), chain_id='A', residue_index=0)

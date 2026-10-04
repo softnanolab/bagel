@@ -252,3 +252,116 @@ def test_GrandCanonical_allows_insertion_and_deletion_at_chain_start_and_end(
         mutated_system, mutation_record = mutator_removal.one_step(system=system_copy)
         assert mutation_record.mutations[0].residue_index == last_mutable_index
         assert mutation_record.mutations[0].move_type == 'removal'
+
+
+class _StubInverseFoldingOracle:
+    """Records calls and returns a fixed distribution over the 20 amino acids."""
+
+    def __init__(self, probabilities: dict[str, float]) -> None:
+        self.probabilities = probabilities
+        self.calls: list[dict] = []
+
+    def inverse_fold(self, chains, structure, chain_id, residue_index):
+        self.calls.append(
+            {'sequences': [c.sequence for c in chains], 'chain_id': chain_id, 'residue_index': residue_index}
+        )
+        return dict(self.probabilities)
+
+
+_AAS = 'ACDEFGHIKLMNPQRSTVWY'
+
+
+def test_InverseFoldingSampling_rejects_unsupported_method() -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match='Unsupported inverse folding method'):
+        bg.mutation.InverseFoldingSampling(inverse_folding_method='ProteinMPNN')
+    assert bg.mutation.InverseFoldingSampling().inverse_folding_method == 'ESM3'
+
+
+def test_InverseFoldingSampling_propose_amino_acid_never_returns_current_and_follows_distribution() -> None:
+    mutator = bg.mutation.InverseFoldingSampling(oracle=object())
+    # 'A' (current) has most of the mass; of the rest, 'C':'D' = 1:3 once renormalised
+    probabilities = {aa: 0.0 for aa in _AAS} | {'A': 0.6, 'C': 0.1, 'D': 0.3}
+    np.random.seed(0)
+    draws = [mutator.propose_amino_acid(probabilities, 'A') for _ in range(4000)]
+    assert set(draws) == {'C', 'D'}
+    assert abs(draws.count('D') / len(draws) - 0.75) < 0.03
+
+
+def test_InverseFoldingSampling_propose_amino_acid_raises_when_no_alternative() -> None:
+    import pytest
+
+    mutator = bg.mutation.InverseFoldingSampling(oracle=object())
+    probabilities = {aa: 0.0 for aa in _AAS} | {'A': 1.0}
+    with pytest.raises(ValueError, match='No valid mutation targets'):
+        mutator.propose_amino_acid(probabilities, 'A')
+
+
+@patch.object(bg.System, 'get_total_energy')
+def test_InverseFoldingSampling_one_step_mutates_single_residue_and_leaves_original_untouched(
+    mocked_energy: Mock,
+    energies_system: bg.System,
+) -> None:
+    oracle = _StubInverseFoldingOracle({aa: 1 / 20 for aa in _AAS})
+    mutator = bg.mutation.InverseFoldingSampling(oracle=oracle)
+    original_sequences = [state.chains[0].sequence for state in energies_system.states]
+
+    mutated_system, record = mutator.one_step(energies_system)
+
+    assert [state.chains[0].sequence for state in energies_system.states] == original_sequences
+    assert len(record.mutations) == 1
+    mutation = record.mutations[0]
+    assert mutation.move_type == 'substitution'
+    assert mutation.new_amino_acid != mutation.old_amino_acid
+    # exactly one residue differs in the mutated chain, at the recorded index
+    chain = next(c for s in mutated_system.states for c in s.chains if c.chain_ID == mutation.chain_id)
+    original = next(
+        seq
+        for state, seq in zip(energies_system.states, original_sequences)
+        if state.chains[0].chain_ID == mutation.chain_id
+    )
+    diffs = [i for i, (a, b) in enumerate(zip(original, chain.sequence)) if a != b]
+    assert diffs == [mutation.residue_index]
+    assert chain.sequence[mutation.residue_index] == mutation.new_amino_acid
+    # the oracle was asked about the (single) masked residue, with the unmutated sequence
+    assert len(oracle.calls) == 1
+    assert oracle.calls[0]['residue_index'] == mutation.residue_index
+    assert oracle.calls[0]['sequences'] == [original]
+
+
+@patch.object(bg.System, 'get_total_energy')
+def test_InverseFoldingSampling_one_step_samples_from_oracle_distribution(
+    mocked_energy: Mock,
+    energies_system: bg.System,
+) -> None:
+    # all the mass on W, so any (non-W) residue must become W; a residue that is already W gets nothing to move to
+    oracle = _StubInverseFoldingOracle({aa: float(aa == 'W') for aa in _AAS} | {'Y': 1e-12})
+    mutator = bg.mutation.InverseFoldingSampling(oracle=oracle)
+    for state in energies_system.states:
+        for residue in state.chains[0].residues:
+            residue.name = 'A'
+    _, record = mutator.one_step(energies_system)
+    assert record.mutations[0].new_amino_acid == 'W'
+
+
+@patch.object(bg.System, 'get_total_energy')
+def test_InverseFoldingSampling_n_mutations_reuses_structure_per_step(
+    mocked_energy: Mock,
+    energies_system: bg.System,
+) -> None:
+    oracle = _StubInverseFoldingOracle({aa: 1 / 20 for aa in _AAS})
+    mutator = bg.mutation.InverseFoldingSampling(oracle=oracle, n_mutations=3)
+    _, record = mutator.one_step(energies_system)
+    assert len(record.mutations) == 3
+    assert len(oracle.calls) == 3
+
+
+def test_InverseFoldingSampling_state_without_folding_oracle_raises() -> None:
+    import pytest
+
+    chain = bg.Chain([bg.Residue(name='A', chain_ID='A', index=i) for i in range(3)])
+    system = bg.System([bg.State(name='s', chains=[chain], energy_terms=[])])
+    mutator = bg.mutation.InverseFoldingSampling(oracle=_StubInverseFoldingOracle({aa: 0.05 for aa in _AAS}))
+    with pytest.raises(ValueError, match='no folding oracle'):
+        mutator.one_step(system)
