@@ -404,8 +404,9 @@ class InverseFoldingSampling(MutationProtocol):
     distribution renormalised, and the new residue sampled from it. Chains cannot be added or removed.
 
     The structure is taken from the (cached, else freshly computed) result of a folding oracle used by a State
-    containing the chosen chain; if several States contain it, one is picked at random. The ``mutation_bias`` of
-    the base class is not used.
+    containing the chosen chain; if several States contain it, one is picked at random. Amino acids with zero (or
+    missing) ``mutation_bias`` are excluded: their probability is set to 0 before renormalising. Non-zero bias
+    values are not used as weights; the inverse folding probabilities are.
 
     Parameters
     ----------
@@ -415,6 +416,8 @@ class InverseFoldingSampling(MutationProtocol):
         ESM3 oracle to use. If None, ``bagel.oracles.embedding.ESM3()`` is created on first use.
     n_mutations : int, optional
         Number of mutations to perform in each step.
+    mutation_bias : Dict[str, float], optional
+        Amino acids whose value is zero (or that are missing) can never be proposed.
     """
 
     SUPPORTED_METHODS = ('ESM3',)
@@ -424,6 +427,7 @@ class InverseFoldingSampling(MutationProtocol):
         inverse_folding_method: str = 'ESM3',
         oracle: Any = None,
         n_mutations: int = 1,
+        mutation_bias: Dict[str, float] = mutation_bias_no_cystein,
     ):
         if inverse_folding_method not in self.SUPPORTED_METHODS:
             raise ValueError(
@@ -433,6 +437,7 @@ class InverseFoldingSampling(MutationProtocol):
         self.inverse_folding_method = inverse_folding_method
         self.oracle = oracle
         self.n_mutations = n_mutations
+        self.mutation_bias = mutation_bias
         self.exclude_self = True
 
     def _get_oracle(self) -> Any:
@@ -457,9 +462,12 @@ class InverseFoldingSampling(MutationProtocol):
         return state._oracles_result.get_structure(oracle)
 
     def propose_amino_acid(self, probabilities: Dict[str, float], current_aa: str) -> str:
-        """Zero the probability of ``current_aa``, renormalise, and sample a new amino acid."""
+        """Zero the probability of ``current_aa`` and of amino acids excluded by ``mutation_bias``, renormalise, sample."""
         aa_keys = list(probabilities.keys())
-        probs = np.array([0.0 if a == current_aa else probabilities[a] for a in aa_keys], dtype=float)
+        probs = np.array(
+            [0.0 if (a == current_aa or self.mutation_bias.get(a, 0.0) <= 0.0) else probabilities[a] for a in aa_keys],
+            dtype=float,
+        )
         total = probs.sum()
         if total <= 0:
             raise ValueError(f'No valid mutation targets after excluding current AA={current_aa}.')

@@ -280,7 +280,7 @@ def test_InverseFoldingSampling_rejects_unsupported_method() -> None:
 
 
 def test_InverseFoldingSampling_propose_amino_acid_never_returns_current_and_follows_distribution() -> None:
-    mutator = bg.mutation.InverseFoldingSampling(oracle=object())
+    mutator = bg.mutation.InverseFoldingSampling(oracle=object(), mutation_bias={aa: 1.0 for aa in _AAS})
     # 'A' (current) has most of the mass; of the rest, 'C':'D' = 1:3 once renormalised
     probabilities = {aa: 0.0 for aa in _AAS} | {'A': 0.6, 'C': 0.1, 'D': 0.3}
     np.random.seed(0)
@@ -292,7 +292,7 @@ def test_InverseFoldingSampling_propose_amino_acid_never_returns_current_and_fol
 def test_InverseFoldingSampling_propose_amino_acid_raises_when_no_alternative() -> None:
     import pytest
 
-    mutator = bg.mutation.InverseFoldingSampling(oracle=object())
+    mutator = bg.mutation.InverseFoldingSampling(oracle=object(), mutation_bias={aa: 1.0 for aa in _AAS})
     probabilities = {aa: 0.0 for aa in _AAS} | {'A': 1.0}
     with pytest.raises(ValueError, match='No valid mutation targets'):
         mutator.propose_amino_acid(probabilities, 'A')
@@ -365,3 +365,20 @@ def test_InverseFoldingSampling_state_without_folding_oracle_raises() -> None:
     mutator = bg.mutation.InverseFoldingSampling(oracle=_StubInverseFoldingOracle({aa: 0.05 for aa in _AAS}))
     with pytest.raises(ValueError, match='no folding oracle'):
         mutator.one_step(system)
+
+
+def test_InverseFoldingSampling_zero_mutation_bias_residues_are_excluded_and_rest_renormalised() -> None:
+    bias = {aa: 1.0 for aa in _AAS} | {'C': 0.0, 'D': 0.0}
+    mutator = bg.mutation.InverseFoldingSampling(oracle=object(), mutation_bias=bias)
+    # C and D carry most of the ESM3 mass but are excluded; A is current; remaining E:F = 1:3
+    probabilities = {aa: 0.0 for aa in _AAS} | {'A': 0.2, 'C': 0.3, 'D': 0.3, 'E': 0.05, 'F': 0.15}
+    np.random.seed(0)
+    draws = [mutator.propose_amino_acid(probabilities, 'A') for _ in range(4000)]
+    assert set(draws) == {'E', 'F'}
+    assert abs(draws.count('F') / len(draws) - 0.75) < 0.03
+
+
+def test_InverseFoldingSampling_default_bias_never_proposes_cysteine() -> None:
+    mutator = bg.mutation.InverseFoldingSampling(oracle=object())
+    probabilities = {aa: 0.0 for aa in _AAS} | {'C': 0.99, 'W': 0.01}
+    assert {mutator.propose_amino_acid(probabilities, 'A') for _ in range(50)} == {'W'}
