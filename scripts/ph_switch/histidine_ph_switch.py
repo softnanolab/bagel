@@ -26,14 +26,27 @@ IMPORTANT LIMITATION, STATED UP FRONT
 None of BAGEL's folding oracles (ESMFold, ESMFold2, Chai1, Boltz2) take pH as an
 input. There is no way to ask them to "fold this at pH 6". The pH dependence here
 is therefore *encoded by construction* (buried, unpaired histidines) rather than
-predicted. The `ProtonationMimicEnergy` term below is a deliberately crude
-surrogate for the low-pH state: it folds a copy of the sequence with every
-histidine replaced by arginine and penalises that copy for folding well. Arginine
-is not imidazolium -- wrong size, wrong geometry, permanently charged -- so treat
-this term as a soft "a positive charge at these positions should break the fold"
-prior, not as a prediction of the acid state. Everything downstream still needs
-wet-lab confirmation by pH-dependent circular dichroism or tryptophan
-fluorescence.
+predicted. Nothing in this script estimates the transition midpoint, so a design
+that satisfies every term might switch at pH 4.5 or at pH 7.0 rather than at 6.
+
+A deliberate omission: an earlier version of this script carried a
+`ProtonationMimicEnergy` term that folded a histidine-to-arginine copy of the
+sequence and penalised it for folding well, as surrogate negative design against
+the charged state. It was removed, because ESMFold has no electrostatics in it.
+Asking whether the arginine variant folds worse is not an electrostatics
+question; it asks whether that sequence looks less like a natural folded protein
+to a language model. The two overlap loosely and the score cannot tell you which
+one you measured. It was also largely redundant with the burial and carboxylate
+terms, it doubled the oracle cost per Monte Carlo step, and it created a
+perverse incentive: one cheap way to make a variant fold badly is to make the
+parent barely fold at all.
+
+That comparison survives as a post-hoc ranking signal in `filter_designs.py`,
+where it costs one extra fold per finished candidate rather than one per step.
+For an actual predicted midpoint, run PROPKA or a Poisson-Boltzmann calculation
+on the designed structures. Those compute the desolvation and charge-charge
+terms this script only gestures at. Everything still needs wet-lab confirmation
+by pH-dependent circular dichroism or tryptophan fluorescence.
 
 Run with:
     python scripts/ph_switch/histidine_ph_switch.py
@@ -43,8 +56,7 @@ Set BAGEL_BACKEND=apptainer to run the oracle locally instead of on Modal.
 from __future__ import annotations
 
 import os
-import copy
-from typing import Any, Literal
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -243,82 +255,6 @@ class HistidineCarboxylateContactEnergy(EnergyTerm):
 
 
 # ----------------------------------------------------------------------------
-# Energy term 3 -- surrogate negative design of the protonated state.
-# ----------------------------------------------------------------------------
-class ProtonationMimicEnergy(EnergyTerm):
-    """
-    Folds a charge-mimic copy of the sequence and penalises it for folding well.
-
-    Every histidine is substituted by `mimic_residue` (arginine by default) and
-    the mutated sequence is sent through the same oracle. The returned energy is
-    the mimic's pTM, so minimising the total energy drives the mimic's confidence
-    *down* while the real sequence's own PTMEnergy drives its confidence up.
-
-    Read the caveat in the module docstring before you weight this heavily.
-    Arginine is a poor stand-in for imidazolium: it is larger, its charge is
-    delocalised differently, and it is charged unconditionally. The term captures
-    only the coarse statement "a permanent positive charge at these buried
-    positions should be incompatible with this fold". It cannot tell you the
-    midpoint of the transition, and a sequence that satisfies it may still have a
-    pH midpoint of 4.5 or 7.0 rather than the 6 you asked for.
-
-    Cost note: this doubles the number of oracle calls per Monte Carlo step. The
-    per-sequence cache below means the extra fold is skipped whenever the
-    histidine-masked sequence is unchanged, which happens often since most
-    accepted mutations touch non-histidine positions.
-    """
-
-    def __init__(
-        self,
-        oracle: FoldingOracle,
-        mimic_residue: str = 'R',
-        metric: Literal['ptm', 'plddt'] = 'ptm',
-        inheritable: bool = True,
-        weight: float = 1.0,
-        name: str | None = None,
-    ) -> None:
-        name = 'protonation_mimic' if name is None else f'protonation_mimic_{name}'
-        super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight)
-        self.residue_groups = []
-        self.mimic_residue = mimic_residue
-        self.metric = metric
-        self._cache: dict[tuple[str, ...], float] = {}
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be a FoldingOracle'
-
-    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
-        input_chains = oracles_result.get_input_chains(self.oracle)
-
-        mimic_chains = copy.deepcopy(input_chains)
-        n_substituted = 0
-        for chain in mimic_chains:
-            for residue in chain.residues:
-                if residue.name == 'H':
-                    residue.name = self.mimic_residue
-                    n_substituted += 1
-
-        # No histidines yet: nothing to say about the protonated state.
-        if n_substituted == 0:
-            return 0.0, 0.0
-
-        key = tuple(chain.sequence for chain in mimic_chains)
-        if key not in self._cache:
-            mimic_result = self.oracle.predict(chains=mimic_chains)
-            if self.metric == 'ptm':
-                score = float(np.asarray(mimic_result.ptm).reshape(-1)[0])
-            else:
-                score = float(np.mean(mimic_result.local_plddt[0]))
-            # Keep the cache bounded; this runs for thousands of MC steps.
-            if len(self._cache) > 512:
-                self._cache.clear()
-            self._cache[key] = score
-
-        # Positive value: minimising the total energy pushes the mimic's
-        # confidence down, i.e. makes the charged variant fold badly.
-        value = self._cache[key]
-        return value, value * self.weight
-
-
-# ----------------------------------------------------------------------------
 # The design run.
 # ----------------------------------------------------------------------------
 def build_system(length: int = 100, seed: int | None = None) -> tuple[bg.System, Any]:
@@ -362,9 +298,9 @@ def build_system(length: int = 100, seed: int | None = None) -> tuple[bg.System,
         # invert the switch. Weighted above the per-histidine burial reward.
         HistidineCarboxylateContactEnergy(oracle=esmfold, distance_cutoff=4.5, max_contacts=4, weight=3.0),
 
-        # --- Surrogate negative design of the protonated state. Start low; this
-        # term is the least trustworthy one here and it doubles oracle cost.
-        ProtonationMimicEnergy(oracle=esmfold, mimic_residue='R', metric='ptm', weight=1.0),
+        # No surrogate term for the protonated state: see the module docstring.
+        # The charge-mimic comparison lives in filter_designs.py instead, where
+        # it runs once per finished candidate rather than once per MC step.
     ]
 
     state = bg.State(name='folded_neutral_pH', chains=[chain], energy_terms=energy_terms)
