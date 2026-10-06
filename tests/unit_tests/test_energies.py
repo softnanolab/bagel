@@ -790,6 +790,46 @@ def test_SeparationEnergy(
     assert np.isclose(weighted_energy, value * 2), 'weighted energy is incorrect'
 
 
+def test_SeparationEnergyMin(fake_esmfold: bg.oracles.folding.ESMFold) -> None:
+    # Two chains. Group 1 (chain A): a glycine (CA only, no CB) and a valine (CA + CB). Group 2 (chain B):
+    # a valine. The nearest CB/CA pair is the glycine CA of chain A and the CB of chain B (distance 1), while
+    # the valine CB of chain A is 10 away. Backbone centroids are far apart, so 'mean' gives a different number.
+    atoms = [
+        Atom(coord=[0, 0, 0], chain_id='A', atom_name='CA', res_name='GLY', res_id=0, element='C'),
+        Atom(coord=[0, 0, 0], chain_id='A', atom_name='N', res_name='GLY', res_id=0, element='N'),
+        Atom(coord=[20, 0, 0], chain_id='A', atom_name='CA', res_name='VAL', res_id=1, element='C'),
+        Atom(coord=[11, 0, 0], chain_id='A', atom_name='CB', res_name='VAL', res_id=1, element='C'),
+        Atom(coord=[1, 0, 0], chain_id='A', atom_name='CG1', res_name='VAL', res_id=1, element='C'),
+        Atom(coord=[5, 0, 0], chain_id='B', atom_name='CA', res_name='VAL', res_id=0, element='C'),
+        Atom(coord=[1, 0, 0], chain_id='B', atom_name='CB', res_name='VAL', res_id=0, element='C'),
+        Atom(coord=[0.5, 0, 0], chain_id='B', atom_name='CG1', res_name='VAL', res_id=0, element='C'),
+    ]
+    structure = array(atoms)
+    group_1 = [bg.Residue(name='G', chain_ID='A', index=0), bg.Residue(name='V', chain_ID='A', index=1)]
+    group_2 = [bg.Residue(name='V', chain_ID='B', index=0)]
+    mock_folding_result = Mock(bg.oracles.folding.ESMFoldResult)
+    mock_folding_result.structure = structure
+    oracles_result = OraclesResultDict({fake_esmfold: mock_folding_result})
+
+    energy_min = bg.energies.SeparationEnergy(
+        oracle=fake_esmfold, residues=(group_1, group_2), distance='min', weight=2.0
+    )
+    unweighted_energy, weighted_energy = energy_min.compute(oracles_result=oracles_result)
+    # nearest representative pair: glycine CA (0,0,0) to chain B CB (1,0,0). Side-chain CG1 atoms (0.5 apart)
+    # and the valine CB on chain A (10 away) must be ignored.
+    assert np.isclose(unweighted_energy, 1.0), 'min separation is incorrect'
+    assert np.isclose(weighted_energy, 2.0), 'weighted min separation is incorrect'
+
+    energy_mean = bg.energies.SeparationEnergy(oracle=fake_esmfold, residues=(group_1, group_2), distance='mean')
+    unweighted_mean, _ = energy_mean.compute(oracles_result=oracles_result)
+    # backbone centroid of group 1 is (20/3, 0, 0), of group 2 is (5, 0, 0)
+    assert np.isclose(unweighted_mean, 20.0 / 3.0 - 5.0), 'mean separation is incorrect'
+    assert energy_mean.distance == 'mean' and energy_min.distance == 'min'
+
+    with pytest.raises(AssertionError):
+        bg.energies.SeparationEnergy(oracle=fake_esmfold, residues=(group_1, group_2), distance='max')  # type: ignore[arg-type]
+
+
 def make_harmonic_function(cutoff: float, stiffness: float):
     def harmonic_distance_to_energy(distance: float) -> float:
         if distance < cutoff:

@@ -1347,8 +1347,11 @@ class RingSymmetryEnergy(EnergyTerm):
 
 class SeparationEnergy(EnergyTerm):
     """
-    Energy that minimizes the distance between two groups of residues. The position of each group is
-    defined as the centroid of the backbone atoms of the residues belonging of that group.
+    Energy that minimizes the distance between two groups of residues. ``distance`` selects how the
+    separation is measured. With 'mean' (the default) the position of each group is the centroid of the
+    backbone atoms of its residues and the separation is the distance between the two centroids. With 'min'
+    the separation is the minimum distance between any representative side-chain atom (CB, or CA for glycine)
+    of a residue in the first group and any representative atom of a residue in the second group.
     """
 
     def __init__(
@@ -1359,6 +1362,7 @@ class SeparationEnergy(EnergyTerm):
         inheritable: bool = True,
         weight: float = 1.0,
         name: str | None = None,
+        distance: Literal['mean', 'min'] = 'mean',
     ) -> None:
         """
         Initialises separation energy class.
@@ -1370,7 +1374,7 @@ class SeparationEnergy(EnergyTerm):
         residues: tuple[list[Residue],list[Residue]]
             A tuple containing two lists of residues, those to include in the first [0] and second [1] group.
         function: Callable[[float], float] | None
-            Optional callable f(x) applied to the centroid distance x (in Å) before weighting.
+            Optional callable f(x) applied to the separation x (in Å) before weighting.
             If None, the identity function is used (i.e., energy equals the distance).
         inheritable: bool, default=True
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
@@ -1379,6 +1383,10 @@ class SeparationEnergy(EnergyTerm):
             The weight of the energy term.
         name: str | None = None
             Optional name to append to the energy term name.
+        distance: {'mean', 'min'}, default='mean'
+            How the separation between the two groups is measured. 'mean' is the distance between the centroids
+            of the backbone atoms of each group. 'min' is the minimum distance between any CB atom (CA for
+            glycine) of a residue in the first group and any CB atom (CA for glycine) of a residue in the second.
         """
         if name is None:
             name = 'separation'
@@ -1387,6 +1395,8 @@ class SeparationEnergy(EnergyTerm):
 
         super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight)
         self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
+        assert distance in ('mean', 'min'), "distance must be 'mean' or 'min'"
+        self.distance: Literal['mean', 'min'] = distance
         self.function: Callable[[float], float] | None = function
         if self.function is not None:
             assert callable(self.function), 'Function must be callable and accept a single float argument'
@@ -1395,21 +1405,38 @@ class SeparationEnergy(EnergyTerm):
             'SeparationEnergy requires oracle to return structure in result_class'
         )
 
+    @staticmethod
+    def _representative_atom_mask(structure: AtomArray) -> npt.NDArray[np.bool_]:
+        """Mask selecting the CB atom of each residue, or the CA atom for glycine (which has no CB)."""
+        is_glycine = structure.res_name == 'GLY'
+        mask = ((structure.atom_name == 'CB') & ~is_glycine) | ((structure.atom_name == 'CA') & is_glycine)
+        return np.asarray(mask, dtype=bool)
+
     def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
         structure = oracles_result.get_structure(self.oracle)
-        backbone_mask = np.isin(structure.atom_name, backbone_atoms)
         group_1_mask = self.get_atom_mask(structure, residue_group_index=0)
         group_2_mask = self.get_atom_mask(structure, residue_group_index=1)
 
-        group_1_atoms = structure[backbone_mask & group_1_mask]
-        group_2_atoms = structure[backbone_mask & group_2_mask]
-        group_1_centroid = np.mean(group_1_atoms.coord, axis=0)
-        group_2_centroid = np.mean(group_2_atoms.coord, axis=0)
-        distance = np.linalg.norm(group_1_centroid - group_2_centroid)
+        if self.distance == 'mean':
+            backbone_mask = np.isin(structure.atom_name, backbone_atoms)
+            group_1_atoms = structure[backbone_mask & group_1_mask]
+            group_2_atoms = structure[backbone_mask & group_2_mask]
+            group_1_centroid = np.mean(group_1_atoms.coord, axis=0)
+            group_2_centroid = np.mean(group_2_atoms.coord, axis=0)
+            separation = float(np.linalg.norm(group_1_centroid - group_2_centroid))
+        else:
+            representative_mask = self._representative_atom_mask(structure)
+            group_1_coords = structure[representative_mask & group_1_mask].coord
+            group_2_coords = structure[representative_mask & group_2_mask].coord
+            assert len(group_1_coords) > 0 and len(group_2_coords) > 0, (
+                'SeparationEnergy with distance="min" found no CB (or glycine CA) atoms in one of the residue groups'
+            )
+            displacements = group_1_coords[:, np.newaxis, :] - group_2_coords[np.newaxis, :, :]
+            separation = float(np.min(np.linalg.norm(displacements, axis=2)))
 
-        value = float(distance)
+        value = separation
         if self.function is not None:
-            value = float(self.function(float(distance)))
+            value = float(self.function(separation))
 
         return value, value * self.weight
 
