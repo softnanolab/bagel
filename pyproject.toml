@@ -19,10 +19,10 @@ dependencies = [
     # softnanolab/boileroom#111. Pinned to that merge commit for reproducibility
     # (the features/sae branch was deleted on merge). Repin to a published version
     # (e.g. boileroom==0.5.0) once boileroom cuts a release that includes it.
-    # Needs ESM3.inverse_fold (softnanolab/boileroom#119) and the SAE model (#111). Pinned to the #119 merge
-    # commit (boileroom 0.4.4 line) because 0.4.4 is not yet tagged or published.
-    # Repin to a published version (boileroom>=0.4.4) once boileroom cuts a release that includes it.
-    "boileroom @ git+https://github.com/softnanolab/boileroom.git@639ec14907b7690b8d677b4b76b69d2c737e6a2f",
+    # Needs ESM3.inverse_fold (softnanolab/boileroom#119) and the SAE model (#111). Pinned to boileroom main
+    # as of 2026-10-06 (version bump to 0.4.5 on top of the #116 merge) because 0.4.5 is not yet tagged or published.
+    # Repin to a published version (boileroom>=0.4.5) once boileroom cuts a release that includes it.
+    "boileroom @ git+https://github.com/softnanolab/boileroom.git@61a4511780d81d6fb184ea74256734a7e4efabef",
     "numpy>=2.2.0",
     "pandas>=2.2.3",
     "pydantic>=2.10.6",
