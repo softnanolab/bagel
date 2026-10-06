@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
+import pandas as pd
+from biotite.structure import AtomArray
 
 from ...chain import Chain
 from .base import EmbeddingResult, EmbeddingOracle, single_sample_embeddings, single_sample_track_logits
@@ -80,6 +82,43 @@ def decode_secondary_structure(ss_logits: npt.NDArray[np.float64]) -> str | npt.
     if letters.ndim == 1:
         return ''.join(letters.tolist())
     return np.asarray(letters, dtype=np.str_)
+
+
+_BACKBONE_ATOMS = ('N', 'CA', 'C')
+
+
+def backbone_coordinates(chains: list[Chain], structure: AtomArray) -> npt.NDArray[np.float32]:
+    """Extract N, CA, C coordinates of ``chains`` (in order) from a folded ``structure``.
+
+    Parameters
+    ----------
+    chains : list[Chain]
+        Chains the structure was predicted for. Atoms are matched by ``chain.chain_ID``.
+    structure : AtomArray
+        Folded structure whose ``chain_id`` annotations match the chains' IDs.
+
+    Returns
+    -------
+    ndarray
+        ``(total_residues, 3, 3)`` float32 array; backbone atoms missing from a residue are NaN.
+    """
+    coordinates: list[npt.NDArray[np.float32]] = []
+    for chain in chains:
+        chain_atoms = structure[structure.chain_id == chain.chain_ID]
+        res_ids = pd.unique(chain_atoms.res_id)  # preserves residue order
+        if len(res_ids) != chain.length:
+            raise ValueError(
+                f'Structure has {len(res_ids)} residues for chain {chain.chain_ID!r} but the chain has {chain.length}.'
+            )
+        chain_coordinates = np.full((len(res_ids), len(_BACKBONE_ATOMS), 3), np.nan, dtype=np.float32)
+        for i, res_id in enumerate(res_ids):
+            residue_atoms = chain_atoms[chain_atoms.res_id == res_id]
+            for j, atom_name in enumerate(_BACKBONE_ATOMS):
+                atom = residue_atoms[residue_atoms.atom_name == atom_name]
+                if len(atom) > 0:
+                    chain_coordinates[i, j] = atom.coord[0]
+        coordinates.append(chain_coordinates)
+    return np.concatenate(coordinates, axis=0)
 
 
 class ESM3Result(EmbeddingResult):
@@ -153,6 +192,55 @@ class ESM3(EmbeddingOracle):
         options = {'include_fields': include_fields} if include_fields else None
         output = self.model.embed(self._pre_process(chains), options=options)
         return self._post_process(output, chains)
+
+    def inverse_fold(
+        self,
+        chains: list[Chain],
+        structure: AtomArray,
+        chain_id: str,
+        residue_index: int,
+    ) -> dict[str, float]:
+        """Probability of each amino acid at one residue, given the rest of the sequence and a structure.
+
+        Only the residue at (``chain_id``, ``residue_index``) is masked; all other residues keep their
+        current identity. The structure is used as conditioning input.
+
+        Parameters
+        ----------
+        chains : list[Chain]
+            Chains making up the (possibly multichain) complex the structure was predicted for.
+        structure : AtomArray
+            Folded structure of ``chains``.
+        chain_id : str
+            ID of the chain containing the residue to predict.
+        residue_index : int
+            Index of the residue within its chain.
+
+        Returns
+        -------
+        dict[str, float]
+            Probability for each of the 20 standard amino acids (sums to 1).
+        """
+        offset = 0
+        for chain in chains:
+            if chain.chain_ID == chain_id:
+                break
+            offset += chain.length
+        else:
+            raise ValueError(f'Chain {chain_id!r} not found among chains {[c.chain_ID for c in chains]}')
+        if not 0 <= residue_index < chain.length:
+            raise ValueError(
+                f'residue_index {residue_index} out of range for chain {chain_id!r} of length {chain.length}'
+            )
+
+        output = self.model.inverse_fold(
+            self._pre_process(chains)[0], backbone_coordinates(chains, structure), [offset + residue_index]
+        )
+        logits = np.asarray(output.logits, dtype=np.float64)
+        if logits.shape != (1, len(output.amino_acids)):
+            raise ValueError(f'Unexpected ESM3 inverse-folding logits shape {logits.shape}')
+        probabilities = _softmax(logits[0])
+        return dict(zip(output.amino_acids, probabilities.tolist()))
 
     def _post_process(self, output: 'ESM3Output', chains: list[Chain]) -> ESM3Result:
         result_kwargs: dict[str, Any] = {

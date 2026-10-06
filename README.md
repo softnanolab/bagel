@@ -22,7 +22,7 @@ The BAGEL package is made up of several components that need to be specified to 
 | `EnergyTerms`      | Define specific design constraints as terms in the energy function.                                  | `TemplateMatchEnergy`, `PLDDTEnergy`, `HydrophobicEnergy` |
 | `Oracles`          | Provide information (often via ML models) to compute optimization/sampling metrics.<br>Oracles are typically wrappers around models from [boileroom](https://github.com/softnanolab/boileroom). | `ESMFold`, `ESMFold2`, `Boltz2`, `Chai1`, `ESM3`, `ESM-C`, `ESM-2` |
 | `Minimizers`       | Algorithms that sample or optimize sequences to find optima or diverse variants.                     | Monte Carlo, `SimulatedTempering`, `SimulatedAnnealing` |
-| `MutationProtocols`| Methods for perturbing sequences to generate new candidates.                                         | `Canonical`, `GrandCanonical`                            |
+| `MutationProtocols`| Methods for perturbing sequences to generate new candidates.                                         | `Canonical`, `GrandCanonical`, `InverseFoldingSampling`  |
 
 For more details, consult the [published paper](https://doi.org/10.1371/journal.pcbi.1013774).
 
