@@ -6,6 +6,8 @@ MIT License
 Copyright (c) 2025 Jakub Lála, Ayham Al-Saffar, Stefano Angioletti-Uberti
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 import re
 import warnings
@@ -1027,9 +1029,9 @@ class ipSAEEnergy(EnergyTerm):
 
     The score is directional, since the PAE matrix is not symmetric: row *i* is the residue the structures are aligned
     on and column *j* the residue whose position error is measured. ``direction`` selects the direction used, or how
-    the two directions are combined. The default, 'max', is the ipSAE_max of the original implementation; 'min' is the
-    smaller of the two directions (the stricter score, which needs the interface to be confident both ways) and 'mean'
-    their average.
+    the two directions are combined. The default, 'min', is the smaller of the two directions (the stricter score,
+    which needs the interface to be confident both ways); 'max' is the ipSAE_max of the original implementation and
+    'mean' the average of the two.
     """
 
     def __init__(
@@ -1037,7 +1039,7 @@ class ipSAEEnergy(EnergyTerm):
         oracle: FoldingOracle,
         residues: list[list[Residue]],
         pae_cutoff: float = 10.0,
-        direction: Literal['max', 'min', 'mean', '1to2', '2to1'] = 'max',
+        direction: Literal['max', 'min', 'mean', '1to2', '2to1'] = 'min',
         inheritable: bool = True,
         weight: float = 1.0,
         name: str | None = None,
@@ -1054,7 +1056,7 @@ class ipSAEEnergy(EnergyTerm):
         pae_cutoff: float = 10.0
             The cutoff value for the PAE, in Angstroms, below which a residue pair is used. The default is that of the
             original implementation.
-        direction: {'max', 'min', 'mean', '1to2', '2to1'}, default='max'
+        direction: {'max', 'min', 'mean', '1to2', '2to1'}, default='min'
             '1to2' aligns on residues of the first group and scores those of the second; '2to1' does the opposite.
             'max', 'min' and 'mean' are the larger, the smaller and the average of the two.
         inheritable: bool, default=True
@@ -2761,7 +2763,7 @@ class BinderRMSDEnergy(EnergyTerm):
         self,
         oracle: FoldingOracle,
         residues: list[Residue],
-        reference_state: 'State',
+        reference_state: State,
         reference_oracle: FoldingOracle | None = None,
         plddt_scaled: bool = False,
         plddt_exponent: float = 2.0,
@@ -2804,6 +2806,10 @@ class BinderRMSDEnergy(EnergyTerm):
             raise ValueError(f'plddt_exponent must be greater than 0, got {plddt_exponent}')
         if len(residues) == 0:
             raise ValueError('At least one residue is required to calculate the RMSD')
+        from .state import State  # imported here because state.py imports this module
+
+        if not isinstance(reference_state, State):
+            raise TypeError(f'reference_state must be a bagel State, got {type(reference_state).__name__}')
         self.reference_state = reference_state
         self.reference_oracle = reference_oracle
         self.plddt_scaled = plddt_scaled

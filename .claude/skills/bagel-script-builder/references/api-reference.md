@@ -99,9 +99,10 @@ but recommended — it labels the term in per-term logs.
 - `SeparationEnergy(oracle, residues=(group_a, group_b), function=None, weight=1.0, name=None)`
   — distance between the two groups' centroids.
 - `LISEnergy(oracle, residues, pae_cutoff=12.0, intensive=True, ...)` — local interaction score.
-- `ipSAEEnergy(oracle, residues=[group_a, group_b], pae_cutoff=10.0, direction='max', weight=1.0, name=None)`
+- `ipSAEEnergy(oracle, residues=[group_a, group_b], pae_cutoff=10.0, direction='min', weight=1.0, name=None)`
   — ipSAE (Dunbrack 2025): ipTM-like score using only confidently placed inter-group pairs; `direction`
-  is 'max' (default), 'mean', '1to2' or '2to1'. Returned as a negative value (energy).
+  is 'min' (default; stricter: both directions must be confident), 'max' (ipSAE_max of the original implementation), 'mean', '1to2' or '2to1'.
+  Returned as a negative value (energy).
 - `SaltBridgeEnergy(oracle, residues=[group_a, group_b], residue_types=('D','E','K','R','H'), distance_cutoff=4.0, count_same_charge=True, weight=1.0, name=None)`
   — minus the signed number of inter-group salt bridges (Barlow & Thornton: carboxylate O to basic N within 4 Å);
   same-charge contacts count -1 unless `count_same_charge=False`. Groups must not share residues.

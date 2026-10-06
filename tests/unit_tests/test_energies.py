@@ -1302,6 +1302,20 @@ def test_ipSAEEnergy_max_direction_is_the_larger_of_the_two_directions(
     assert np.isclose(results['mean'], results['1to2'] / 2)
 
 
+def test_ipSAEEnergy_default_direction_is_min(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+    mixed_structure_state: bg.State,
+) -> None:
+    pae = np.full((7, 7), 20.0)
+    pae[0, 3] = 2.0  # confident only when aligning on group 1, so 'min' and 'max' differ
+    default, oracles_result = _ipsae_energy_and_result(fake_esmfold, mixed_structure_state, pae)
+    explicit_min, _ = _ipsae_energy_and_result(fake_esmfold, mixed_structure_state, pae, direction='min')
+    explicit_max, _ = _ipsae_energy_and_result(fake_esmfold, mixed_structure_state, pae, direction='max')
+    assert default.direction == 'min'
+    assert default.compute(oracles_result=oracles_result) == explicit_min.compute(oracles_result=oracles_result)
+    assert default.compute(oracles_result=oracles_result) != explicit_max.compute(oracles_result=oracles_result)
+
+
 def test_ipSAEEnergy_single_group_excludes_self_pairs(
     fake_esmfold: bg.oracles.folding.ESMFold,
     mixed_structure_state: bg.State,
@@ -2168,6 +2182,13 @@ def test_BinderRMSDEnergy_rejects_residues_not_in_reference_state() -> None:
         bg.energies.BinderRMSDEnergy(oracle, [bg.Residue('W', 'A', 0)], reference_state)
     with pytest.raises(ValueError):
         bg.energies.BinderRMSDEnergy(oracle, [], reference_state)
+
+
+def test_BinderRMSDEnergy_requires_a_State_as_reference_state() -> None:
+    binder, _ = _binder_and_target()
+    oracle = _FakeBackboneOracle({}, lambda n: np.full(n, 0.5))
+    with pytest.raises(TypeError, match='reference_state must be a bagel State'):
+        bg.energies.BinderRMSDEnergy(oracle, binder.residues, 'reference')  # type: ignore[arg-type]
 
 
 def test_BinderRMSDEnergy_requires_reference_oracle_if_reference_state_is_ambiguous() -> None:
