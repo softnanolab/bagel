@@ -6,6 +6,8 @@ MIT License
 Copyright (c) 2025 Jakub Lála, Ayham Al-Saffar, Stefano Angioletti-Uberti
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 import re
 import warnings
@@ -13,7 +15,7 @@ import warnings
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
-from typing import Literal, Callable, Any
+from typing import Literal, Callable, Any, TYPE_CHECKING
 from biotite.structure import AtomArray, CellList, sasa, annotate_sse, superimpose
 from .constants import (
     hydrophobic_residues,
@@ -25,12 +27,17 @@ from .constants import (
     max_residue_sasa,
     vdw_radii,
     default_vdw_radius,
+    salt_bridge_residues,
+    aa_dict,
 )
 from .chain import Residue, Chain
 from .oracles import Oracle, OracleResult, OraclesResultDict
 from .oracles.folding import FoldingResult, FoldingOracle
 from .oracles.embedding import EmbeddingResult, EmbeddingOracle
 from .oracles.folding.utils import reorder_atoms_in_template
+
+if TYPE_CHECKING:  # State imports this module, so it can only be imported for type checking
+    from .state import State
 
 
 # first row is chain_ids and second row is corresponding residue indices.
@@ -294,13 +301,25 @@ class ChemicalPotentialEnergy(EnergyTerm):
 
     where :math:`\Omega` is the grand potential, :math:`E` is the energy, :math:`\mu` is the chemical potential,
     and :math:`N` is the number of residues.
+
+    The energy of this term is
+
+    .. math::
+
+        \mu \, d^{p}, \qquad d = \max(N_{\min} - N, \, 0, \, N - N_{\max})
+
+    where :math:`p` is ``power`` and :math:`d` is the distance from :math:`N` to the allowed range of sizes
+    :math:`[N_{\min}, N_{\max}]`, given by ``target_size``. The energy is therefore zero anywhere inside the range,
+    and outside it grows with the deviation from the closest boundary. If ``target_size`` is a single number the range
+    is that one size, and :math:`d = |N - N_{\mathrm{target}}|`. For the term to restrain the size, ``chemical_potential``
+    must be positive, otherwise it rewards moving away from the range.
     """
 
     def __init__(
         self,
         oracle: Oracle,
         power: float = 1.0,
-        target_size: int = 0,
+        target_size: int | tuple[int, int] = 0,
         chemical_potential: float = 1.0,
         weight: float = 1.0,
         name: str | None = None,
@@ -313,9 +332,10 @@ class ChemicalPotentialEnergy(EnergyTerm):
         oracle: Oracle
             The oracle to use for the energy term.
         power: float
-            The power to raise the number of residues to.
-        target_size: int
-            The target size of the system.
+            The exponent to which the distance from the allowed range of sizes is raised. Must be positive.
+        target_size: int | tuple[int, int]
+            The target size of the system, in number of residues. Either a single size, or a range
+            (min_size, max_size), both included, within which the energy is zero.
         chemical_potential: float
             The chemical potential of the system.
         weight: float
@@ -328,6 +348,13 @@ class ChemicalPotentialEnergy(EnergyTerm):
         else:
             name = f'chem_pot_{name}'
         super().__init__(name=name, inheritable=True, oracle=oracle, weight=weight)
+        if isinstance(target_size, (tuple, list)):
+            assert len(target_size) == 2, 'a target_size range must be given as (min_size, max_size)'
+            self.min_size, self.max_size = target_size
+        else:
+            self.min_size = self.max_size = target_size
+        assert self.min_size <= self.max_size, 'min_size of target_size cannot be larger than max_size'
+        assert power > 0, 'power must be positive'
         self.power = power
         self.target_size = target_size
         self.chemical_potential = chemical_potential
@@ -341,7 +368,9 @@ class ChemicalPotentialEnergy(EnergyTerm):
 
         # Count all residues in all input chains
         num_residues = sum(chain.length for chain in input_chains)
-        value = self.chemical_potential * (abs(num_residues - self.target_size)) ** self.power
+        # distance from the allowed range of sizes: zero inside it, and from the closest boundary outside it
+        distance = max(self.min_size - num_residues, 0, num_residues - self.max_size)
+        value = self.chemical_potential * distance**self.power
 
         return value, value * self.weight
 
@@ -974,6 +1003,272 @@ class LISEnergy(EnergyTerm):
                 # to masking above
                 value = -0.5 * np.sum(lis_scores)  # Negative because you want to be interpreted as an energy
 
+        return value, value * self.weight
+
+
+class ipSAEEnergy(EnergyTerm):
+    r"""
+    Energy representing the ipSAE score of Dunbrack (2025, bioRxiv), a function of
+    the PAE matrix that measures the confidence in the relative placement of two groups of residues, focusing on the
+    pairs that the model is confident about.
+
+    Like ipTM, ipSAE is a predicted TM-score restricted to inter-group residue pairs. Unlike ipTM, for each residue *i*
+    of the first group (the one the structures are aligned on) only the residues *j* of the second group with
+    :math:`\mathrm{PAE}_{ij} <` ``pae_cutoff`` are used, and the TM-score length scale :math:`d_0` is set by how many
+    there are, rather than by the size of the whole complex:
+
+    .. math:: n_0(i) = |\{j : \mathrm{PAE}_{ij} < \mathrm{cutoff}\}|, \quad
+        d_0(i) = \max\left(1, 1.24\,(\max(n_0(i), 27) - 15)^{1/3} - 1.8\right)
+
+    .. math:: \mathrm{ipSAE}_{1\to 2} = \max_{i} \frac{1}{n_0(i)} \sum_{j:\, \mathrm{PAE}_{ij} < \mathrm{cutoff}}
+        \frac{1}{1 + (\mathrm{PAE}_{ij} / d_0(i))^2}
+
+    The maximum is over residues *i* with at least one such partner. This makes the score insensitive to parts of the
+    groups that are far from the interface, or disordered, which dilute ipTM even when the interface is well predicted.
+    The score is between 0 and 1, and is returned with a negative sign so that it is an energy to minimise.
+
+    The score is directional, since the PAE matrix is not symmetric: row *i* is the residue the structures are aligned
+    on and column *j* the residue whose position error is measured. ``direction`` selects the direction used, or how
+    the two directions are combined. The default, 'min', is the smaller of the two directions (the stricter score,
+    which needs the interface to be confident both ways); 'max' is the ipSAE_max of the original implementation and
+    'mean' the average of the two.
+    """
+
+    def __init__(
+        self,
+        oracle: FoldingOracle,
+        residues: list[list[Residue]],
+        pae_cutoff: float = 10.0,
+        direction: Literal['max', 'min', 'mean', '1to2', '2to1'] = 'min',
+        inheritable: bool = True,
+        weight: float = 1.0,
+        name: str | None = None,
+    ) -> None:
+        """
+        Initialises the ipSAE energy class.
+
+        Parameters
+        ----------
+        oracle: Oracle
+            The oracle to use for the energy term.
+        residues: tuple[list[Residue], list[Residue]]
+            Which residues to include in the first and second group.
+        pae_cutoff: float = 10.0
+            The cutoff value for the PAE, in Angstroms, below which a residue pair is used. The default is that of the
+            original implementation.
+        direction: {'max', 'min', 'mean', '1to2', '2to1'}, default='min'
+            '1to2' aligns on residues of the first group and scores those of the second; '2to1' does the opposite.
+            'max', 'min' and 'mean' are the larger, the smaller and the average of the two.
+        inheritable: bool, default=True
+            If a new residue is added next to a residue included in this energy term, this dictates whether that new
+            residue could then be added to this energy term.
+        weight: float = 1.0
+            The weight of the energy term.
+        name: str | None = None
+            Optional name to append to the energy term name.
+        """
+        base_name = 'ipSAE'
+
+        if name is None:
+            name = base_name
+        else:
+            name = f'{base_name}_{name}'
+
+        assert pae_cutoff > 0, 'pae_cutoff must be positive'
+        assert direction in ('max', 'min', 'mean', '1to2', '2to1'), (
+            "direction must be 'max', 'min', 'mean', '1to2' or '2to1'"
+        )
+        self.pae_cutoff = pae_cutoff
+        self.direction = direction
+
+        super().__init__(name=name, inheritable=inheritable, oracle=oracle, weight=weight)
+        if len(residues) == 1:
+            self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[0])]
+        else:
+            self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
+        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
+        assert 'pae' in self.oracle.result_class.model_fields, (
+            'ipSAEEnergy requires oracle to return pae in result_class'
+        )
+
+    def _directional_ipsae(
+        self,
+        pae: npt.NDArray[np.float64],
+        aligned_mask: npt.NDArray[np.bool_],
+        scored_mask: npt.NDArray[np.bool_],
+    ) -> float:
+        """ipSAE aligning on the residues in ``aligned_mask`` and scoring those in ``scored_mask``."""
+        pair_mask = aligned_mask[:, np.newaxis] & scored_mask[np.newaxis, :]
+        pair_mask &= ~np.eye(len(pae), dtype=bool)  # uncertainty in distance between a residue and itself is ignored
+        valid = pair_mask & (pae < self.pae_cutoff)
+
+        n0 = valid.sum(axis=1)  # for each aligned residue, how many scored residues are confidently placed
+        has_partner = n0 > 0
+        if not np.any(has_partner):
+            return 0.0
+
+        # d0 of the TM-score, with the same lower bounds as the original implementation
+        d0 = np.maximum(1.0, 1.24 * (np.maximum(n0, 27) - 15.0) ** (1.0 / 3.0) - 1.8)
+        tm_terms = 1.0 / (1.0 + (pae / d0[:, np.newaxis]) ** 2)
+        per_residue = np.sum(tm_terms * valid, axis=1) / np.maximum(n0, 1)
+        return float(np.max(per_residue[has_partner]))
+
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        folding_result = oracles_result[self.oracle]
+        structure = oracles_result.get_structure(self.oracle)
+        assert hasattr(folding_result, 'pae'), 'pae metric not returned by folding algorithm'
+        assert folding_result.pae.shape[0] == 1, 'batch size equal to 1 is required'
+        pae = np.asarray(folding_result.pae[0], dtype=np.float64)  # [n_residues, n_residues], in Angstroms
+
+        group_1_mask = self.get_residue_mask(structure, residue_group_index=0)
+        group_2_mask = self.get_residue_mask(structure, residue_group_index=1)
+
+        if self.direction == '1to2':
+            ipsae = self._directional_ipsae(pae, group_1_mask, group_2_mask)
+        elif self.direction == '2to1':
+            ipsae = self._directional_ipsae(pae, group_2_mask, group_1_mask)
+        else:
+            both = [
+                self._directional_ipsae(pae, group_1_mask, group_2_mask),
+                self._directional_ipsae(pae, group_2_mask, group_1_mask),
+            ]
+            if self.direction == 'max':
+                ipsae = max(both)
+            elif self.direction == 'min':
+                ipsae = min(both)
+            else:
+                ipsae = float(np.mean(both))
+
+        value = -ipsae  # negative because you want it to be interpreted as an energy
+        return value, value * self.weight
+
+
+class SaltBridgeEnergy(EnergyTerm):
+    r"""
+    Energy that rewards salt bridges *between* two groups of residues, and optionally penalises the repulsive contacts
+    between residues of the same charge.
+
+    Following the classic definition of Barlow & Thornton (1983, J. Mol. Biol. 168, 867),
+    two charged residues form a salt bridge when any carboxylate oxygen of an acidic residue (Asp: OD1, OD2; Glu: OE1,
+    OE2) is within ``distance_cutoff`` (4 Angstrom) of any nitrogen of a basic residue (Lys: NZ; Arg: NE, NH1, NH2; His:
+    ND1, NE2). Here, the same atoms and cutoff are used to detect the opposite: two residues of the **same** charge that
+    are this close, here called a negative bridge. A pair of residues is counted at most once, however many atom pairs
+    are within the cutoff, and only pairs with one residue in each of the two groups count, so bridges internal to a
+    group are ignored. The signed number of bridges is
+
+    .. math:: n = n_{\mathrm{salt}} - n_{\mathrm{negative}}
+
+    and the energy is :math:`-n`, which decreases as there are more salt bridges and fewer negative bridges. It is
+    a count: it changes in steps, and is unbounded.
+
+    .. note::
+        The positions of side chains come from the folding model and are less reliable than those of the backbone,
+        especially at interfaces. Histidine is included by default as in the original definition, but it is mostly
+        neutral at physiological pH: remove ``'H'`` from ``residue_types`` to ignore it. Charges are assigned by residue
+        type only, termini are ignored, and no account is taken of desolvation.
+    """
+
+    def __init__(
+        self,
+        oracle: FoldingOracle,
+        residues: list[list[Residue]],
+        residue_types: list[str] | tuple[str, ...] = ('D', 'E', 'K', 'R', 'H'),
+        distance_cutoff: float = 4.0,
+        count_same_charge: bool = True,
+        inheritable: bool = True,
+        weight: float = 1.0,
+        name: str | None = None,
+    ) -> None:
+        """
+        Initialises the salt bridge energy class.
+
+        Parameters
+        ----------
+        oracle: FoldingOracle
+            The oracle to use for the energy term.
+        residues: list[list[Residue]]
+            Which residues to include in the first and second group. Bridges are counted between the two groups only,
+            so the groups cannot share residues.
+        residue_types: list[str], default=('D', 'E', 'K', 'R', 'H')
+            The types of residue considered, as 1-letter codes. Must be a subset of D, E, K, R and H, the residues with
+            a charged group defined. Residues of any other type in the groups are never counted.
+        distance_cutoff: float, default=4.0
+            Distance in Angstrom between charged atoms, up to and including which two residues are in contact.
+        count_same_charge: bool, default=True
+            Whether contacts between residues of the same charge count as negative bridges, each subtracting one from
+            the number of salt bridges. If False, only salt bridges are counted.
+        inheritable: bool, default=True
+            If a new residue is added next to a residue included in this energy term, this dictates whether that new
+            residue could then be added to this energy term.
+        weight: float = 1.0
+            The weight of the energy term.
+        name: str | None = None
+            Optional name to append to the energy term name.
+        """
+        base_name = 'salt_bridge'
+
+        if name is None:
+            name = base_name
+        else:
+            name = f'{base_name}_{name}'
+
+        super().__init__(name=name, inheritable=inheritable, oracle=oracle, weight=weight)
+        assert len(residues) == 2, 'SaltBridgeEnergy requires exactly two groups of residues'
+        unsupported = [r for r in residue_types if r not in salt_bridge_residues]
+        assert len(unsupported) == 0, (
+            f'residue_types can only contain {list(salt_bridge_residues)}, found unsupported types: {unsupported}'
+        )
+        assert len(residue_types) > 0, 'residue_types cannot be empty'
+        assert distance_cutoff > 0, 'distance_cutoff must be positive'
+        group_1, group_2 = [set(zip(*residue_list_to_group(group))) for group in residues]
+        assert group_1.isdisjoint(group_2), (
+            f'the two groups cannot share residues, found shared: {sorted(group_1 & group_2)}'
+        )
+        self.residue_types = tuple(residue_types)
+        self.distance_cutoff = distance_cutoff
+        self.count_same_charge = count_same_charge
+        self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
+        # keyed by the 3-letter name in the structure: the sign of the charge and the atoms that carry it
+        self._charged_atoms = {aa_dict[letter]: salt_bridge_residues[letter] for letter in self.residue_types}
+        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
+        assert 'structure' in self.oracle.result_class.model_fields, (
+            'SaltBridgeEnergy requires oracle to return structure in result_class'
+        )
+
+    def _charged_sites(
+        self, structure: AtomArray, residue_group_index: int
+    ) -> list[tuple[int, npt.NDArray[np.float64]]]:
+        """The charge sign and the coordinates of the charged atoms of each considered residue in a group."""
+        chain_ids, res_ids = self.residue_groups[residue_group_index]
+        sites = []
+        for chain_id, res_id in dict.fromkeys(zip(chain_ids, res_ids)):  # unique, in order
+            residue_atoms = structure[(structure.chain_id == chain_id) & (structure.res_id == res_id)]
+            if len(residue_atoms) == 0 or str(residue_atoms.res_name[0]) not in self._charged_atoms:
+                continue
+            charge, atom_names = self._charged_atoms[str(residue_atoms.res_name[0])]
+            coordinates = residue_atoms.coord[np.isin(residue_atoms.atom_name, atom_names)]
+            if len(coordinates) > 0:
+                sites.append((charge, coordinates))
+        return sites
+
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        structure = oracles_result.get_structure(self.oracle)
+        sites_1 = self._charged_sites(structure, residue_group_index=0)
+        sites_2 = self._charged_sites(structure, residue_group_index=1)
+
+        n_salt_bridges = 0
+        n_negative_bridges = 0
+        for charge_1, coordinates_1 in sites_1:
+            for charge_2, coordinates_2 in sites_2:
+                separations = np.linalg.norm(coordinates_1[:, np.newaxis, :] - coordinates_2[np.newaxis, :, :], axis=2)
+                if np.min(separations) > self.distance_cutoff:
+                    continue
+                if charge_1 != charge_2:
+                    n_salt_bridges += 1
+                elif self.count_same_charge:
+                    n_negative_bridges += 1
+
+        value = float(n_negative_bridges - n_salt_bridges)  # minus the signed number of salt bridges
         return value, value * self.weight
 
 
@@ -2103,6 +2398,166 @@ class ResidueSAEnergy(EnergyTerm):
         return value, value * self.weight
 
 
+class BuriedHistidineEnergy(EnergyTerm):
+    """
+    Rewards histidines that are buried, saturating at `target_count` of them.
+
+    This is the core term of a histidine-based pH switch. Histidine is the only
+    canonical side chain whose pKa (~6.0-6.5 free in solution) sits between pH 6
+    and pH 7.4. At pH 7.4 the imidazole is neutral and packs acceptably in a core;
+    at pH 6 it protonates to the imidazolium cation, and burying a charged group in
+    a low-dielectric core with no counter-ion costs a large desolvation penalty.
+    That penalty is paid only by the folded state, so each buried histidine
+    subtracts from the folding free energy as the pH drops.
+
+    Each histidine contributes a burial score in [0, 1]:
+
+        burial_i = 1 - min(relative_sasa_i / sasa_cutoff, 1)
+
+    i.e. 1 when the side chain is completely occluded, falling linearly to 0 once
+    its relative SASA reaches `sasa_cutoff`. The returned energy is
+
+        E = -min(sum_i burial_i, target_count) / target_count       in [-1, 0]
+
+    The saturation matters. Without it the optimiser keeps stuffing in histidines
+    forever and you end up with a polyhistidine blob that does not fold at any pH.
+    Capping the reward at `target_count` says "six buried histidines is the goal,
+    a seventh buys you nothing", which leaves the remaining core positions free to
+    be filled by ordinary hydrophobics that pay for the fold at neutral pH.
+
+    Note that this term pulls against :class:`HydropathyEnergy` in 'core' mode:
+    histidine's Kyte-Doolittle index is -3.2, so every buried histidine makes the
+    burial-weighted hydropathy worse. That tension is deliberate, since it is what
+    stops the core becoming all histidine, but it makes the ratio of the two
+    weights the most important knob in a pH-switch design.
+
+    Parameters
+    ----------
+    oracle : FoldingOracle
+        Oracle supplying the predicted structure.
+    target_count : int, default=6
+        Number of buried histidines that saturates the reward. For a ~100-residue
+        single domain, 4-8 is a sensible window: below 4 the pH-6 destabilisation
+        is likely too small to unfold the protein, above ~8 you are unlikely to
+        retain a folded state at pH 7.4 at all.
+    sasa_cutoff : float, default=0.15
+        Relative SASA at and above which a histidine counts as fully exposed.
+        0.15 is a conventional "buried" threshold.
+    residues : list[Residue] or None
+        Restrict the count to these positions (e.g. only the designed core).
+        Default considers every residue in the state.
+    """
+
+    def __init__(
+        self,
+        oracle: FoldingOracle,
+        target_count: int = 6,
+        sasa_cutoff: float = 0.15,
+        residues: list[Residue] | None = None,
+        inheritable: bool = True,
+        weight: float = 1.0,
+        name: str | None = None,
+    ) -> None:
+        name = 'buried_histidine' if name is None else f'buried_histidine_{name}'
+        super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight)
+        self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
+        self.target_count = int(target_count)
+        self.sasa_cutoff = float(sasa_cutoff)
+        assert self.target_count > 0, 'target_count must be positive'
+        assert 0.0 < self.sasa_cutoff <= 1.0, 'sasa_cutoff must lie in (0, 1]'
+        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be a FoldingOracle'
+
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        structure = oracles_result.get_structure(self.oracle)
+        if len(structure) == 0:
+            return 0.0, 0.0
+
+        chain_ids, res_ids, res_names, relative = _relative_residue_sasa(structure)
+
+        selected = np.full(len(res_ids), True)
+        if len(self.residue_groups) > 0:
+            group_chains, group_indices = self.residue_groups[0]
+            selected = np.zeros(len(res_ids), dtype=bool)
+            for cid in np.unique(group_chains):
+                wanted = group_indices[group_chains == cid]
+                selected |= (chain_ids == cid) & np.isin(res_ids, wanted)
+
+        his_mask = (res_names == 'HIS') & selected
+        if not np.any(his_mask):
+            return 0.0, 0.0
+
+        burial = 1.0 - np.minimum(relative[his_mask] / self.sasa_cutoff, 1.0)
+        value = -float(min(burial.sum(), self.target_count)) / self.target_count
+        return value, value * self.weight
+
+
+class HistidineCarboxylateContactEnergy(EnergyTerm):
+    """
+    Penalises imidazole nitrogens sitting close to Asp/Glu carboxylate oxygens.
+
+    A buried His-Asp or His-Glu pair is the classic pKa-raising motif: the
+    carboxylate stabilises the protonated imidazolium, so the folded state
+    becomes *more* stable as the pH falls. That inverts the switch sought by
+    :class:`BuriedHistidineEnergy`, and an optimiser rewarded only for burying
+    histidines will happily build these pairs because they are excellent buried
+    hydrogen bonds. This term prices them out.
+
+    Energy = min(n_contacts, max_contacts) / max_contacts, in [0, 1]; a contact is
+    any ND1/NE2 atom within `distance_cutoff` of any OD1/OD2/OE1/OE2 atom.
+
+    Set `weight` high enough that one contact outweighs the burial reward for one
+    histidine, otherwise the trade is still worth making.
+
+    Parameters
+    ----------
+    oracle : FoldingOracle
+        Oracle supplying the predicted structure.
+    distance_cutoff : float, default=4.5
+        Distance in Angstrom below which an imidazole nitrogen and a carboxylate
+        oxygen count as being in contact.
+    max_contacts : int, default=4
+        Number of contacts at which the penalty saturates at 1.
+    """
+
+    IMIDAZOLE_NITROGENS = ('ND1', 'NE2')
+    CARBOXYLATE_OXYGENS = ('OD1', 'OD2', 'OE1', 'OE2')
+
+    def __init__(
+        self,
+        oracle: FoldingOracle,
+        distance_cutoff: float = 4.5,
+        max_contacts: int = 4,
+        inheritable: bool = True,
+        weight: float = 1.0,
+        name: str | None = None,
+    ) -> None:
+        name = 'his_carboxylate' if name is None else f'his_carboxylate_{name}'
+        super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight)
+        self.residue_groups = []
+        self.distance_cutoff = float(distance_cutoff)
+        self.max_contacts = int(max_contacts)
+        assert self.max_contacts > 0, 'max_contacts must be positive'
+        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be a FoldingOracle'
+
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        structure = oracles_result.get_structure(self.oracle)
+        if len(structure) == 0:
+            return 0.0, 0.0
+
+        his_mask = (structure.res_name == 'HIS') & np.isin(structure.atom_name, self.IMIDAZOLE_NITROGENS)
+        acid_mask = np.isin(structure.res_name, ('ASP', 'GLU')) & np.isin(structure.atom_name, self.CARBOXYLATE_OXYGENS)
+        if not np.any(his_mask) or not np.any(acid_mask):
+            return 0.0, 0.0
+
+        his_coords = structure.coord[his_mask]
+        acid_coords = structure.coord[acid_mask]
+        distances = np.linalg.norm(his_coords[:, None, :] - acid_coords[None, :, :], axis=-1)
+        n_contacts = int(np.count_nonzero(distances < self.distance_cutoff))
+
+        value = float(min(n_contacts, self.max_contacts)) / self.max_contacts
+        return value, value * self.weight
+
+
 # ---------------------------------------------------------------------------
 # Helper functions
 # ---------------------------------------------------------------------------
@@ -2433,3 +2888,231 @@ def _prepare_sae_feature_terms(
         coefficients_array = coefficients_array / l1_norm
 
     return feature_indices_array, coefficients_array
+
+
+def _relative_residue_sasa(
+    structure: AtomArray,
+) -> tuple[npt.NDArray[np.str_], npt.NDArray[np.int_], npt.NDArray[np.str_], npt.NDArray[np.float64]]:
+    """
+    Returns ``(chain_ids, res_ids, res_names, relative_sasa)`` with one entry per residue.
+
+    ``relative_sasa`` is the residue's total SASA divided by its maximum theoretical SASA (the Tien et al. values in
+    :mod:`bagel.constants`), clipped to [0, 1]. 0 means fully buried, 1 means fully exposed. Summing atom SASA rather
+    than averaging it is deliberate and matches :class:`HydropathyEnergy`: larger residues naturally expose more
+    surface and should contribute proportionally.
+    """
+    atom_sasa = sasa(structure, probe_radius=probe_radius_water)
+
+    # Unique (chain_id, res_id) pairs in the order they appear in the structure.
+    residue_ids = np.empty(
+        len(structure),
+        dtype=[('chain_id', structure.chain_id.dtype), ('res_id', structure.res_id.dtype)],
+    )
+    residue_ids['chain_id'] = structure.chain_id
+    residue_ids['res_id'] = structure.res_id
+    first_index = np.sort(np.unique(residue_ids, return_index=True)[1])
+
+    chain_ids = residue_ids['chain_id'][first_index]
+    res_ids = residue_ids['res_id'][first_index]
+    res_names = structure.res_name[first_index]
+
+    relative = np.zeros(len(first_index), dtype=float)
+    for i, (chain_id, res_id, res_name) in enumerate(zip(chain_ids, res_ids, res_names)):
+        atom_mask = (structure.chain_id == chain_id) & (structure.res_id == res_id)
+        total = float(np.sum(atom_sasa[atom_mask]))
+        max_sasa = max_theoretical_sasa_for_residues.get(res_name, max_residue_sasa)
+        relative[i] = np.clip(total / max_sasa, 0.0, 1.0) if max_sasa > 0 else 0.0
+
+    return chain_ids, res_ids, res_names, relative
+
+
+class BinderRMSDEnergy(EnergyTerm):
+    """
+    Root mean square deviation (RMSD) between the structure of a group of residues in this state and in a
+    *reference state*. A typical use is to score a binder by how much it must change shape upon binding: the reference
+    state holds the binder folded alone and the state this term belongs to holds the binder co-folded with its target.
+    A low value means the binder is already pre-organised in its bound conformation, which is expected to lower the
+    entropic cost of binding.
+
+    The C-alpha atoms of the selected residues are superimposed, using the rotation and translation that minimise the
+    RMSD, and the distance between the two positions of each residue is then measured.
+
+    Optionally, the mean over residues is weighted by :math:`w_i = \\mathrm{pLDDT}_i^n`, so that residues the model is
+    confident about in the reference state count for more, and those whose isolated structure is a guess for less.
+    The pLDDT is always taken from the reference state. The result is
+
+    .. math:: \\sqrt{\\frac{\\sum_i w_i \\, d_i^2}{\\sum_i w_i}}
+
+    where :math:`d_i` is the C-alpha distance after superposition. pLDDT is on a 0-1 scale. Because the weights are
+    normalised, a low pLDDT only removes a residue from the average: it does not lower the energy, so the optimizer
+    gains nothing from making the reference fold less confident. (If every pLDDT is 0, the plain RMSD is returned.)
+
+    .. note::
+        The reference state is evaluated through its own ``energy`` property, so it must have at least one energy term
+        and its results are cached as for any other state. It must be a member of the same
+        :class:`~bagel.system.System` as the state this term is in, and contain the **same** :class:`~bagel.chain.Chain`
+        objects for the selected residues: the system is deep-copied at every minimization step, and this is what keeps
+        the two states in sync when a residue is mutated. It cannot be the state that contains this term.
+    """
+
+    def __init__(
+        self,
+        oracle: FoldingOracle,
+        residues: list[Residue],
+        reference_state: State,
+        reference_oracle: FoldingOracle | None = None,
+        plddt_scaled: bool = False,
+        plddt_exponent: float = 2.0,
+        inheritable: bool = True,
+        weight: float = 1.0,
+        name: str | None = None,
+    ) -> None:
+        """
+        Initialises the RMSD energy class.
+
+        Parameters
+        ----------
+        oracle: FoldingOracle
+            The oracle used to fold the state this term belongs to.
+        residues: list[Residue]
+            The residues to compare. All of them must exist in ``reference_state``.
+        reference_state: State
+            The state whose structure is the reference, e.g. the binder alone. Must contain every residue in
+            ``residues``, with the same chain ID, index and amino acid type.
+        reference_oracle: FoldingOracle | None, default=None
+            The oracle of ``reference_state`` whose structure (and pLDDT) is used. It may differ from ``oracle``, e.g.
+            ESMFold for the isolated binder and Boltz2 for the complex. If None, the reference state must use exactly
+            one folding oracle, which is then chosen.
+        plddt_scaled: bool, default=False
+            Whether to weight the contribution of each residue to the mean by its pLDDT in the reference state,
+            raised to ``plddt_exponent``.
+        plddt_exponent: float, default=2.0
+            The exponent n in :math:`\\mathrm{pLDDT}^n`. Must be greater than 0. Only used if ``plddt_scaled``.
+        inheritable: bool, default=True
+            If a new residue is added next to a residue included in this energy term, this dictates whether that new
+            residue could then be added to this energy term.
+        weight: float = 1.0
+            The weight of the energy term.
+        name: str | None = None
+            Optional name to append to the energy term name.
+        """
+        name = 'binder_rmsd' if name is None else f'binder_rmsd_{name}'
+        super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight)
+        if not plddt_exponent > 0:
+            raise ValueError(f'plddt_exponent must be greater than 0, got {plddt_exponent}')
+        if len(residues) == 0:
+            raise ValueError('At least one residue is required to calculate the RMSD')
+        from .state import State  # imported here because state.py imports this module
+
+        if not isinstance(reference_state, State):
+            raise TypeError(f'reference_state must be a bagel State, got {type(reference_state).__name__}')
+        self.reference_state = reference_state
+        self.reference_oracle = reference_oracle
+        self.plddt_scaled = plddt_scaled
+        self.plddt_exponent = plddt_exponent
+        self.residue_groups = [residue_list_to_group(residues)]
+        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
+        assert 'structure' in self.oracle.result_class.model_fields, (
+            'BinderRMSDEnergy requires oracle to return structure in result_class'
+        )
+        if reference_oracle is not None:
+            assert isinstance(reference_oracle, FoldingOracle), 'reference_oracle must be an instance of FoldingOracle'
+        self._check_residues_in_reference_state(residues)
+
+    def _check_residues_in_reference_state(self, residues: list[Residue]) -> None:
+        """Raise if any residue is missing from ``reference_state`` or has a different amino acid type there."""
+        reference_chains = {chain.chain_ID: chain for chain in self.reference_state.chains}
+        for residue in residues:
+            chain = reference_chains.get(residue.chain_ID)
+            if chain is None:
+                raise ValueError(
+                    f"Residue {residue.chain_ID}:{residue.index} is selected, but chain '{residue.chain_ID}' is not in "
+                    f"reference state '{self.reference_state.name}' (chains: {sorted(reference_chains)})"
+                )
+            match = [r for r in chain.residues if r.index == residue.index]
+            if len(match) != 1:
+                raise ValueError(
+                    f'Residue {residue.chain_ID}:{residue.index} is selected, but is not in reference state '
+                    f"'{self.reference_state.name}'"
+                )
+            if match[0].name != residue.name:
+                raise ValueError(
+                    f'Residue {residue.chain_ID}:{residue.index} is {residue.name} in this state but '
+                    f"{match[0].name} in reference state '{self.reference_state.name}'"
+                )
+
+    def _get_reference_result(self) -> FoldingResult:
+        """Fold the reference state if needed (through its cache) and return the result of the reference oracle."""
+        if self in self.reference_state.energy_terms:
+            raise ValueError('reference_state cannot be the state that contains this energy term')
+        _ = self.reference_state.energy  # runs the oracles of the reference state, or reuses its cache
+        oracle = self.reference_oracle
+        if oracle is None:
+            candidates = [o for o in self.reference_state.oracles_list if isinstance(o, FoldingOracle)]
+            if len(candidates) != 1:
+                raise ValueError(
+                    f"Reference state '{self.reference_state.name}' has {len(candidates)} folding oracles; "
+                    'specify which one to use with reference_oracle'
+                )
+            oracle = candidates[0]
+        elif oracle not in self.reference_state.oracles_list:
+            raise ValueError(
+                f"reference_oracle is not used by any energy term of reference state '{self.reference_state.name}', "
+                'so it is never run'
+            )
+        result = self.reference_state._oracles_result[oracle]
+        assert isinstance(result, FoldingResult), 'Result must be a FoldingResult'
+        return result
+
+    @staticmethod
+    def _ca_indices(structure: AtomArray, chain_ids: npt.NDArray[np.str_], res_ids: npt.NDArray[np.int_]) -> list[int]:
+        """Indices in ``structure`` of the C-alpha of each requested residue, in the requested order."""
+        ca_position = {
+            (str(c), int(r)): i
+            for i, (c, r, a) in enumerate(zip(structure.chain_id, structure.res_id, structure.atom_name))
+            if a == 'CA'
+        }
+        missing = [(c, r) for c, r in zip(chain_ids, res_ids) if (str(c), int(r)) not in ca_position]
+        if missing:
+            raise ValueError(f'No C-alpha found in the structure for residues (chain, index): {missing}')
+        return [ca_position[(str(c), int(r))] for c, r in zip(chain_ids, res_ids)]
+
+    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
+        chain_ids, res_ids = self.residue_groups[0]
+        if len(res_ids) == 0:
+            return 0.0, 0.0
+        # residues can be added or removed during a grand canonical run, so check again that the reference state
+        # still has every selected residue
+        reference_chains = {chain.chain_ID: {r.index for r in chain.residues} for chain in self.reference_state.chains}
+        absent = [(c, i) for c, i in zip(chain_ids, res_ids) if int(i) not in reference_chains.get(str(c), set())]
+        if absent:
+            raise ValueError(
+                f"Residues (chain, index) {absent} are not in reference state '{self.reference_state.name}'"
+            )
+        reference_result = self._get_reference_result()
+
+        structure = oracles_result.get_structure(self.oracle)
+        reference = reference_result.structure
+        state_ca = structure[self._ca_indices(structure, chain_ids, res_ids)]
+        reference_ca = reference[self._ca_indices(reference, chain_ids, res_ids)]
+
+        reference_ca = superimpose(fixed=state_ca, mobile=reference_ca)[0]  # translation and rotation fit
+        deviations = np.linalg.norm(state_ca.coord - reference_ca.coord, axis=1)
+
+        weights = np.ones_like(deviations)
+        if self.plddt_scaled:
+            assert hasattr(reference_result, 'local_plddt'), 'local_plddt metric not returned by folding algorithm'
+            assert reference_result.local_plddt.shape[0] == 1, 'batch size equal to 1 is required'
+            plddt = reference_result.local_plddt[0]
+            # pLDDT is stored per residue, in the order chains and residues appear in the reference structure
+            plddt_position: dict[tuple[str, int], int] = {}
+            for chain in pd.unique(reference.chain_id):
+                for res in pd.unique(reference.res_id[reference.chain_id == chain]):
+                    plddt_position[(str(chain), int(res))] = len(plddt_position)
+            selected_plddt = np.array([plddt[plddt_position[(str(c), int(r))]] for c, r in zip(chain_ids, res_ids)])
+            scaled_weights = selected_plddt**self.plddt_exponent
+            if scaled_weights.sum() > 0:  # otherwise keep the plain RMSD
+                weights = scaled_weights
+
+        value = float(np.sqrt(np.sum(weights * deviations**2) / np.sum(weights)))
+        return value, value * self.weight

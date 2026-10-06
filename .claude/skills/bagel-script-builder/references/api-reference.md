@@ -99,6 +99,13 @@ but recommended — it labels the term in per-term logs.
 - `SeparationEnergy(oracle, residues=(group_a, group_b), function=None, weight=1.0, name=None)`
   — distance between the two groups' centroids.
 - `LISEnergy(oracle, residues, pae_cutoff=12.0, intensive=True, ...)` — local interaction score.
+- `ipSAEEnergy(oracle, residues=[group_a, group_b], pae_cutoff=10.0, direction='min', weight=1.0, name=None)`
+  — ipSAE (Dunbrack 2025): ipTM-like score using only confidently placed inter-group pairs; `direction`
+  is 'min' (default; stricter: both directions must be confident), 'max' (ipSAE_max of the original implementation), 'mean', '1to2' or '2to1'.
+  Returned as a negative value (energy).
+- `SaltBridgeEnergy(oracle, residues=[group_a, group_b], residue_types=('D','E','K','R','H'), distance_cutoff=4.0, count_same_charge=True, weight=1.0, name=None)`
+  — minus the signed number of inter-group salt bridges (Barlow & Thornton: carboxylate O to basic N within 4 Å);
+  same-charge contacts count -1 unless `count_same_charge=False`. Groups must not share residues.
 - `FlexEvoBindEnergy(oracle, residues, plddt_weighted, symmetrized, ...)`.
 
 ### Developability (folding oracle)
@@ -120,7 +127,10 @@ but recommended — it labels the term in per-term logs.
 - `EmbeddingsSimilarityEnergy(oracle, residues, reference_embeddings, weight=1.0, name=None)`
   — keep the group's embeddings near a captured reference (conservation / mimicry).
 - `ChemicalPotentialEnergy(oracle, power, target_size, chemical_potential, weight=1.0, name=None)`
-  — controls sequence length; pair with `GrandCanonical`.
+  — controls sequence length; pair with `GrandCanonical`. Energy is `chemical_potential * d**power`
+  with `d` the distance from the total residue count to `target_size`, which is an int or a
+  `(min_size, max_size)` range (energy is 0 inside the range). Use a positive `chemical_potential`
+  to restrain the length.
 
 > Signatures above reflect the current source but arguments drift — open
 > `src/bagel/energies.py` and grep for the class to confirm before relying on an argument.
@@ -220,7 +230,7 @@ These come from the real API and cost debugging time if missed:
   pass `config={'glycine_linker': 'G'*25, 'position_ids_skip': 1024}` (512 or 1024 are the
   in-repo values). Without it the chains fold as one fused sequence.
 - **Interface terms take a list of two groups**: `PAEEnergy(residues=[group_a, group_b])`, same
-  for `SeparationEnergy` / `LISEnergy`. Single-group terms (`PLDDTEnergy`, `HydrophobicEnergy`)
+  for `SeparationEnergy` / `LISEnergy` / `ipSAEEnergy` / `SaltBridgeEnergy`. Single-group terms (`PLDDTEnergy`, `HydrophobicEnergy`)
   take a flat `residues=[...]`. Mixing these up is the most common error.
 - **Negative design = negative weights** on the off-target state's interface terms
   (`weight=-5.0`), with the mutable binder chain shared across both states.
