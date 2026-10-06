@@ -382,3 +382,42 @@ def test_InverseFoldingSampling_default_bias_never_proposes_cysteine() -> None:
     mutator = bg.mutation.InverseFoldingSampling(oracle=object())
     probabilities = {aa: 0.0 for aa in _AAS} | {'C': 0.99, 'W': 0.01}
     assert {mutator.propose_amino_acid(probabilities, 'A') for _ in range(50)} == {'W'}
+
+
+def test_InverseFoldingSampling_structures_come_from_unmutated_states_when_chain_is_shared(
+    fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch
+) -> None:
+    folded_sequences: list[list[str]] = []
+    original_fold = fake_esmfold.fold
+
+    def recording_fold(chains):
+        folded_sequences.append([c.sequence for c in chains])
+        return original_fold(chains)
+
+    monkeypatch.setattr(fake_esmfold, 'fold', recording_fold)
+
+    residues = [bg.Residue(name='A', chain_ID='A', index=i, mutable=True) for i in range(5)]
+    shared_chain = bg.Chain(residues)
+    states = [
+        bg.State(
+            name=name,
+            chains=[shared_chain],
+            energy_terms=[bg.energies.PLDDTEnergy(oracle=fake_esmfold, residues=residues, weight=1.0)],
+        )
+        for name in ('S1', 'S2')
+    ]
+    system = bg.System(states)
+    oracle = _StubInverseFoldingOracle({aa: 1 / 20 for aa in _AAS})
+    mutator = bg.mutation.InverseFoldingSampling(oracle=oracle, n_mutations=2)
+
+    # force the two successive mutations to pick different states: S1 first, then S2
+    picks = iter([0, 1])
+    monkeypatch.setattr(np.random, 'randint', lambda n: next(picks))
+    mutated_system, record = mutator.one_step(system)
+
+    assert len(record.mutations) == 2
+    # one structure per state, and every fold used the unmutated sequence
+    assert folded_sequences == [['AAAAA'], ['AAAAA']]
+    # the oracle still receives the (mutated) chains of the copied states
+    assert oracle.calls[0]['sequences'] == [['AAAAA'][0]]
+    assert oracle.calls[1]['sequences'] != ['AAAAA']

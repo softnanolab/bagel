@@ -486,10 +486,13 @@ class InverseFoldingSampling(MutationProtocol):
             index = int(np.random.choice(chain.mutable_residue_indexes))
             current_aa = chain.residues[index].name
 
-            candidate_states = [s for s in mutated_system.states if any(c is chain for c in s.chains)]
-            state = candidate_states[np.random.randint(len(candidate_states))]
+            candidate_indices = [i for i, s in enumerate(mutated_system.states) if any(c is chain for c in s.chains)]
+            state_index = candidate_indices[np.random.randint(len(candidate_indices))]
+            state = mutated_system.states[state_index]
             if state.name not in structures:
-                structures[state.name] = self._get_structure(state)
+                # Chains shared between states are already mutated in the copy, so take the structure from the
+                # corresponding unmutated state of the input system.
+                structures[state.name] = self._get_structure(system.states[state_index])
             probabilities = self._get_oracle().inverse_fold(
                 chains=state.chains, structure=structures[state.name], chain_id=chain.chain_ID, residue_index=index
             )
