@@ -59,199 +59,9 @@ import os
 from typing import Any
 
 import numpy as np
-import numpy.typing as npt
 
 import bagel as bg
-from bagel.energies import EnergyTerm, residue_list_to_group
-from bagel.chain import Residue
-from bagel.oracles import OraclesResultDict
-from bagel.oracles.folding import FoldingOracle
-from bagel.constants import (
-    probe_radius_water,
-    max_theoretical_sasa_for_residues,
-    max_residue_sasa,
-)
-from biotite.structure import sasa
-
-
-# ----------------------------------------------------------------------------
-# Helper: per-residue relative SASA, shared by the custom terms below.
-# ----------------------------------------------------------------------------
-def _relative_residue_sasa(structure: Any) -> tuple[npt.NDArray[np.str_], npt.NDArray[np.int_], npt.NDArray[np.str_], npt.NDArray[np.float64]]:
-    """
-    Return (chain_ids, res_ids, res_names, relative_sasa) with one entry per residue.
-
-    `relative_sasa` is the residue's total SASA divided by its maximum theoretical
-    SASA (Tien et al. values already shipped in bagel.constants), clipped to [0, 1].
-    0 means fully buried, 1 means fully exposed.
-    """
-    atom_sasa = sasa(structure, probe_radius=probe_radius_water)
-
-    # Unique (chain_id, res_id) pairs in the order they appear in the structure.
-    residue_ids = np.empty(
-        len(structure),
-        dtype=[('chain_id', structure.chain_id.dtype), ('res_id', structure.res_id.dtype)],
-    )
-    residue_ids['chain_id'] = structure.chain_id
-    residue_ids['res_id'] = structure.res_id
-    first_index = np.sort(np.unique(residue_ids, return_index=True)[1])
-
-    chain_ids = residue_ids['chain_id'][first_index]
-    res_ids = residue_ids['res_id'][first_index]
-    res_names = structure.res_name[first_index]
-
-    relative = np.zeros(len(first_index), dtype=float)
-    for i, (chain_id, res_id, res_name) in enumerate(zip(chain_ids, res_ids, res_names)):
-        atom_mask = (structure.chain_id == chain_id) & (structure.res_id == res_id)
-        total = float(np.sum(atom_sasa[atom_mask]))
-        max_sasa = max_theoretical_sasa_for_residues.get(res_name, max_residue_sasa)
-        relative[i] = np.clip(total / max_sasa, 0.0, 1.0) if max_sasa > 0 else 0.0
-
-    return chain_ids, res_ids, res_names, relative
-
-
-# ----------------------------------------------------------------------------
-# Energy term 1 -- the actual switch: bury histidines.
-# ----------------------------------------------------------------------------
-class BuriedHistidineEnergy(EnergyTerm):
-    """
-    Rewards histidines that are buried, saturating at `target_count` of them.
-
-    Each histidine contributes a burial score in [0, 1]:
-
-        burial_i = 1 - min(relative_sasa_i / sasa_cutoff, 1)
-
-    i.e. 1 when the side chain is completely occluded, falling linearly to 0 once
-    its relative SASA reaches `sasa_cutoff`. The returned energy is
-
-        E = -min(sum_i burial_i, target_count) / target_count       in [-1, 0]
-
-    The saturation matters. Without it the optimiser keeps stuffing in histidines
-    forever and you end up with a polyhistidine blob that does not fold at any pH.
-    Capping the reward at `target_count` says "six buried histidines is the goal,
-    a seventh buys you nothing", which leaves the remaining core positions free to
-    be filled by ordinary hydrophobics that pay for the fold at neutral pH.
-
-    Parameters
-    ----------
-    oracle : FoldingOracle
-        Oracle supplying the predicted structure.
-    target_count : int, default=6
-        Number of buried histidines that saturates the reward. For a ~100-residue
-        single domain, 4-8 is a sensible window: below 4 the pH-6 destabilisation
-        is likely too small to unfold the protein, above ~8 you are unlikely to
-        retain a folded state at pH 7.4 at all.
-    sasa_cutoff : float, default=0.15
-        Relative SASA at and above which a histidine counts as fully exposed.
-        0.15 is a conventional "buried" threshold.
-    residues : list[Residue] or None
-        Restrict the count to these positions (e.g. only the designed core).
-        Default considers every residue in the state.
-    """
-
-    def __init__(
-        self,
-        oracle: FoldingOracle,
-        target_count: int = 6,
-        sasa_cutoff: float = 0.15,
-        residues: list[Residue] | None = None,
-        inheritable: bool = True,
-        weight: float = 1.0,
-        name: str | None = None,
-    ) -> None:
-        name = 'buried_histidine' if name is None else f'buried_histidine_{name}'
-        super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight)
-        self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
-        self.target_count = int(target_count)
-        self.sasa_cutoff = float(sasa_cutoff)
-        assert self.target_count > 0, 'target_count must be positive'
-        assert 0.0 < self.sasa_cutoff <= 1.0, 'sasa_cutoff must lie in (0, 1]'
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be a FoldingOracle'
-
-    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
-        structure = oracles_result.get_structure(self.oracle)
-        if len(structure) == 0:
-            return 0.0, 0.0
-
-        chain_ids, res_ids, res_names, relative = _relative_residue_sasa(structure)
-
-        selected = np.full(len(res_ids), True)
-        if len(self.residue_groups) > 0:
-            group_chains, group_indices = self.residue_groups[0]
-            selected = np.zeros(len(res_ids), dtype=bool)
-            for cid in np.unique(group_chains):
-                wanted = group_indices[group_chains == cid]
-                selected |= (chain_ids == cid) & np.isin(res_ids, wanted)
-
-        his_mask = (res_names == 'HIS') & selected
-        if not np.any(his_mask):
-            return 0.0, 0.0
-
-        burial = 1.0 - np.minimum(relative[his_mask] / self.sasa_cutoff, 1.0)
-        value = -float(min(burial.sum(), self.target_count)) / self.target_count
-        return value, value * self.weight
-
-
-# ----------------------------------------------------------------------------
-# Energy term 2 -- keep the switch from being short-circuited.
-# ----------------------------------------------------------------------------
-class HistidineCarboxylateContactEnergy(EnergyTerm):
-    """
-    Penalises imidazole nitrogens sitting close to Asp/Glu carboxylate oxygens.
-
-    A buried His-Asp or His-Glu pair is the classic pKa-raising motif: the
-    carboxylate stabilises the protonated imidazolium, so the folded state
-    becomes *more* stable as the pH falls. That inverts the switch you want, and
-    an optimiser rewarded only for burying histidines will happily build these
-    pairs because they are excellent buried hydrogen bonds. This term prices them
-    out.
-
-    Energy = min(n_contacts, max_contacts) / max_contacts, in [0, 1]; a contact is
-    any ND1/NE2 atom within `distance_cutoff` of any OD1/OD2/OE1/OE2 atom.
-
-    Set `weight` high enough that one contact outweighs the burial reward for one
-    histidine, otherwise the trade is still worth making.
-    """
-
-    IMIDAZOLE_NITROGENS = ('ND1', 'NE2')
-    CARBOXYLATE_OXYGENS = ('OD1', 'OD2', 'OE1', 'OE2')
-
-    def __init__(
-        self,
-        oracle: FoldingOracle,
-        distance_cutoff: float = 4.5,
-        max_contacts: int = 4,
-        inheritable: bool = True,
-        weight: float = 1.0,
-        name: str | None = None,
-    ) -> None:
-        name = 'his_carboxylate' if name is None else f'his_carboxylate_{name}'
-        super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight)
-        self.residue_groups = []
-        self.distance_cutoff = float(distance_cutoff)
-        self.max_contacts = int(max_contacts)
-        assert self.max_contacts > 0, 'max_contacts must be positive'
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be a FoldingOracle'
-
-    def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
-        structure = oracles_result.get_structure(self.oracle)
-        if len(structure) == 0:
-            return 0.0, 0.0
-
-        his_mask = (structure.res_name == 'HIS') & np.isin(structure.atom_name, self.IMIDAZOLE_NITROGENS)
-        acid_mask = np.isin(structure.res_name, ('ASP', 'GLU')) & np.isin(
-            structure.atom_name, self.CARBOXYLATE_OXYGENS
-        )
-        if not np.any(his_mask) or not np.any(acid_mask):
-            return 0.0, 0.0
-
-        his_coords = structure.coord[his_mask]
-        acid_coords = structure.coord[acid_mask]
-        distances = np.linalg.norm(his_coords[:, None, :] - acid_coords[None, :, :], axis=-1)
-        n_contacts = int(np.count_nonzero(distances < self.distance_cutoff))
-
-        value = float(min(n_contacts, self.max_contacts)) / self.max_contacts
-        return value, value * self.weight
+from bagel.energies import BuriedHistidineEnergy, HistidineCarboxylateContactEnergy
 
 
 # ----------------------------------------------------------------------------
@@ -278,7 +88,6 @@ def build_system(length: int = 100, seed: int | None = None) -> tuple[bg.System,
         bg.energies.PTMEnergy(oracle=esmfold, weight=2.0),
         bg.energies.OverallPLDDTEnergy(oracle=esmfold, weight=2.0),
         bg.energies.GlobularEnergy(oracle=esmfold, weight=0.5),
-
         # --- Keep a real hydrophobic core and a polar surface. The histidines
         # are a perturbation on an otherwise normal globular protein, not a
         # replacement for one.
@@ -290,14 +99,11 @@ def build_system(length: int = 100, seed: int | None = None) -> tuple[bg.System,
         # these two weights is the single most important knob in this script. Sweep
         # it (0.1/8.0 through 1.5/2.0) before trusting any one run.
         bg.energies.HydropathyEnergy(oracle=esmfold, mode='core', weight=-0.5),
-
         # --- The switch itself.
         BuriedHistidineEnergy(oracle=esmfold, target_count=6, sasa_cutoff=0.15, weight=4.0),
-
         # --- Stop the optimiser building pKa-raising His/Asp dyads, which would
         # invert the switch. Weighted above the per-histidine burial reward.
         HistidineCarboxylateContactEnergy(oracle=esmfold, distance_cutoff=4.5, max_contacts=4, weight=3.0),
-
         # No surrogate term for the protonated state: see the module docstring.
         # The charge-mimic comparison lives in filter_designs.py instead, where
         # it runs once per finished candidate rather than once per MC step.
