@@ -1214,7 +1214,7 @@ def test_ipSAEEnergy_is_zero_if_no_pair_is_below_cutoff(
     assert energy.compute(oracles_result=oracles_result) == (0.0, 0.0)
 
 
-@pytest.mark.parametrize('direction', ['max', 'mean', '1to2', '2to1'])
+@pytest.mark.parametrize('direction', ['max', 'min', 'mean', '1to2', '2to1'])
 @pytest.mark.parametrize('cutoff', [5.0, 10.0, 25.0])
 def test_ipSAEEnergy_matches_reference_implementation(
     fake_esmfold: bg.oracles.folding.ESMFold,
@@ -1231,6 +1231,7 @@ def test_ipSAEEnergy_matches_reference_implementation(
     backward = _reference_ipsae(pae, aligned=[3, 4, 5, 6], scored=[0, 1, 2], cutoff=cutoff)
     expected = {
         'max': max(forward, backward),
+        'min': min(forward, backward),
         'mean': (forward + backward) / 2,
         '1to2': forward,
         '2to1': backward,
@@ -1291,12 +1292,13 @@ def test_ipSAEEnergy_max_direction_is_the_larger_of_the_two_directions(
     pae = np.full((7, 7), 20.0)
     pae[0, 3] = 2.0  # confident only when aligning on group 1
     results = {}
-    for direction in ('max', 'mean', '1to2', '2to1'):
+    for direction in ('max', 'min', 'mean', '1to2', '2to1'):
         energy, oracles_result = _ipsae_energy_and_result(fake_esmfold, mixed_structure_state, pae, direction=direction)
         results[direction] = energy.compute(oracles_result=oracles_result)[0]
     assert results['2to1'] == 0.0
     assert results['1to2'] < 0.0
     assert results['max'] == results['1to2']
+    assert results['min'] == results['2to1'] == 0.0, 'min is the weaker direction, which is unconfident here'
     assert np.isclose(results['mean'], results['1to2'] / 2)
 
 

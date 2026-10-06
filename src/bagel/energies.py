@@ -1027,7 +1027,9 @@ class ipSAEEnergy(EnergyTerm):
 
     The score is directional, since the PAE matrix is not symmetric: row *i* is the residue the structures are aligned
     on and column *j* the residue whose position error is measured. ``direction`` selects the direction used, or how
-    the two directions are combined. The default, 'max', is the ipSAE_max of the original implementation.
+    the two directions are combined. The default, 'max', is the ipSAE_max of the original implementation; 'min' is the
+    smaller of the two directions (the stricter score, which needs the interface to be confident both ways) and 'mean'
+    their average.
     """
 
     def __init__(
@@ -1035,7 +1037,7 @@ class ipSAEEnergy(EnergyTerm):
         oracle: FoldingOracle,
         residues: list[list[Residue]],
         pae_cutoff: float = 10.0,
-        direction: Literal['max', 'mean', '1to2', '2to1'] = 'max',
+        direction: Literal['max', 'min', 'mean', '1to2', '2to1'] = 'max',
         inheritable: bool = True,
         weight: float = 1.0,
         name: str | None = None,
@@ -1052,9 +1054,9 @@ class ipSAEEnergy(EnergyTerm):
         pae_cutoff: float = 10.0
             The cutoff value for the PAE, in Angstroms, below which a residue pair is used. The default is that of the
             original implementation.
-        direction: {'max', 'mean', '1to2', '2to1'}, default='max'
+        direction: {'max', 'min', 'mean', '1to2', '2to1'}, default='max'
             '1to2' aligns on residues of the first group and scores those of the second; '2to1' does the opposite.
-            'max' and 'mean' are the larger and the average of the two.
+            'max', 'min' and 'mean' are the larger, the smaller and the average of the two.
         inheritable: bool, default=True
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
             residue could then be added to this energy term.
@@ -1071,7 +1073,9 @@ class ipSAEEnergy(EnergyTerm):
             name = f'{base_name}_{name}'
 
         assert pae_cutoff > 0, 'pae_cutoff must be positive'
-        assert direction in ('max', 'mean', '1to2', '2to1'), "direction must be 'max', 'mean', '1to2' or '2to1'"
+        assert direction in ('max', 'min', 'mean', '1to2', '2to1'), (
+            "direction must be 'max', 'min', 'mean', '1to2' or '2to1'"
+        )
         self.pae_cutoff = pae_cutoff
         self.direction = direction
 
@@ -1126,7 +1130,12 @@ class ipSAEEnergy(EnergyTerm):
                 self._directional_ipsae(pae, group_1_mask, group_2_mask),
                 self._directional_ipsae(pae, group_2_mask, group_1_mask),
             ]
-            ipsae = max(both) if self.direction == 'max' else float(np.mean(both))
+            if self.direction == 'max':
+                ipsae = max(both)
+            elif self.direction == 'min':
+                ipsae = min(both)
+            else:
+                ipsae = float(np.mean(both))
 
         value = -ipsae  # negative because you want it to be interpreted as an energy
         return value, value * self.weight
