@@ -146,7 +146,7 @@ wheels = [
 
 [[package]]
 name = "biobagel"
-version = "0.2.6"
+version = "0.2.8"
 source = { editable = "." }
 dependencies = [
     { name = "biotite" },
