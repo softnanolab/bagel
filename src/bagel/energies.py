@@ -1358,11 +1358,11 @@ class SeparationEnergy(EnergyTerm):
         self,
         oracle: FoldingOracle,
         residues: tuple[list[Residue], list[Residue]],
-        distance: Literal['mean', 'min'] = 'mean',
         function: Callable[[float], float] | None = None,
         inheritable: bool = True,
         weight: float = 1.0,
         name: str | None = None,
+        distance: Literal['mean', 'min'] = 'mean',
     ) -> None:
         """
         Initialises separation energy class.
@@ -1373,10 +1373,6 @@ class SeparationEnergy(EnergyTerm):
             The oracle to use for the energy term.
         residues: tuple[list[Residue],list[Residue]]
             A tuple containing two lists of residues, those to include in the first [0] and second [1] group.
-        distance: {'mean', 'min'}, default='mean'
-            How the separation between the two groups is measured. 'mean' is the distance between the centroids
-            of the backbone atoms of each group. 'min' is the minimum distance between any CB atom (CA for
-            glycine) of a residue in the first group and any CB atom (CA for glycine) of a residue in the second.
         function: Callable[[float], float] | None
             Optional callable f(x) applied to the separation x (in Å) before weighting.
             If None, the identity function is used (i.e., energy equals the distance).
@@ -1387,6 +1383,10 @@ class SeparationEnergy(EnergyTerm):
             The weight of the energy term.
         name: str | None = None
             Optional name to append to the energy term name.
+        distance: {'mean', 'min'}, default='mean'
+            How the separation between the two groups is measured. 'mean' is the distance between the centroids
+            of the backbone atoms of each group. 'min' is the minimum distance between any CB atom (CA for
+            glycine) of a residue in the first group and any CB atom (CA for glycine) of a residue in the second.
         """
         if name is None:
             name = 'separation'
