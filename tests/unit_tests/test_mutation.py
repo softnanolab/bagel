@@ -483,6 +483,14 @@ def test_InverseFoldingSampling_propose_amino_acid_does_not_underflow_at_low_tem
     assert draws == {'W'}
 
 
+def test_InverseFoldingSampling_propose_amino_acid_handles_tiny_positive_temperature() -> None:
+    """Even a denormal temperature must give a valid (greedy) proposal rather than NaN weights."""
+    mutator = bg.mutation.InverseFoldingSampling(oracle=object(), mutation_bias={aa: 1.0 for aa in _AAS})
+    probabilities = {aa: 0.0 for aa in _AAS} | {'A': 0.5, 'W': 0.3, 'Y': 0.2}
+    draws = {mutator.propose_amino_acid(probabilities, 'A', temperature=1e-310) for _ in range(50)}
+    assert draws == {'W'}
+
+
 def test_InverseFoldingSampling_propose_amino_acid_rejects_non_positive_temperature() -> None:
     mutator = bg.mutation.InverseFoldingSampling(oracle=object(), mutation_bias={aa: 1.0 for aa in _AAS})
     with pytest.raises(ValueError, match='positive'):

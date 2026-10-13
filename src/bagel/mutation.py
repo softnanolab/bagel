@@ -517,8 +517,10 @@ class InverseFoldingSampling(MutationProtocol):
             raise ValueError(f'No valid mutation targets after excluding current AA={current_aa}.')
         with np.errstate(divide='ignore'):  # log(0) = -inf for the excluded amino acids is intended
             log_probs = np.log(np.array([probabilities[a] for a in aa_keys], dtype=float))
-        log_probs = np.where(allowed, log_probs / temperature, -np.inf)
-        probs = np.exp(log_probs - log_probs[allowed].max())
+        # shift by the largest allowed log-probability *before* dividing, so that the best alternative always has
+        # weight exp(0) = 1 and tiny temperatures cannot turn every weight into -inf (and the ratios into NaN)
+        log_probs = np.where(allowed, (log_probs - log_probs[allowed].max()) / temperature, -np.inf)
+        probs = np.exp(log_probs)
         return str(np.random.choice(aa_keys, p=probs / probs.sum()))
 
     def one_step(
