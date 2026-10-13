@@ -199,13 +199,11 @@ class ESM3(EmbeddingOracle):
         structure: AtomArray,
         chain_id: str,
         residue_index: int,
-        temperature: float = 1.0,
     ) -> dict[str, float]:
         """Probability of each amino acid at one residue, given the rest of the sequence and a structure.
 
         Only the residue at (``chain_id``, ``residue_index``) is masked; all other residues keep their
-        current identity. The structure is used as conditioning input. The probabilities are
-        ``softmax(logits / temperature)``.
+        current identity. The structure is used as conditioning input.
 
         Parameters
         ----------
@@ -217,18 +215,12 @@ class ESM3(EmbeddingOracle):
             ID of the chain containing the residue to predict.
         residue_index : int
             Index of the residue within its chain.
-        temperature : float, optional
-            Sampling temperature applied to the logits (default 1.0, i.e. the raw model distribution). Lower
-            values sharpen the distribution. Note that ESM3 recommends not sampling above 0.1, as the distribution
-            then becomes close to uniform; ``InverseFoldingSampling`` enforces that cap.
 
         Returns
         -------
         dict[str, float]
             Probability for each of the 20 standard amino acids (sums to 1).
         """
-        if temperature <= 0.0:
-            raise ValueError(f'temperature must be positive, got {temperature}')
         offset = 0
         for chain in chains:
             if chain.chain_ID == chain_id:
@@ -247,7 +239,7 @@ class ESM3(EmbeddingOracle):
         logits = np.asarray(output.logits, dtype=np.float64)
         if logits.shape != (1, len(output.amino_acids)):
             raise ValueError(f'Unexpected ESM3 inverse-folding logits shape {logits.shape}')
-        probabilities = _softmax(logits[0] / temperature)
+        probabilities = _softmax(logits[0])
         return dict(zip(output.amino_acids, probabilities.tolist()))
 
     def _post_process(self, output: 'ESM3Output', chains: list[Chain]) -> ESM3Result:

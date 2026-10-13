@@ -384,9 +384,11 @@ class GrandCanonical(MutationProtocol):
             chain = self.choose_chain(mutated_system)
 
             # Now pick a move to make among removal, addition, or mutation
-            assert self.move_probabilities.keys() == {'substitution', 'addition', 'removal'}, (
-                'Move probabilities must be mutation, addition and removal'
-            )
+            assert self.move_probabilities.keys() == {
+                'substitution',
+                'addition',
+                'removal',
+            }, 'Move probabilities must be mutation, addition and removal'
             move = np.random.choice(
                 list(self.move_probabilities.keys()),
                 p=list(self.move_probabilities.values()),
@@ -412,13 +414,14 @@ class InverseFoldingSampling(MutationProtocol):
     sequence and the currently folded structure, (3) the probability of the current amino acid is set to 0, the
     distribution renormalised, and the new residue sampled from it. Chains cannot be added or removed.
 
-    The inverse folding probabilities are tempered, i.e. computed as ``softmax(logits / T)``, with
-    ``T = min(MAX_TEMPERATURE, temperature)`` where ``temperature`` is the one passed to ``one_step`` (the minimizer
-    passes the Monte Carlo temperature of the current step, i.e. the one used to accept or reject the mutation) and
-    ``MAX_TEMPERATURE = 0.1``. The cap is there because ESM3 specifically recommends not sampling sequences above
-    temperature 0.1: above that, the distribution is so flat that the proposals are essentially random, and there is
-    little to no difference compared to using the ``Canonical`` random-substitution protocol. If no temperature is
-    passed, ``MAX_TEMPERATURE`` is used.
+    The inverse folding probabilities are tempered: once the current amino acid and the excluded ones are removed,
+    the remaining probabilities are raised to ``1 / T`` and renormalised (equivalent to ``softmax(logits / T)`` over
+    the allowed alternatives), with ``T = min(MAX_TEMPERATURE, temperature)`` where ``temperature`` is the one passed
+    to ``one_step`` (the minimizer passes the Monte Carlo temperature of the current step, i.e. the one used to
+    accept or reject the mutation) and ``MAX_TEMPERATURE = 0.1``. The cap is there because ESM3 specifically
+    recommends not sampling sequences above temperature 0.1: above that, the distribution is so flat that the
+    proposals are essentially random, and there is little to no difference compared to using the ``Canonical``
+    random-substitution protocol. If no temperature is passed, ``MAX_TEMPERATURE`` is used.
 
     The structure is taken from the (cached, else freshly computed) result of a folding oracle used by a State
     containing the chosen chain; if several States contain it, one is picked at random. Amino acids with zero (or
@@ -497,17 +500,28 @@ class InverseFoldingSampling(MutationProtocol):
             raise ValueError(f'Inverse folding sampling temperature must be positive, got {temperature}')
         return effective
 
-    def propose_amino_acid(self, probabilities: Dict[str, float], current_aa: str) -> str:
-        """Zero the probability of ``current_aa`` and of amino acids excluded by ``mutation_bias``, renormalise, sample."""
+    def propose_amino_acid(self, probabilities: Dict[str, float], current_aa: str, temperature: float = 1.0) -> str:
+        """
+        Sample the new amino acid from the tempered inverse folding distribution.
+
+        ``current_aa`` and the amino acids excluded by ``mutation_bias`` (zero or missing) are removed, the remaining
+        probabilities are raised to ``1 / temperature`` and renormalised, and the new amino acid is sampled. The
+        tempering is done in log space and only over the allowed alternatives, so a very likely current amino acid
+        cannot make every alternative underflow to zero at low temperatures.
+        """
+        if temperature <= 0.0:
+            raise ValueError(f'temperature must be positive, got {temperature}')
         aa_keys = list(probabilities.keys())
-        probs = np.array(
-            [0.0 if (a == current_aa or self.mutation_bias.get(a, 0.0) <= 0.0) else probabilities[a] for a in aa_keys],
-            dtype=float,
+        allowed = np.array(
+            [a != current_aa and self.mutation_bias.get(a, 0.0) > 0.0 and probabilities[a] > 0.0 for a in aa_keys]
         )
-        total = probs.sum()
-        if total <= 0:
+        if not allowed.any():
             raise ValueError(f'No valid mutation targets after excluding current AA={current_aa}.')
-        return str(np.random.choice(aa_keys, p=probs / total))
+        with np.errstate(divide='ignore'):  # log(0) = -inf for the excluded amino acids is intended
+            log_probs = np.log(np.array([probabilities[a] for a in aa_keys], dtype=float))
+        log_probs = np.where(allowed, log_probs / temperature, -np.inf)
+        probs = np.exp(log_probs - log_probs[allowed].max())
+        return str(np.random.choice(aa_keys, p=probs / probs.sum()))
 
     def one_step(
         self,
@@ -545,13 +559,9 @@ class InverseFoldingSampling(MutationProtocol):
                 # corresponding unmutated state of the input system.
                 structures[state.name] = self._get_structure(system.states[state_index])
             probabilities = self._get_oracle().inverse_fold(
-                chains=state.chains,
-                structure=structures[state.name],
-                chain_id=chain.chain_ID,
-                residue_index=index,
-                temperature=sampling_temperature,
+                chains=state.chains, structure=structures[state.name], chain_id=chain.chain_ID, residue_index=index
             )
-            amino_acid = self.propose_amino_acid(probabilities, current_aa)
+            amino_acid = self.propose_amino_acid(probabilities, current_aa, temperature=sampling_temperature)
             chain.mutate_residue(index=index, amino_acid=amino_acid)
             mutations.append(
                 Mutation(

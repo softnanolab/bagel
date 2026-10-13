@@ -262,14 +262,10 @@ class _StubInverseFoldingOracle:
         self.probabilities = probabilities
         self.calls: list[dict] = []
 
-    def inverse_fold(self, chains, structure, chain_id, residue_index, temperature=1.0):
+    def inverse_fold(self, chains, structure, chain_id, residue_index):
+        # deliberately the pre-temperature signature: tempering is the mutator's job, not the oracle's
         self.calls.append(
-            {
-                'sequences': [c.sequence for c in chains],
-                'chain_id': chain_id,
-                'residue_index': residue_index,
-                'temperature': temperature,
-            }
+            {'sequences': [c.sequence for c in chains], 'chain_id': chain_id, 'residue_index': residue_index}
         )
         return dict(self.probabilities)
 
@@ -447,15 +443,50 @@ def test_InverseFoldingSampling_sampling_temperature_rejects_non_positive(temper
 
 @patch.object(bg.System, 'get_total_energy')
 @pytest.mark.parametrize('temperature, expected', [(None, 0.1), (0.02, 0.02), (1.0, 0.1)])
-def test_InverseFoldingSampling_one_step_passes_capped_temperature_to_oracle(
-    mocked_energy: Mock, energies_system: bg.System, temperature, expected
+def test_InverseFoldingSampling_one_step_samples_at_capped_temperature(
+    mocked_energy: Mock, energies_system: bg.System, temperature, expected, monkeypatch
 ) -> None:
     oracle = _StubInverseFoldingOracle({aa: 1 / 20 for aa in _AAS})
     mutator = bg.mutation.InverseFoldingSampling(oracle=oracle, n_mutations=2)
+    used: list[float] = []
+    original = mutator.propose_amino_acid
+
+    def recording(probabilities, current_aa, temperature=1.0):
+        used.append(temperature)
+        return original(probabilities, current_aa, temperature=temperature)
+
+    monkeypatch.setattr(mutator, 'propose_amino_acid', recording)
 
     mutator.one_step(energies_system, temperature=temperature)
 
-    assert [call['temperature'] for call in oracle.calls] == [pytest.approx(expected)] * 2
+    assert used == [pytest.approx(expected)] * 2
+    assert len(oracle.calls) == 2  # the oracle keeps its original call signature (no temperature argument)
+
+
+def test_InverseFoldingSampling_propose_amino_acid_tempers_allowed_alternatives() -> None:
+    mutator = bg.mutation.InverseFoldingSampling(oracle=object(), mutation_bias={aa: 1.0 for aa in _AAS})
+    probabilities = {aa: 0.0 for aa in _AAS} | {'A': 0.5, 'W': 0.3, 'Y': 0.2}
+    # at T=0.1 the W:Y odds go from 3:2 to 3**10 : 2**10, i.e. P(W) = 0.6**10 / (0.6**10 + 0.4**10) ~ 0.983
+    expected = 0.6**10 / (0.6**10 + 0.4**10)
+    np.random.seed(0)
+    draws = [mutator.propose_amino_acid(probabilities, 'A', temperature=0.1) for _ in range(4000)]
+    assert set(draws) == {'W', 'Y'}
+    assert abs(draws.count('W') / len(draws) - expected) < 0.01
+
+
+def test_InverseFoldingSampling_propose_amino_acid_does_not_underflow_at_low_temperature() -> None:
+    """A dominant current amino acid must not zero out every alternative when the temperature is very low."""
+    mutator = bg.mutation.InverseFoldingSampling(oracle=object(), mutation_bias={aa: 1.0 for aa in _AAS})
+    probabilities = {aa: 1e-11 for aa in _AAS} | {'A': 1 - 19e-11, 'W': 1e-10}
+    # naively, (1e-10) ** (1 / 0.001) underflows to 0 and sampling would fail; in log space W is simply the argmax
+    draws = {mutator.propose_amino_acid(probabilities, 'A', temperature=0.001) for _ in range(50)}
+    assert draws == {'W'}
+
+
+def test_InverseFoldingSampling_propose_amino_acid_rejects_non_positive_temperature() -> None:
+    mutator = bg.mutation.InverseFoldingSampling(oracle=object(), mutation_bias={aa: 1.0 for aa in _AAS})
+    with pytest.raises(ValueError, match='positive'):
+        mutator.propose_amino_acid({aa: 0.05 for aa in _AAS}, 'A', temperature=0.0)
 
 
 @pytest.mark.parametrize('protocol', [bg.mutation.Canonical, bg.mutation.GrandCanonical])
