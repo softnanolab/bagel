@@ -273,12 +273,32 @@ class MonteCarloMinimizer(Minimizer):
 
         return system, should_stop
 
+    def _mutator_accepts_temperature(self) -> bool:
+        """
+        Whether ``self.mutator.one_step`` takes a ``temperature`` argument.
+
+        Kept for backwards compatibility: custom ``MutationProtocol`` subclasses written before ``temperature`` was
+        added to ``one_step`` only accept ``system``, and still work (they just do not receive the temperature).
+        """
+        try:
+            parameters = inspect.signature(self.mutator.one_step).parameters
+        except (TypeError, ValueError):  # e.g. a Mock or a builtin without an inspectable signature
+            return True
+        return 'temperature' in parameters or any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()
+        )
+
     def minimize_one_step(self, step: int, system: System) -> tuple[System, bool]:
         """Perform one Monte Carlo step."""
-        mutated_system, _ = self.mutator.one_step(system.__copy__())
+        temperature = float(self.temperature_schedule[step - 1])
+        # the mutator receives the acceptance temperature so that model-based protocols can temper their proposals
+        if self._mutator_accepts_temperature():
+            mutated_system, _ = self.mutator.one_step(system.__copy__(), temperature=temperature)
+        else:
+            mutated_system, _ = self.mutator.one_step(system.__copy__())
         delta_energy = mutated_system.get_total_energy() - system.get_total_energy()
 
-        acceptance_probability = self.acceptance_criterion(delta_energy, self.temperature_schedule[step - 1])
+        acceptance_probability = self.acceptance_criterion(delta_energy, temperature)
         logger.debug(f'{delta_energy=}, {acceptance_probability=}')
 
         if acceptance_probability > np.random.uniform(low=0.0, high=1.0):

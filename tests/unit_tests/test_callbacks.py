@@ -628,7 +628,7 @@ def test_callbacks_integrated_into_minimizer(temp_log_path, simple_system):
     callback = TestCallback()
     mock_mutator = Mock()
 
-    def mock_one_step(system):
+    def mock_one_step(system, temperature=None):
         """Mock mutator that returns a copy with calculated energy."""
         copied_system = system.__copy__()
         # Ensure energy is calculated on the copied system
@@ -668,7 +668,7 @@ def test_early_stopping_stops_optimization(temp_log_path, simple_system):
     step_counter = StepCounter()
     mock_mutator = Mock()
 
-    def mock_one_step(system):
+    def mock_one_step(system, temperature=None):
         """Mock mutator that returns a copy with calculated energy."""
         copied_system = system.__copy__()
         # Ensure energy is calculated on the copied system
@@ -697,7 +697,7 @@ def test_no_callbacks_backward_compatibility(temp_log_path, simple_system):
     """Test that minimizer works with no callbacks (backward compatibility)."""
     mock_mutator = Mock()
 
-    def mock_one_step(system):
+    def mock_one_step(system, temperature=None):
         """Mock mutator that returns a copy with calculated energy."""
         copied_system = system.__copy__()
         # Ensure energy is calculated on the copied system
