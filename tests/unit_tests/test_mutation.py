@@ -486,3 +486,16 @@ def test_minimizer_passes_step_temperature_to_mutator(energies_system: bg.System
     )
     minimizer.minimize_system(energies_system)
     assert received == pytest.approx(schedule)
+
+
+def test_minimizer_supports_legacy_mutator_without_temperature_argument(energies_system: bg.System, tmp_path) -> None:
+    """Custom protocols written before ``temperature`` was added to ``one_step`` keep working."""
+
+    class LegacyMutator(bg.mutation.MutationProtocol):
+        def one_step(self, system):  # type: ignore[override]
+            return system.__copy__(), bg.mutation.MutationRecord(mutations=[])
+
+    minimizer = bg.minimizer.MonteCarloMinimizer(
+        mutator=LegacyMutator(), temperature=1.0, n_steps=2, experiment_name='test', log_path=tmp_path
+    )
+    minimizer.minimize_system(energies_system)  # must not raise TypeError
