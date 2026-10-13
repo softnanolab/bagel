@@ -57,6 +57,7 @@ class MutationProtocol(ABC):
     def one_step(
         self,
         system: System,
+        temperature: float | None = None,
     ) -> tuple[System, MutationRecord]:
         """
         Abstract method for performing a single mutation step.
@@ -65,6 +66,10 @@ class MutationProtocol(ABC):
         ----------
         system : System
             The system to be mutated
+        temperature : float, optional
+            Temperature of the current Monte Carlo step, i.e. the one the minimizer uses to accept or reject the
+            proposed mutation. Protocols that propose mutations at random ignore it; protocols that sample from a
+            model may use it to temper their proposal distribution (see ``InverseFoldingSampling``).
 
         Returns
         -------
@@ -254,7 +259,9 @@ class Canonical(MutationProtocol):
     def one_step(
         self,
         system: System,
+        temperature: float | None = None,
     ) -> tuple[System, MutationRecord]:
+        # temperature is accepted for interface compatibility only: proposals here are random, not tempered
         mutated_system = system.__copy__()
         mutations: list[Mutation] = []
 
@@ -367,7 +374,9 @@ class GrandCanonical(MutationProtocol):
     def one_step(
         self,
         system: System,
+        temperature: float | None = None,
     ) -> tuple[System, MutationRecord]:
+        # temperature is accepted for interface compatibility only: proposals here are random, not tempered
         mutated_system = system.__copy__()
         mutations: list[Mutation] = []
 
@@ -403,6 +412,14 @@ class InverseFoldingSampling(MutationProtocol):
     sequence and the currently folded structure, (3) the probability of the current amino acid is set to 0, the
     distribution renormalised, and the new residue sampled from it. Chains cannot be added or removed.
 
+    The inverse folding probabilities are tempered, i.e. computed as ``softmax(logits / T)``, with
+    ``T = min(MAX_TEMPERATURE, temperature)`` where ``temperature`` is the one passed to ``one_step`` (the minimizer
+    passes the Monte Carlo temperature of the current step, i.e. the one used to accept or reject the mutation) and
+    ``MAX_TEMPERATURE = 0.1``. The cap is there because ESM3 specifically recommends not sampling sequences above
+    temperature 0.1: above that, the distribution is so flat that the proposals are essentially random, and there is
+    little to no difference compared to using the ``Canonical`` random-substitution protocol. If no temperature is
+    passed, ``MAX_TEMPERATURE`` is used.
+
     The structure is taken from the (cached, else freshly computed) result of a folding oracle used by a State
     containing the chosen chain; if several States contain it, one is picked at random. Amino acids with zero (or
     missing) ``mutation_bias`` are excluded: their probability is set to 0 before renormalising. Non-zero bias
@@ -421,6 +438,7 @@ class InverseFoldingSampling(MutationProtocol):
     """
 
     SUPPORTED_METHODS = ('ESM3',)
+    MAX_TEMPERATURE = 0.1  # ESM3 recommends against sampling above 0.1: beyond that proposals are basically random
 
     def __init__(
         self,
@@ -461,6 +479,24 @@ class InverseFoldingSampling(MutationProtocol):
             state._oracles_result[oracle] = oracle.predict(chains=state.chains)
         return state._oracles_result.get_structure(oracle)
 
+    @classmethod
+    def sampling_temperature(cls, temperature: float | None) -> float:
+        """
+        Temperature at which the inverse folding model is sampled: ``min(MAX_TEMPERATURE, temperature)``.
+
+        ``temperature`` is the Monte Carlo temperature that BAGEL uses to accept or reject the proposed mutation.
+        It is capped at ``MAX_TEMPERATURE = 0.1`` because ESM3 says specifically to avoid sampling above 0.1: at
+        higher temperatures the sequences are proposed basically at random, so there would be little to no
+        difference compared to random sampling. ``None`` (no Monte Carlo temperature available) gives
+        ``MAX_TEMPERATURE``.
+        """
+        if temperature is None:
+            return cls.MAX_TEMPERATURE
+        effective = min(cls.MAX_TEMPERATURE, float(temperature))
+        if effective <= 0.0:
+            raise ValueError(f'Inverse folding sampling temperature must be positive, got {temperature}')
+        return effective
+
     def propose_amino_acid(self, probabilities: Dict[str, float], current_aa: str) -> str:
         """Zero the probability of ``current_aa`` and of amino acids excluded by ``mutation_bias``, renormalise, sample."""
         aa_keys = list(probabilities.keys())
@@ -476,7 +512,22 @@ class InverseFoldingSampling(MutationProtocol):
     def one_step(
         self,
         system: System,
+        temperature: float | None = None,
     ) -> tuple[System, MutationRecord]:
+        """
+        Perform ``n_mutations`` inverse-folding substitutions.
+
+        Parameters
+        ----------
+        system : System
+            The system to be mutated.
+        temperature : float, optional
+            Monte Carlo temperature of the current step (the one BAGEL uses to accept or reject the mutation). The
+            inverse folding model is sampled at ``min(0.1, temperature)``: ESM3 says specifically to avoid sampling
+            above 0.1, since above that sequences are proposed basically at random and there is little to no
+            difference compared to random sampling. See ``sampling_temperature``.
+        """
+        sampling_temperature = self.sampling_temperature(temperature)
         mutated_system = system.__copy__()
         mutations: list[Mutation] = []
         structures: dict[str, Any] = {}  # per step, so later mutations reuse the structure of the unmutated system
@@ -494,7 +545,11 @@ class InverseFoldingSampling(MutationProtocol):
                 # corresponding unmutated state of the input system.
                 structures[state.name] = self._get_structure(system.states[state_index])
             probabilities = self._get_oracle().inverse_fold(
-                chains=state.chains, structure=structures[state.name], chain_id=chain.chain_ID, residue_index=index
+                chains=state.chains,
+                structure=structures[state.name],
+                chain_id=chain.chain_ID,
+                residue_index=index,
+                temperature=sampling_temperature,
             )
             amino_acid = self.propose_amino_acid(probabilities, current_aa)
             chain.mutate_residue(index=index, amino_acid=amino_acid)

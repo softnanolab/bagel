@@ -275,10 +275,12 @@ class MonteCarloMinimizer(Minimizer):
 
     def minimize_one_step(self, step: int, system: System) -> tuple[System, bool]:
         """Perform one Monte Carlo step."""
-        mutated_system, _ = self.mutator.one_step(system.__copy__())
+        temperature = float(self.temperature_schedule[step - 1])
+        # the mutator receives the acceptance temperature so that model-based protocols can temper their proposals
+        mutated_system, _ = self.mutator.one_step(system.__copy__(), temperature=temperature)
         delta_energy = mutated_system.get_total_energy() - system.get_total_energy()
 
-        acceptance_probability = self.acceptance_criterion(delta_energy, self.temperature_schedule[step - 1])
+        acceptance_probability = self.acceptance_criterion(delta_energy, temperature)
         logger.debug(f'{delta_energy=}, {acceptance_probability=}')
 
         if acceptance_probability > np.random.uniform(low=0.0, high=1.0):

@@ -228,6 +228,29 @@ class TestInverseFold:
         assert np.isclose(sum(probabilities.values()), 1.0)
         assert np.isclose(probabilities['E'], 0.5)
 
+    def test_temperature_tempers_the_distribution(self, monkeypatch):
+        logits = np.zeros((1, 20))
+        logits[0, 3] = 1.0  # 'E'
+        chains = _two_chains()
+        structure = _backbone_structure(chains)
+
+        raw = self._oracle(monkeypatch, logits, []).inverse_fold(chains, structure, chain_id='A', residue_index=0)
+        cold = self._oracle(monkeypatch, logits, []).inverse_fold(
+            chains, structure, chain_id='A', residue_index=0, temperature=0.1
+        )
+
+        assert np.isclose(sum(cold.values()), 1.0)
+        assert cold['E'] > raw['E']  # lower temperature sharpens the distribution
+        expected = np.exp(logits[0] / 0.1)
+        expected /= expected.sum()
+        assert np.allclose(list(cold.values()), expected)
+
+    def test_non_positive_temperature_raises(self, monkeypatch):
+        oracle = self._oracle(monkeypatch, np.zeros((1, 20)), [])
+        chains = _two_chains()
+        with pytest.raises(ValueError, match='positive'):
+            oracle.inverse_fold(chains, _backbone_structure(chains), chain_id='A', residue_index=0, temperature=0.0)
+
     def test_unknown_chain_and_bad_index_raise(self, monkeypatch):
         oracle = self._oracle(monkeypatch, np.zeros((1, 20)), [])
         chains = _two_chains()

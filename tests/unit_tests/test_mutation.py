@@ -1,4 +1,5 @@
 from unittest.mock import patch, Mock
+import pytest
 import numpy as np
 import bagel as bg
 
@@ -261,9 +262,14 @@ class _StubInverseFoldingOracle:
         self.probabilities = probabilities
         self.calls: list[dict] = []
 
-    def inverse_fold(self, chains, structure, chain_id, residue_index):
+    def inverse_fold(self, chains, structure, chain_id, residue_index, temperature=1.0):
         self.calls.append(
-            {'sequences': [c.sequence for c in chains], 'chain_id': chain_id, 'residue_index': residue_index}
+            {
+                'sequences': [c.sequence for c in chains],
+                'chain_id': chain_id,
+                'residue_index': residue_index,
+                'temperature': temperature,
+            }
         )
         return dict(self.probabilities)
 
@@ -421,3 +427,62 @@ def test_InverseFoldingSampling_structures_come_from_unmutated_states_when_chain
     # the oracle still receives the (mutated) chains of the copied states
     assert oracle.calls[0]['sequences'] == [['AAAAA'][0]]
     assert oracle.calls[1]['sequences'] != ['AAAAA']
+
+
+@pytest.mark.parametrize(
+    'temperature, expected',
+    [(None, 0.1), (0.05, 0.05), (0.1, 0.1), (0.5, 0.1), (2.0, 0.1)],
+)
+def test_InverseFoldingSampling_sampling_temperature_is_capped_at_0_1(temperature, expected) -> None:
+    """ESM3 advises against sampling above 0.1, so the Monte Carlo temperature is capped: T = min(0.1, T_MC)."""
+    assert bg.mutation.InverseFoldingSampling.MAX_TEMPERATURE == 0.1
+    assert bg.mutation.InverseFoldingSampling.sampling_temperature(temperature) == pytest.approx(expected)
+
+
+@pytest.mark.parametrize('temperature', [0.0, -1.0])
+def test_InverseFoldingSampling_sampling_temperature_rejects_non_positive(temperature) -> None:
+    with pytest.raises(ValueError, match='positive'):
+        bg.mutation.InverseFoldingSampling.sampling_temperature(temperature)
+
+
+@patch.object(bg.System, 'get_total_energy')
+@pytest.mark.parametrize('temperature, expected', [(None, 0.1), (0.02, 0.02), (1.0, 0.1)])
+def test_InverseFoldingSampling_one_step_passes_capped_temperature_to_oracle(
+    mocked_energy: Mock, energies_system: bg.System, temperature, expected
+) -> None:
+    oracle = _StubInverseFoldingOracle({aa: 1 / 20 for aa in _AAS})
+    mutator = bg.mutation.InverseFoldingSampling(oracle=oracle, n_mutations=2)
+
+    mutator.one_step(energies_system, temperature=temperature)
+
+    assert [call['temperature'] for call in oracle.calls] == [pytest.approx(expected)] * 2
+
+
+@pytest.mark.parametrize('protocol', [bg.mutation.Canonical, bg.mutation.GrandCanonical])
+@patch.object(bg.System, 'get_total_energy')
+def test_random_protocols_accept_and_ignore_temperature(
+    mocked_energy: Mock, energies_system: bg.System, protocol
+) -> None:
+    np.random.seed(0)
+    _, record_without = protocol().one_step(energies_system)
+    np.random.seed(0)
+    _, record_with = protocol().one_step(energies_system, temperature=5.0)
+    assert record_with == record_without
+
+
+def test_minimizer_passes_step_temperature_to_mutator(energies_system: bg.System, tmp_path) -> None:
+    """The mutator receives the same temperature the minimizer uses to accept or reject that step."""
+    received: list[float] = []
+
+    def one_step(system, temperature=None):
+        received.append(temperature)
+        return system.__copy__(), Mock()
+
+    mutator = Mock()
+    mutator.one_step = one_step
+    schedule = [0.3, 0.2, 0.1]
+    minimizer = bg.minimizer.MonteCarloMinimizer(
+        mutator=mutator, temperature=schedule, n_steps=len(schedule), experiment_name='test', log_path=tmp_path
+    )
+    minimizer.minimize_system(energies_system)
+    assert received == pytest.approx(schedule)
