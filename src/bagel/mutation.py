@@ -384,11 +384,9 @@ class GrandCanonical(MutationProtocol):
             chain = self.choose_chain(mutated_system)
 
             # Now pick a move to make among removal, addition, or mutation
-            assert self.move_probabilities.keys() == {
-                'substitution',
-                'addition',
-                'removal',
-            }, 'Move probabilities must be mutation, addition and removal'
+            assert self.move_probabilities.keys() == {'substitution', 'addition', 'removal'}, (
+                'Move probabilities must be mutation, addition and removal'
+            )
             move = np.random.choice(
                 list(self.move_probabilities.keys()),
                 p=list(self.move_probabilities.values()),
