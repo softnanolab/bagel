@@ -14,6 +14,7 @@ inlined with their provenance rather than imported.
 """
 
 import logging
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -193,6 +194,107 @@ class ESM3(EmbeddingOracle):
         output = self.model.embed(self._pre_process(chains), options=options)
         return self._post_process(output, chains)
 
+    @staticmethod
+    def _chain_offset(chains: list[Chain], chain_id: str) -> tuple[int, Chain]:
+        """Offset of ``chain_id``'s first residue within the concatenated chains, and the chain itself.
+
+        Residue indices handed to boileroom count over every residue of the complex (chain breaks
+        excluded), so a per-chain index has to be shifted by the lengths of the chains before it.
+
+        Parameters
+        ----------
+        chains : list[Chain]
+            Chains making up the complex, in the order they are passed to the model.
+        chain_id : str
+            ID of the chain to locate.
+
+        Returns
+        -------
+        tuple[int, Chain]
+            The offset and the matching chain.
+
+        Raises
+        ------
+        ValueError
+            If no chain has that ID.
+        """
+        offset = 0
+        for chain in chains:
+            if chain.chain_ID == chain_id:
+                return offset, chain
+            offset += chain.length
+        raise ValueError(f'Chain {chain_id!r} not found among chains {[c.chain_ID for c in chains]}')
+
+    def inverse_generate(
+        self,
+        chains: list[Chain],
+        structure: AtomArray,
+        chain_id: str,
+        residue_indices: Sequence[int],
+        temperature: float = 0.1,
+        seed: int | None = None,
+        excluded_amino_acids: str = '',
+    ) -> dict[int, str]:
+        """Jointly redesign several residues of one chain, given the rest of the complex and a structure.
+
+        The residues at ``residue_indices`` are masked together and decoded over several iterative
+        rounds, so each is sampled in the context of the ones already decoded. Everything else,
+        including the other chains, stays fixed, and the structure is conditioning input throughout.
+
+        Unlike :meth:`inverse_fold`, which returns a distribution, this returns sampled residues:
+        the model may well return the residue that is already there at some positions.
+
+        Parameters
+        ----------
+        chains : list[Chain]
+            Chains making up the (possibly multichain) complex the structure was predicted for.
+        structure : AtomArray
+            Folded structure of ``chains``.
+        chain_id : str
+            ID of the chain containing the residues to redesign.
+        residue_indices : Sequence[int]
+            Indices of the residues within their chain. Must be non-empty and free of duplicates.
+        temperature : float
+            Sampling temperature. ESM3 advises staying at or below 0.1 for sequence design.
+        seed : int | None
+            Seed for the model's RNG, making the call reproducible.
+        excluded_amino_acids : str
+            One-letter codes the model may not sample, e.g. ``'C'`` to keep cysteines out.
+
+        Returns
+        -------
+        dict[int, str]
+            The sampled amino acid for each requested residue index.
+
+        Raises
+        ------
+        ValueError
+            If the chain is unknown, or ``residue_indices`` is empty, out of range or has duplicates.
+        """
+        offset, chain = self._chain_offset(chains, chain_id)
+        indices = [int(index) for index in residue_indices]
+        if not indices:
+            raise ValueError('residue_indices must not be empty.')
+        if len(set(indices)) != len(indices):
+            raise ValueError(f'residue_indices must not contain duplicates, got {indices}.')
+        out_of_range = [index for index in indices if not 0 <= index < chain.length]
+        if out_of_range:
+            raise ValueError(
+                f'residue_indices {out_of_range} out of range for chain {chain_id!r} of length {chain.length}'
+            )
+
+        output = self.model.inverse_generate(
+            self._pre_process(chains)[0],
+            backbone_coordinates(chains, structure),
+            [offset + index for index in indices],
+            temperature=temperature,
+            seed=seed,
+            excluded_amino_acids=excluded_amino_acids,
+        )
+        if len(output.residues) != len(indices):
+            raise ValueError(f'ESM3 returned {len(output.residues)} residues for {len(indices)} requested positions.')
+        return dict(zip(indices, output.residues))
+
     def inverse_fold(
         self,
         chains: list[Chain],
@@ -221,13 +323,7 @@ class ESM3(EmbeddingOracle):
         dict[str, float]
             Probability for each of the 20 standard amino acids (sums to 1).
         """
-        offset = 0
-        for chain in chains:
-            if chain.chain_ID == chain_id:
-                break
-            offset += chain.length
-        else:
-            raise ValueError(f'Chain {chain_id!r} not found among chains {[c.chain_ID for c in chains]}')
+        offset, chain = self._chain_offset(chains, chain_id)
         if not 0 <= residue_index < chain.length:
             raise ValueError(
                 f'residue_index {residue_index} out of range for chain {chain_id!r} of length {chain.length}'

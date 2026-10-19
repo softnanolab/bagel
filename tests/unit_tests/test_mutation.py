@@ -258,8 +258,9 @@ def test_GrandCanonical_allows_insertion_and_deletion_at_chain_start_and_end(
 class _StubInverseFoldingOracle:
     """Records calls and returns a fixed distribution over the 20 amino acids."""
 
-    def __init__(self, probabilities: dict[str, float]) -> None:
+    def __init__(self, probabilities: dict[str, float], generated: dict[int, str] | None = None) -> None:
         self.probabilities = probabilities
+        self.generated = generated or {}  # residue index -> residue inverse_generate should return
         self.calls: list[dict] = []
 
     def inverse_fold(self, chains, structure, chain_id, residue_index):
@@ -268,6 +269,27 @@ class _StubInverseFoldingOracle:
             {'sequences': [c.sequence for c in chains], 'chain_id': chain_id, 'residue_index': residue_index}
         )
         return dict(self.probabilities)
+
+    def inverse_generate(
+        self,
+        chains,
+        structure,
+        chain_id,
+        residue_indices,
+        temperature=0.1,
+        excluded_amino_acids='',
+    ):
+        # Joint decoding: the model samples, so the mutator does no tempering or exclusion of its own.
+        self.calls.append(
+            {
+                'sequences': [c.sequence for c in chains],
+                'chain_id': chain_id,
+                'residue_indices': list(residue_indices),
+                'temperature': temperature,
+                'excluded_amino_acids': excluded_amino_acids,
+            }
+        )
+        return {index: self.generated.get(index, 'W') for index in residue_indices}
 
 
 _AAS = 'ACDEFGHIKLMNPQRSTVWY'
@@ -348,15 +370,24 @@ def test_InverseFoldingSampling_one_step_samples_from_oracle_distribution(
 
 
 @patch.object(bg.System, 'get_total_energy')
-def test_InverseFoldingSampling_n_mutations_reuses_structure_per_step(
+def test_InverseFoldingSampling_computes_one_structure_per_step(
     mocked_energy: Mock,
     energies_system: bg.System,
+    monkeypatch,
 ) -> None:
+    """A step folds once, whatever n_mutations is: the whole proposal is conditioned on one structure."""
     oracle = _StubInverseFoldingOracle({aa: 1 / 20 for aa in _AAS})
     mutator = bg.mutation.InverseFoldingSampling(oracle=oracle, n_mutations=3)
+    structure_calls: list[object] = []
+    original = mutator._get_structure
+
+    monkeypatch.setattr(mutator, '_get_structure', lambda state: (structure_calls.append(state), original(state))[1])
+
     _, record = mutator.one_step(energies_system)
+
+    assert len(structure_calls) == 1
+    assert len(oracle.calls) == 1
     assert len(record.mutations) == 3
-    assert len(oracle.calls) == 3
 
 
 def test_InverseFoldingSampling_state_without_folding_oracle_raises() -> None:
@@ -412,42 +443,52 @@ def test_InverseFoldingSampling_structures_come_from_unmutated_states_when_chain
     oracle = _StubInverseFoldingOracle({aa: 1 / 20 for aa in _AAS})
     mutator = bg.mutation.InverseFoldingSampling(oracle=oracle, n_mutations=2)
 
-    # force the two successive mutations to pick different states: S1 first, then S2
-    picks = iter([0, 1])
-    monkeypatch.setattr(np.random, 'randint', lambda n: next(picks))
-    mutated_system, record = mutator.one_step(system)
+    monkeypatch.setattr(np.random, 'randint', lambda n: 0)  # pick state S1
+    _, record = mutator.one_step(system)
 
     assert len(record.mutations) == 2
-    # one structure per state, and every fold used the unmutated sequence
-    assert folded_sequences == [['AAAAA'], ['AAAAA']]
-    # the oracle still receives the (mutated) chains of the copied states
-    assert oracle.calls[0]['sequences'] == [['AAAAA'][0]]
-    assert oracle.calls[1]['sequences'] != ['AAAAA']
+    # the structure is taken from the unmutated input system, so the fold saw the original sequence
+    assert folded_sequences == [['AAAAA']]
+    assert oracle.calls[0]['sequences'] == ['AAAAA']
 
 
-@pytest.mark.parametrize(
-    'temperature, expected',
-    [(None, 0.1), (0.05, 0.05), (0.1, 0.1), (0.5, 0.1), (2.0, 0.1)],
-)
-def test_InverseFoldingSampling_sampling_temperature_is_capped_at_0_1(temperature, expected) -> None:
-    """ESM3 advises against sampling above 0.1, so the Monte Carlo temperature is capped: T = min(0.1, T_MC)."""
-    assert bg.mutation.InverseFoldingSampling.MAX_TEMPERATURE == 0.1
-    assert bg.mutation.InverseFoldingSampling.sampling_temperature(temperature) == pytest.approx(expected)
+def test_InverseFoldingSampling_t_sampling_proposals_defaults_to_0_1() -> None:
+    """ESM3 advises against sampling above 0.1, so that is the default; it is not a cap."""
+    assert bg.mutation.InverseFoldingSampling.DEFAULT_T_SAMPLING_PROPOSALS == 0.1
+    mutator = bg.mutation.InverseFoldingSampling(oracle=object())
+    assert mutator.proposal_temperature(0) == pytest.approx(0.1)
+    # A higher value is the caller's choice and is passed through untouched.
+    hot = bg.mutation.InverseFoldingSampling(oracle=object(), t_sampling_proposals=0.7)
+    assert hot.proposal_temperature(0) == pytest.approx(0.7)
+
+
+def test_InverseFoldingSampling_t_sampling_proposals_accepts_a_schedule() -> None:
+    """A sequence is read per step and a callable is handed the step, so a scheduler can drive it."""
+    scheduled = bg.mutation.InverseFoldingSampling(oracle=object(), t_sampling_proposals=[0.5, 0.3, 0.1])
+    assert [scheduled.proposal_temperature(step) for step in range(3)] == pytest.approx([0.5, 0.3, 0.1])
+    with pytest.raises(ValueError, match='too few for step 3'):
+        scheduled.proposal_temperature(3)
+
+    callable_schedule = bg.mutation.InverseFoldingSampling(
+        oracle=object(), t_sampling_proposals=lambda step: 1.0 / (step + 1)
+    )
+    assert [callable_schedule.proposal_temperature(step) for step in range(3)] == pytest.approx([1.0, 0.5, 1 / 3])
 
 
 @pytest.mark.parametrize('temperature', [0.0, -1.0])
-def test_InverseFoldingSampling_sampling_temperature_rejects_non_positive(temperature) -> None:
-    with pytest.raises(ValueError, match='positive'):
-        bg.mutation.InverseFoldingSampling.sampling_temperature(temperature)
+def test_InverseFoldingSampling_t_sampling_proposals_rejects_non_positive(temperature) -> None:
+    mutator = bg.mutation.InverseFoldingSampling(oracle=object(), t_sampling_proposals=temperature)
+    with pytest.raises(ValueError, match='positive temperature'):
+        mutator.proposal_temperature(0)
 
 
 @patch.object(bg.System, 'get_total_energy')
-@pytest.mark.parametrize('temperature, expected', [(None, 0.1), (0.02, 0.02), (1.0, 0.1)])
-def test_InverseFoldingSampling_one_step_samples_at_capped_temperature(
-    mocked_energy: Mock, energies_system: bg.System, temperature, expected, monkeypatch
+def test_InverseFoldingSampling_one_step_ignores_the_monte_carlo_temperature(
+    mocked_energy: Mock, energies_system: bg.System, monkeypatch
 ) -> None:
+    """The proposal temperature is the protocol's own, not the one the minimizer accepts or rejects with."""
     oracle = _StubInverseFoldingOracle({aa: 1 / 20 for aa in _AAS})
-    mutator = bg.mutation.InverseFoldingSampling(oracle=oracle, n_mutations=2)
+    mutator = bg.mutation.InverseFoldingSampling(oracle=oracle, t_sampling_proposals=0.4)
     used: list[float] = []
     original = mutator.propose_amino_acid
 
@@ -457,10 +498,32 @@ def test_InverseFoldingSampling_one_step_samples_at_capped_temperature(
 
     monkeypatch.setattr(mutator, 'propose_amino_acid', recording)
 
-    mutator.one_step(energies_system, temperature=temperature)
+    mutator.one_step(energies_system, temperature=2.0)  # Monte Carlo temperature, deliberately far from 0.4
 
-    assert used == [pytest.approx(expected)] * 2
-    assert len(oracle.calls) == 2  # the oracle keeps its original call signature (no temperature argument)
+    assert used == [pytest.approx(0.4)]
+    assert len(oracle.calls) == 1  # the oracle keeps its original call signature (no temperature argument)
+
+
+@patch.object(bg.System, 'get_total_energy')
+def test_InverseFoldingSampling_one_step_advances_the_schedule(
+    mocked_energy: Mock, energies_system: bg.System, monkeypatch
+) -> None:
+    """Each call to one_step reads the next entry of the schedule."""
+    oracle = _StubInverseFoldingOracle({aa: 1 / 20 for aa in _AAS})
+    mutator = bg.mutation.InverseFoldingSampling(oracle=oracle, t_sampling_proposals=[0.5, 0.2])
+    used: list[float] = []
+    original = mutator.propose_amino_acid
+
+    def recording(probabilities, current_aa, temperature=1.0):
+        used.append(temperature)
+        return original(probabilities, current_aa, temperature=temperature)
+
+    monkeypatch.setattr(mutator, 'propose_amino_acid', recording)
+
+    mutator.one_step(energies_system)
+    mutator.one_step(energies_system)
+
+    assert used == pytest.approx([0.5, 0.2])
 
 
 def test_InverseFoldingSampling_propose_amino_acid_tempers_allowed_alternatives() -> None:
@@ -538,3 +601,131 @@ def test_minimizer_supports_legacy_mutator_without_temperature_argument(energies
         mutator=LegacyMutator(), temperature=1.0, n_steps=2, experiment_name='test', log_path=tmp_path
     )
     minimizer.minimize_system(energies_system)  # must not raise TypeError
+
+
+def test_InverseFoldingSampling_one_mutation_keeps_the_single_residue_path() -> None:
+    """The default stays on inverse_fold, and still refuses to re-propose the current residue."""
+    mutator = bg.mutation.InverseFoldingSampling(oracle=object())
+    assert mutator.n_mutations == 1
+    assert mutator.exclude_self is True
+    # Joint decoding cannot exclude the current residue, so the flag follows n_mutations.
+    assert bg.mutation.InverseFoldingSampling(oracle=object(), n_mutations=3).exclude_self is False
+
+
+def test_InverseFoldingSampling_excluded_amino_acids_follows_mutation_bias() -> None:
+    """Zero-bias and missing amino acids are the ones the model is told not to sample."""
+    assert bg.mutation.InverseFoldingSampling(oracle=object()).excluded_amino_acids() == 'C'
+    bias = {aa: 1.0 for aa in _AAS} | {'C': 0.0, 'W': 0.0}
+    assert bg.mutation.InverseFoldingSampling(oracle=object(), mutation_bias=bias).excluded_amino_acids() == 'CW'
+    partial = {'A': 1.0, 'D': 1.0}  # every other amino acid is missing, so excluded
+    excluded = bg.mutation.InverseFoldingSampling(oracle=object(), mutation_bias=partial).excluded_amino_acids()
+    assert set(excluded) == set(_AAS) - {'A', 'D'}
+
+
+@patch.object(bg.System, 'get_total_energy')
+def test_InverseFoldingSampling_decodes_several_residues_in_one_call(
+    mocked_energy: Mock,
+    energies_system: bg.System,
+) -> None:
+    """One joint proposal masks n_mutations residues, calls the oracle once, and records every change."""
+    for state in energies_system.states:
+        for residue in state.chains[0].residues:
+            residue.name = 'A'
+    oracle = _StubInverseFoldingOracle({aa: 1 / 20 for aa in _AAS})
+    mutator = bg.mutation.InverseFoldingSampling(oracle=oracle, n_mutations=3)
+    original_sequences = [state.chains[0].sequence for state in energies_system.states]
+
+    mutated_system, record = mutator.one_step(energies_system)
+
+    assert [state.chains[0].sequence for state in energies_system.states] == original_sequences
+    assert len(oracle.calls) == 1  # one joint call, not one per residue
+    call = oracle.calls[0]
+    assert len(call['residue_indices']) == 3 and len(set(call['residue_indices'])) == 3
+    assert call['temperature'] == bg.mutation.InverseFoldingSampling.DEFAULT_T_SAMPLING_PROPOSALS
+    assert call['excluded_amino_acids'] == 'C'  # the default bias, enforced inside the model
+
+    assert len(record.mutations) == 3
+    assert {m.residue_index for m in record.mutations} == set(call['residue_indices'])
+    assert all(m.move_type == 'substitution' and m.new_amino_acid == 'W' for m in record.mutations)
+    chain = next(c for s in mutated_system.states for c in s.chains if c.chain_ID == record.mutations[0].chain_id)
+    assert all(chain.sequence[m.residue_index] == 'W' for m in record.mutations)
+
+
+@patch.object(bg.System, 'get_total_energy')
+def test_InverseFoldingSampling_does_not_record_unchanged_residues(
+    mocked_energy: Mock,
+    energies_system: bg.System,
+) -> None:
+    """Joint decoding may re-propose the residue already there; those positions are left out of the record."""
+    for state in energies_system.states:
+        for residue in state.chains[0].residues:
+            residue.name = 'A'
+    chain_length = energies_system.states[0].chains[0].length
+    # Every masked position comes back as 'A', i.e. unchanged.
+    oracle = _StubInverseFoldingOracle(
+        {aa: 1 / 20 for aa in _AAS}, generated={index: 'A' for index in range(chain_length)}
+    )
+    mutator = bg.mutation.InverseFoldingSampling(oracle=oracle, n_mutations=2)
+
+    mutated_system, record = mutator.one_step(energies_system)
+
+    assert record.mutations == []
+    assert [s.chains[0].sequence for s in mutated_system.states] == [
+        s.chains[0].sequence for s in energies_system.states
+    ]
+
+
+@patch.object(bg.System, 'get_total_energy')
+def test_InverseFoldingSampling_n_mutations_is_clamped_to_the_mutable_residues(
+    mocked_energy: Mock,
+    energies_system: bg.System,
+) -> None:
+    """Asking for more residues than the chain has mutable ones masks all of them, without repeats."""
+    oracle = _StubInverseFoldingOracle({aa: 1 / 20 for aa in _AAS})
+    mutator = bg.mutation.InverseFoldingSampling(oracle=oracle, n_mutations=1000)
+
+    mutator.one_step(energies_system)
+
+    indices = oracle.calls[0]['residue_indices']
+    chain_id = oracle.calls[0]['chain_id']
+    chain = next(c for s in energies_system.states for c in s.chains if c.chain_ID == chain_id)
+    assert sorted(indices) == sorted(chain.mutable_residue_indexes)
+
+
+@patch.object(bg.System, 'get_total_energy')
+def test_InverseFoldingSampling_several_residues_are_one_joint_proposal(
+    mocked_energy: Mock,
+    energies_system: bg.System,
+) -> None:
+    """n_mutations residues are decoded in a single call, not one call per residue."""
+    for state in energies_system.states:
+        for residue in state.chains[0].residues:
+            residue.name = 'A'
+    oracle = _StubInverseFoldingOracle({aa: 1 / 20 for aa in _AAS})
+    mutator = bg.mutation.InverseFoldingSampling(oracle=oracle, n_mutations=4)
+
+    _, record = mutator.one_step(energies_system)
+
+    assert len(oracle.calls) == 1
+    assert len(oracle.calls[0]['residue_indices']) == 4
+    assert len(record.mutations) == 4
+
+
+@patch.object(bg.System, 'get_total_energy')
+def test_InverseFoldingSampling_several_residues_share_one_chain(
+    mocked_energy: Mock,
+    energies_system: bg.System,
+) -> None:
+    """The model is asked about one chain at a time, so every residue of a joint proposal comes from it."""
+    oracle = _StubInverseFoldingOracle({aa: 1 / 20 for aa in _AAS})
+    mutator = bg.mutation.InverseFoldingSampling(oracle=oracle, n_mutations=3)
+
+    _, record = mutator.one_step(energies_system)
+
+    assert len({mutation.chain_id for mutation in record.mutations}) == 1
+    assert {mutation.chain_id for mutation in record.mutations} == {oracle.calls[0]['chain_id']}
+
+
+def test_InverseFoldingSampling_rejects_non_positive_n_mutations() -> None:
+    with pytest.raises(ValueError, match='n_mutations must be at least 1'):
+        bg.mutation.InverseFoldingSampling(n_mutations=0)
