@@ -376,6 +376,10 @@ def test_InverseFoldingSampling_computes_one_structure_per_step(
     monkeypatch,
 ) -> None:
     """A step folds once, whatever n_mutations is: the whole proposal is conditioned on one structure."""
+    # the stub proposes 'W' everywhere, so start from 'A' or a residue that is already 'W' is not a change
+    for state in energies_system.states:
+        for residue in state.chains[0].residues:
+            residue.name = 'A'
     oracle = _StubInverseFoldingOracle({aa: 1 / 20 for aa in _AAS})
     mutator = bg.mutation.InverseFoldingSampling(oracle=oracle, n_mutations=3)
     structure_calls: list[object] = []
@@ -717,6 +721,10 @@ def test_InverseFoldingSampling_several_residues_share_one_chain(
     energies_system: bg.System,
 ) -> None:
     """The model is asked about one chain at a time, so every residue of a joint proposal comes from it."""
+    # the stub proposes 'W' everywhere, so start from 'A' or a residue that is already 'W' is not a change
+    for state in energies_system.states:
+        for residue in state.chains[0].residues:
+            residue.name = 'A'
     oracle = _StubInverseFoldingOracle({aa: 1 / 20 for aa in _AAS})
     mutator = bg.mutation.InverseFoldingSampling(oracle=oracle, n_mutations=3)
 
@@ -724,6 +732,16 @@ def test_InverseFoldingSampling_several_residues_share_one_chain(
 
     assert len({mutation.chain_id for mutation in record.mutations}) == 1
     assert {mutation.chain_id for mutation in record.mutations} == {oracle.calls[0]['chain_id']}
+
+
+def test_InverseFoldingSampling_mutation_bias_stays_positional() -> None:
+    """mutation_bias keeps its position, so calls written before t_sampling_proposals existed still work."""
+    bias = {aa: 1.0 for aa in _AAS}
+    mutator = bg.mutation.InverseFoldingSampling('ESM3', object(), 1, bias)
+    assert mutator.mutation_bias == bias
+    assert mutator.t_sampling_proposals == bg.mutation.InverseFoldingSampling.DEFAULT_T_SAMPLING_PROPOSALS
+    with pytest.raises(TypeError):  # keyword-only, so it can never swallow a positional argument
+        bg.mutation.InverseFoldingSampling('ESM3', object(), 1, bias, 0.5)
 
 
 def test_InverseFoldingSampling_rejects_non_positive_n_mutations() -> None:

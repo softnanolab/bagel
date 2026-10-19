@@ -451,13 +451,14 @@ class InverseFoldingSampling(MutationProtocol):
     n_mutations : int, optional
         Number of residues mutated in each step. ``1`` (the default) keeps the single-residue behaviour; above
         that the residues are masked and redesigned jointly, all on the same chain.
-    t_sampling_proposals : float | Sequence[float] | Callable[[int], float], optional
+    mutation_bias : Dict[str, float], optional
+        Amino acids whose value is zero (or that are missing) can never be proposed.
+    t_sampling_proposals : float | Sequence[float] | Callable[[int], float], keyword-only, optional
         Temperature the inverse folding model is sampled at, defaulting to ``0.1``. A float keeps it constant; a
         sequence is read per step (``t_sampling_proposals[step]``, with ``step`` counted from 0 over the calls to
         ``one_step``, like the minimizer's own temperature schedule); a callable is passed the step and returns
         the temperature, which is how a scheduler is plugged in. It must resolve to a positive number.
-    mutation_bias : Dict[str, float], optional
-        Amino acids whose value is zero (or that are missing) can never be proposed.
+        Keyword-only, so it cannot shift the positional arguments that came before it.
     """
 
     SUPPORTED_METHODS = ('ESM3',)
@@ -469,8 +470,9 @@ class InverseFoldingSampling(MutationProtocol):
         inverse_folding_method: str = 'ESM3',
         oracle: Any = None,
         n_mutations: int = 1,
-        t_sampling_proposals: float | Sequence[float] | Callable[[int], float] = DEFAULT_T_SAMPLING_PROPOSALS,
         mutation_bias: Dict[str, float] = mutation_bias_no_cystein,
+        *,
+        t_sampling_proposals: float | Sequence[float] | Callable[[int], float] = DEFAULT_T_SAMPLING_PROPOSALS,
     ):
         if inverse_folding_method not in self.SUPPORTED_METHODS:
             raise ValueError(
