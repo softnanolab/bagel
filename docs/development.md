@@ -31,9 +31,14 @@ The pinned package reports version `0.4.5`, but that is the target of
 boileroom's next release and has never been tagged or published: `main` builds
 publish prereleases such as `0.4.5-alpha.N`. Since boileroom picks its runtime
 image tag from the installed version, the default lookup asks for an image that
-does not exist. Running an oracle on the `modal` or `apptainer` backend
-therefore needs `BOILEROOM_IMAGE_TAG` set to a published prerelease **before**
-importing bagel or boileroom — see `.env.example`.
+does not exist, so a tag has to be supplied explicitly:
+
+- `modal`: set `BOILEROOM_IMAGE_TAG` to a published prerelease **before**
+  importing bagel or boileroom (the Modal image is locked at import time) — see
+  `.env.example`.
+- `apptainer`: either the same environment variable, or inline on the
+  constructor as `backend="apptainer:<image-tag>"`, which takes precedence over
+  `BOILEROOM_IMAGE_TAG`.
 
 BAGEL 0.2 requires Python 3.12. Its oracle API replaces `use_modal` and
 `modal_app_context` with explicit `backend` and optional `device` parameters.
