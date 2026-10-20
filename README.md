@@ -107,9 +107,9 @@ uv run python scripts/binders/simple_binder.py
 To execute templates reproducibly from the [published paper](https://doi.org/10.1371/journal.pcbi.1013774) (within statistical noise due to the nature of Monte Carlo sampling), follow release v0.1.0, also stored on Zenodo [![DOI](https://zenodo.org/badge/968747892.svg)](https://doi.org/10.5281/zenodo.15812348). Otherwise, use the most recent `biobagel` distribution.
 
 ## Oracles
-Oracles are powered by [boileroom](https://github.com/softnanolab/boileroom) 0.4.1 and selected via a `backend` keyword on every oracle constructor. BAGEL exposes `ESMFold`, `ESMFold2`, `Chai1`, `Boltz2`, `ESM2`, `ESM-C`, and `ESM3` through the same interface.
+Oracles are powered by [boileroom](https://github.com/softnanolab/boileroom), pinned to a `main` commit rather than a release (see `pyproject.toml`), and selected via a `backend` keyword on every oracle constructor. BAGEL exposes `ESMFold`, `ESMFold2`, `Chai1`, `Boltz2`, `ESM2`, `ESM-C`, and `ESM3` through the same interface.
 
-- `backend="modal"` (default): Run on [Modal](https://www.modal.com). No local GPU required, but a Modal account with credits is needed. Authenticate via `modal token new`. Pin a specific image release via the `BOILEROOM_IMAGE_TAG` environment variable set **before** importing bagel/boileroom.
+- `backend="modal"` (default): Run on [Modal](https://www.modal.com). No local GPU required, but a Modal account with credits is needed. Authenticate via `modal token new`. Set `BOILEROOM_IMAGE_TAG` to a published boileroom prerelease **before** importing bagel/boileroom: the pinned version is unpublished, so the default image lookup fails. See `.env.example`.
 - `backend="apptainer"`: Run locally via an [Apptainer](https://apptainer.org) image pulled by boileroom. Requires `apptainer` on the host machine and a GPU with enough memory for the chosen model. Optionally pin the image tag inline: `backend="apptainer:<image-tag>"`.
 
 All current oracles expose `modal` and `apptainer` backends. The Modal paths are
