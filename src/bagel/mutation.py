@@ -532,7 +532,9 @@ class InverseFoldingSampling(MutationProtocol):
         Raises
         ------
         ValueError
-            If a sequence is too short for ``step``, or the resolved temperature is not positive.
+            If a sequence is too short for ``step``, or the resolved temperature is not finite and
+            positive (NaN and infinity are rejected: both survive a bare positivity check, and infinity
+            would silently flatten the proposal distribution to uniform).
         """
         schedule = self.t_sampling_proposals
         if callable(schedule):
@@ -547,8 +549,11 @@ class InverseFoldingSampling(MutationProtocol):
                     f'callable, or a sequence at least as long as the number of steps.'
                 )
             temperature = float(values[step])
-        if temperature <= 0.0:
-            raise ValueError(f't_sampling_proposals must resolve to a positive temperature, got {temperature}.')
+        # NaN and inf both slip past `<= 0.0` (every NaN comparison is False). NaN then reaches numpy as a
+        # NaN probability vector, and inf silently flattens the distribution to uniform, which turns inverse
+        # folding into random substitution without raising. Reject both here.
+        if not np.isfinite(temperature) or temperature <= 0.0:
+            raise ValueError(f't_sampling_proposals must resolve to a finite positive temperature, got {temperature}.')
         return temperature
 
     def excluded_amino_acids(self) -> str:
@@ -574,8 +579,9 @@ class InverseFoldingSampling(MutationProtocol):
         tempering is done in log space and only over the allowed alternatives, so a very likely current amino acid
         cannot make every alternative underflow to zero at low temperatures.
         """
-        if temperature <= 0.0:
-            raise ValueError(f'temperature must be positive, got {temperature}')
+        if not np.isfinite(temperature) or temperature <= 0.0:
+            # See `proposal_temperature`: NaN and inf pass a bare `<= 0.0` check and corrupt the sampling.
+            raise ValueError(f'temperature must be finite and positive, got {temperature}')
         aa_keys = list(probabilities.keys())
         allowed = np.array(
             [a != current_aa and self.mutation_bias.get(a, 0.0) > 0.0 and probabilities[a] > 0.0 for a in aa_keys]

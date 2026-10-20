@@ -479,10 +479,11 @@ def test_InverseFoldingSampling_t_sampling_proposals_accepts_a_schedule() -> Non
     assert [callable_schedule.proposal_temperature(step) for step in range(3)] == pytest.approx([1.0, 0.5, 1 / 3])
 
 
-@pytest.mark.parametrize('temperature', [0.0, -1.0])
+@pytest.mark.parametrize('temperature', [0.0, -1.0, float('nan'), float('inf'), -float('inf')])
 def test_InverseFoldingSampling_t_sampling_proposals_rejects_non_positive(temperature) -> None:
+    """NaN and infinity survive a bare `<= 0` check, so they are rejected explicitly."""
     mutator = bg.mutation.InverseFoldingSampling(oracle=object(), t_sampling_proposals=temperature)
-    with pytest.raises(ValueError, match='positive temperature'):
+    with pytest.raises(ValueError, match='finite positive temperature'):
         mutator.proposal_temperature(0)
 
 
@@ -558,10 +559,13 @@ def test_InverseFoldingSampling_propose_amino_acid_handles_tiny_positive_tempera
     assert draws == {'W'}
 
 
-def test_InverseFoldingSampling_propose_amino_acid_rejects_non_positive_temperature() -> None:
+@pytest.mark.parametrize('temperature', [0.0, -1.0, float('nan'), float('inf')])
+def test_InverseFoldingSampling_propose_amino_acid_rejects_non_positive_temperature(temperature) -> None:
+    """A bare `<= 0` check lets NaN through to numpy as NaN weights, and infinity through as a silent
+    uniform distribution, which would turn inverse folding into random substitution without raising."""
     mutator = bg.mutation.InverseFoldingSampling(oracle=object(), mutation_bias={aa: 1.0 for aa in _AAS})
-    with pytest.raises(ValueError, match='positive'):
-        mutator.propose_amino_acid({aa: 0.05 for aa in _AAS}, 'A', temperature=0.0)
+    with pytest.raises(ValueError, match='finite and positive'):
+        mutator.propose_amino_acid({aa: 0.05 for aa in _AAS}, 'A', temperature=temperature)
 
 
 @pytest.mark.parametrize('protocol', [bg.mutation.Canonical, bg.mutation.GrandCanonical])
