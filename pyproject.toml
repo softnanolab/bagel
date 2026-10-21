@@ -1,6 +1,6 @@
 [project]
 name = "biobagel"
-version = "0.2.12"
+version = "0.2.21"
 authors = [
   {name = "Jakub Lála", email = "jakublala@gmail.com"},
   {name = "Ayham Al-Saffar", email = "ayham.saffar@gmail.com"},
@@ -15,14 +15,19 @@ keywords = ["protein", "protein design", "optimization", "monte carlo", "samplin
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "biotite>=1.0.1",
-    # SAE features depend on the boileroom SAE model, merged to boileroom main in
-    # softnanolab/boileroom#111. Pinned to that merge commit for reproducibility
-    # (the features/sae branch was deleted on merge). Repin to a published version
-    # (e.g. boileroom==0.5.0) once boileroom cuts a release that includes it.
-    # Needs ESM3.inverse_fold (softnanolab/boileroom#119) and the SAE model (#111). Pinned to boileroom main
-    # as of 2026-10-06 (version bump to 0.4.5 on top of the #116 merge) because 0.4.5 is not yet tagged or published.
-    # Repin to a published version (boileroom>=0.4.5) once boileroom cuts a release that includes it.
-    "boileroom @ git+https://github.com/softnanolab/boileroom.git@61a4511780d81d6fb184ea74256734a7e4efabef",
+    # Pinned to a boileroom main commit rather than a release: bagel needs APIs that exist only there --
+    # the SAE model (softnanolab/boileroom#111), ESM3.inverse_fold (#119) and ESM3.inverse_generate (#131),
+    # which InverseFoldingSampling needs for n_mutations > 1. The pin also carries #132, which stops a
+    # non-finite temperature reaching the sampler. Repin to a published version (boileroom>=0.4.5) once
+    # boileroom cuts a release that includes them.
+    #
+    # The version on main is 0.4.5, but that is the *target* of the next release and has never been tagged
+    # or published -- main builds publish prereleases such as 0.4.5-alpha.N. boileroom's runtime image
+    # lookup defaults to the installed version, so on this pin it asks for an image tag that does not
+    # exist and the pull fails. Importing bagel therefore defaults BOILEROOM_IMAGE_TAG to a published
+    # prerelease -- see DEFAULT_BOILEROOM_IMAGE_TAG in bagel/__init__.py, which should be bumped with this
+    # pin and deleted when boileroom cuts a release.
+    "boileroom @ git+https://github.com/softnanolab/boileroom.git@6eb5b633bf59fc2d9f3524c121bc1f4456be5c3c",
     "numpy>=2.2.0",
     "pandas>=2.2.3",
     "pydantic>=2.10.6",

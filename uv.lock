@@ -146,7 +146,7 @@ wheels = [
 
 [[package]]
 name = "biobagel"
-version = "0.2.12"
+version = "0.2.21"
 source = { editable = "." }
 dependencies = [
     { name = "biotite" },
@@ -176,7 +176,7 @@ wandb = [
 [package.metadata]
 requires-dist = [
     { name = "biotite", specifier = ">=1.0.1" },
-    { name = "boileroom", git = "https://github.com/softnanolab/boileroom.git?rev=61a4511780d81d6fb184ea74256734a7e4efabef" },
+    { name = "boileroom", git = "https://github.com/softnanolab/boileroom.git?rev=6eb5b633bf59fc2d9f3524c121bc1f4456be5c3c" },
     { name = "fire", specifier = ">=0.5.0" },
     { name = "ipykernel", marker = "extra == 'dev'", specifier = ">=6.29.5" },
     { name = "matplotlib", specifier = ">=3.10.0" },
@@ -234,7 +234,7 @@ wheels = [
 [[package]]
 name = "boileroom"
 version = "0.4.5"
-source = { git = "https://github.com/softnanolab/boileroom.git?rev=61a4511780d81d6fb184ea74256734a7e4efabef#61a4511780d81d6fb184ea74256734a7e4efabef" }
+source = { git = "https://github.com/softnanolab/boileroom.git?rev=6eb5b633bf59fc2d9f3524c121bc1f4456be5c3c#6eb5b633bf59fc2d9f3524c121bc1f4456be5c3c" }
 dependencies = [
     { name = "biotite" },
     { name = "click" },

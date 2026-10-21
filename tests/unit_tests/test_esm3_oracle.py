@@ -242,3 +242,60 @@ class TestInverseFold:
         chains = _two_chains()
         with pytest.raises(ValueError, match='shape'):
             oracle.inverse_fold(chains, _backbone_structure(chains), chain_id='A', residue_index=0)
+
+
+class TestInverseGenerate:
+    @staticmethod
+    def _oracle(monkeypatch, residues, calls):
+        from types import SimpleNamespace
+
+        monkeypatch.setattr(ESM3, '_load', lambda self, config=None: None)
+        oracle = ESM3()
+
+        def inverse_generate(sequence, coordinates, positions, **kwargs):
+            calls.append((sequence, coordinates, positions, kwargs))
+            return SimpleNamespace(sequence=sequence, residues=residues, positions=np.asarray(positions))
+
+        oracle.model = SimpleNamespace(inverse_generate=inverse_generate)
+        return oracle
+
+    def test_maps_chain_indices_to_global_positions_and_back(self, monkeypatch):
+        calls = []
+        oracle = self._oracle(monkeypatch, 'WY', calls)
+        chains = _two_chains()
+
+        proposed = oracle.inverse_generate(
+            chains,
+            _backbone_structure(chains),
+            chain_id='B',
+            residue_indices=[1, 0],
+            temperature=0.05,
+            excluded_amino_acids='C',
+        )
+
+        sequence, coordinates, positions, kwargs = calls[0]
+        assert sequence == 'AAA:GG'
+        assert coordinates.shape == (5, 3, 3)
+        assert positions == [4, 3]  # chain A has 3 residues, so B[1] -> 4 and B[0] -> 3
+        assert kwargs == {'temperature': 0.05, 'seed': None, 'excluded_amino_acids': 'C'}
+        # residues come back in the order the positions were requested
+        assert proposed == {1: 'W', 0: 'Y'}
+
+    def test_unknown_chain_and_bad_indices_raise(self, monkeypatch):
+        oracle = self._oracle(monkeypatch, 'W', [])
+        chains = _two_chains()
+        structure = _backbone_structure(chains)
+        with pytest.raises(ValueError, match='not found'):
+            oracle.inverse_generate(chains, structure, chain_id='Z', residue_indices=[0])
+        with pytest.raises(ValueError, match='must not be empty'):
+            oracle.inverse_generate(chains, structure, chain_id='B', residue_indices=[])
+        with pytest.raises(ValueError, match='duplicates'):
+            oracle.inverse_generate(chains, structure, chain_id='B', residue_indices=[0, 0])
+        with pytest.raises(ValueError, match='out of range'):
+            oracle.inverse_generate(chains, structure, chain_id='B', residue_indices=[0, 2])
+
+    def test_residue_count_mismatch_raises(self, monkeypatch):
+        oracle = self._oracle(monkeypatch, 'W', [])  # one residue for two requested positions
+        chains = _two_chains()
+        with pytest.raises(ValueError, match='returned 1 residues for 2'):
+            oracle.inverse_generate(chains, _backbone_structure(chains), chain_id='A', residue_indices=[0, 1])
