@@ -751,3 +751,29 @@ def test_InverseFoldingSampling_mutation_bias_stays_positional() -> None:
 def test_InverseFoldingSampling_rejects_non_positive_n_mutations() -> None:
     with pytest.raises(ValueError, match='n_mutations must be at least 1'):
         bg.mutation.InverseFoldingSampling(n_mutations=0)
+
+
+def test_bagel_sets_a_default_boileroom_image_tag() -> None:
+    """The pinned boileroom version has no published image, so bagel names a prerelease that does.
+
+    Without this, every modal/apptainer oracle fails to pull. ``setdefault`` keeps an explicit
+    ``BOILEROOM_IMAGE_TAG`` winning; see the comment in ``bagel/__init__.py``.
+    """
+    import os
+    import subprocess
+    import sys
+
+    assert bg.DEFAULT_BOILEROOM_IMAGE_TAG
+    assert os.environ['BOILEROOM_IMAGE_TAG']  # importing bagel applied it (or the caller's own value)
+
+    # A subprocess is the only honest check: the env var is set at import time, once per process.
+    script = (
+        'import os; os.environ.pop("BOILEROOM_IMAGE_TAG", None); import bagel; '
+        'print(os.environ["BOILEROOM_IMAGE_TAG"] == bagel.DEFAULT_BOILEROOM_IMAGE_TAG)'
+    )
+    unset = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True, check=True)
+    assert unset.stdout.strip() == 'True'
+
+    script = 'import os; os.environ["BOILEROOM_IMAGE_TAG"] = "explicit"; import bagel; print(os.environ["BOILEROOM_IMAGE_TAG"])'
+    explicit = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True, check=True)
+    assert explicit.stdout.strip() == 'explicit'

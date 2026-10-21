@@ -1,6 +1,6 @@
 [project]
 name = "biobagel"
-version = "0.2.18"
+version = "0.2.19"
 authors = [
   {name = "Jakub Lála", email = "jakublala@gmail.com"},
   {name = "Ayham Al-Saffar", email = "ayham.saffar@gmail.com"},
@@ -23,8 +23,9 @@ dependencies = [
     # The version on main is 0.4.5, but that is the *target* of the next release and has never been tagged
     # or published -- main builds publish prereleases such as 0.4.5-alpha.N. boileroom's runtime image
     # lookup defaults to the installed version, so on this pin it asks for an image tag that does not
-    # exist and the pull fails. Modal and Apptainer backends therefore need BOILEROOM_IMAGE_TAG set to a
-    # published prerelease tag; see .env.example.
+    # exist and the pull fails. Importing bagel therefore defaults BOILEROOM_IMAGE_TAG to a published
+    # prerelease -- see DEFAULT_BOILEROOM_IMAGE_TAG in bagel/__init__.py, which should be bumped with this
+    # pin and deleted when boileroom cuts a release.
     "boileroom @ git+https://github.com/softnanolab/boileroom.git@8763ac592dbb425935358839520fb11a523e1c9c",
     "numpy>=2.2.0",
     "pandas>=2.2.3",

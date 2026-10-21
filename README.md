@@ -109,7 +109,7 @@ To execute templates reproducibly from the [published paper](https://doi.org/10.
 ## Oracles
 Oracles are powered by [boileroom](https://github.com/softnanolab/boileroom), pinned to a `main` commit rather than a release (see `pyproject.toml`), and selected via a `backend` keyword on every oracle constructor. BAGEL exposes `ESMFold`, `ESMFold2`, `Chai1`, `Boltz2`, `ESM2`, `ESM-C`, and `ESM3` through the same interface.
 
-- `backend="modal"` (default): Run on [Modal](https://www.modal.com). No local GPU required, but a Modal account with credits is needed. Authenticate via `modal token new`. Set `BOILEROOM_IMAGE_TAG` to a published boileroom prerelease **before** importing bagel/boileroom: the pinned version is unpublished, so the default image lookup fails. See `.env.example`.
+- `backend="modal"` (default): Run on [Modal](https://www.modal.com). No local GPU required, but a Modal account with credits is needed. Authenticate via `modal token new`. The boileroom image tag is handled for you (see `DEFAULT_BOILEROOM_IMAGE_TAG` in `bagel/__init__.py`); override it with `BOILEROOM_IMAGE_TAG` **before** importing bagel if you need a different image.
 - `backend="apptainer"`: Run locally via an [Apptainer](https://apptainer.org) image pulled by boileroom. Requires `apptainer` on the host machine and a GPU with enough memory for the chosen model. Optionally pin the image tag inline: `backend="apptainer:<image-tag>"`.
 
 All current oracles expose `modal` and `apptainer` backends. The Modal paths are

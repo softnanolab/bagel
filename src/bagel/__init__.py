@@ -7,11 +7,27 @@ criteria.
 """
 
 import importlib
+import os
 from typing import Any
 
 from .utils import get_version_from_pyproject
 
 __version__ = get_version_from_pyproject()
+
+# boileroom derives its runtime image tag from its own version. The commit pinned in pyproject.toml reports
+# 0.4.5, which is the target of boileroom's next release and was never published as an image -- main builds
+# publish prereleases such as 0.4.5-alpha.N instead. Left alone, the lookup asks Docker for a tag that does
+# not exist and every modal/apptainer oracle fails to pull its image. So name the prerelease this pin was
+# tested against.
+#
+# The image only carries the runtime environment (CUDA, torch, the esm SDK); boileroom's own code is shipped
+# from the installed package at call time, so this tag does not have to match the pinned commit.
+#
+# Bump it alongside the boileroom pin, and drop it once boileroom cuts a release whose version is published.
+DEFAULT_BOILEROOM_IMAGE_TAG = '0.4.5-alpha.16'
+# setdefault, so an explicit BOILEROOM_IMAGE_TAG still wins. This runs before any boileroom model module is
+# imported (the oracles import boileroom lazily, inside their _load), which is when the tag is read.
+os.environ.setdefault('BOILEROOM_IMAGE_TAG', DEFAULT_BOILEROOM_IMAGE_TAG)
 
 __all__ = [
     'Chain',
