@@ -6,8 +6,8 @@ adapter wraps them in the oracle's own ``result_class`` (with one placeholder at
 residue index) and calls ``term.compute`` on it. So the pseudo-energy is computed by the very code that computes the real
 energy; nothing is re-implemented, and the residue groups are applied by bagel's own masking code.
 
-Only terms that read nothing but ``local_plddt``, ``pae`` and ``ptm`` can be evaluated this way (see
-:data:`bagel.mosaic_screening.plan.SUPPORTED_TERMS`).
+Terms that read only ``local_plddt``, ``pae`` and ``ptm`` need nothing else; terms that read atom coordinates get a structure
+rebuilt from mosaic's atom37 output (see :data:`bagel.mosaic_screening.plan.SUPPORTED_TERMS`).
 """
 
 from __future__ import annotations
@@ -24,13 +24,38 @@ from ..energies import EnergyTerm
 from ..oracles.base import Oracle, OracleResult, OraclesResultDict
 
 
+#: Order of the 37 heavy-atom slots of mosaic's ``atom37_coords`` (AlphaFold ``atom_types``).
+ATOM37_NAMES: tuple[str, ...] = (
+    'N', 'CA', 'C', 'CB', 'O', 'CG', 'CG1', 'CG2', 'OG', 'OG1',
+    'SG', 'CD', 'CD1', 'CD2', 'ND1', 'ND2', 'OD1', 'OD2', 'SD',
+    'CE', 'CE1', 'CE2', 'CE3', 'NE', 'NE1', 'NE2', 'OE1', 'OE2',
+    'CH2', 'NH1', 'NH2', 'OH', 'CZ', 'CZ2', 'CZ3', 'NZ', 'OXT',
+)  # fmt: skip
+#: Side-chain heavy atoms of each residue in the order of standard PDB files (what the oracles' structures use); the backbone
+#: always comes first as N, CA, C, O.
+_SIDE_CHAIN_ORDER = {
+    'ALA': 'CB', 'ARG': 'CB CG CD NE CZ NH1 NH2', 'ASN': 'CB CG OD1 ND2', 'ASP': 'CB CG OD1 OD2', 'CYS': 'CB SG',
+    'GLN': 'CB CG CD OE1 NE2', 'GLU': 'CB CG CD OE1 OE2', 'GLY': '', 'HIS': 'CB CG ND1 CD2 CE1 NE2',
+    'ILE': 'CB CG1 CG2 CD1', 'LEU': 'CB CG CD1 CD2', 'LYS': 'CB CG CD CE NZ', 'MET': 'CB CG SD CE',
+    'PHE': 'CB CG CD1 CD2 CE1 CE2 CZ', 'PRO': 'CB CG CD', 'SER': 'CB OG', 'THR': 'CB OG1 CG2',
+    'TRP': 'CB CG CD1 CD2 NE1 CE2 CE3 CZ2 CZ3 CH2', 'TYR': 'CB CG CD1 CD2 CE1 CE2 CZ OH', 'VAL': 'CB CG1 CG2',
+}  # fmt: skip
+
+
 @dataclass
 class MosaicPrediction:
-    """Confidence outputs of one mosaic forward pass, in mosaic token order (designed chain first)."""
+    """
+    Outputs of one mosaic forward pass, in mosaic token order (designed chain first).
+
+    ``atom37_coords`` / ``atom37_mask`` (all-atom heavy-atom coordinates in the 37-slot layout) are only present when the
+    backend was asked for the structure, which it is when a supported energy term needs coordinates.
+    """
 
     plddt: npt.NDArray[np.float64]  # [n_tokens], 0-1
     pae: npt.NDArray[np.float64]  # [n_tokens, n_tokens], Angstrom
     ptm: float  # 0-1
+    atom37_coords: npt.NDArray[np.float64] | None = None  # [n_tokens, 37, 3]
+    atom37_mask: npt.NDArray[np.float64] | None = None  # [n_tokens, 37]
 
 
 def placeholder_structure(chains: list[Chain]) -> AtomArray:
@@ -45,6 +70,41 @@ def placeholder_structure(chains: list[Chain]) -> AtomArray:
     return atoms
 
 
+def structure_from_atom37(
+    chains: list[Chain], coords: npt.NDArray[np.float64], mask: npt.NDArray[np.float64]
+) -> AtomArray:
+    """
+    All-atom structure with the annotations and atom order of the structures bagel gets from its oracles: heavy atoms only,
+    per residue backbone first (N, CA, C, O) and then the side chain in standard PDB order; no OXT. Chain IDs and residue indices
+    are bagel's (``Residue.chain_ID`` and ``Residue.index``), so residue groups select the right residues.
+    """
+    residues = [r for c in chains for r in c.residues]
+    if coords.shape != (len(residues), 37, 3) or mask.shape != (len(residues), 37):
+        raise ValueError(f'atom37 arrays {coords.shape}, {mask.shape} do not match {len(residues)} residues')
+    slots = []
+    for i, residue in enumerate(residues):
+        order = ('N CA C O ' + _SIDE_CHAIN_ORDER[residue.three_letter_name]).split()
+        rank = {name: r for r, name in enumerate(order)}
+        slots.append(
+            sorted(
+                (k for k in range(36) if mask[i, k] > 0.5),  # slot 36 is OXT
+                key=lambda k: (rank.get(ATOM37_NAMES[k], len(order)), k),
+            )
+        )
+    atoms = AtomArray(sum(len(s) for s in slots))
+    row = 0
+    for i, (residue, ks) in enumerate(zip(residues, slots)):
+        for k in ks:
+            atoms.coord[row] = coords[i, k]
+            atoms.chain_id[row] = residue.chain_ID
+            atoms.res_id[row] = residue.index
+            atoms.res_name[row] = residue.three_letter_name
+            atoms.atom_name[row] = ATOM37_NAMES[k]
+            atoms.element[row] = ATOM37_NAMES[k][0]
+            row += 1
+    return atoms
+
+
 def build_result(oracle: Oracle, chains: list[Chain], prediction: MosaicPrediction) -> OracleResult:
     """Wrap a mosaic prediction in ``oracle.result_class``; ``chains`` must be in mosaic token order."""
     n = sum(c.length for c in chains)
@@ -55,7 +115,11 @@ def build_result(oracle: Oracle, chains: list[Chain], prediction: MosaicPredicti
     result_class: Any = oracle.result_class  # a ConfidenceFoldingResult subclass: plddt, pae and ptm are its fields
     result: OracleResult = result_class(
         input_chains=chains,
-        structure=placeholder_structure(chains),
+        structure=(
+            structure_from_atom37(chains, prediction.atom37_coords, prediction.atom37_mask)
+            if prediction.atom37_coords is not None and prediction.atom37_mask is not None
+            else placeholder_structure(chains)
+        ),
         local_plddt=np.clip(prediction.plddt, 0.0, 1.0)[None, :],
         ptm=np.clip(np.asarray(prediction.ptm, dtype=np.float64), 0.0, 1.0).reshape(1, 1),
         pae=prediction.pae[None, :, :],

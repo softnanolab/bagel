@@ -35,13 +35,26 @@ Face and needs a token) on a login node first.
 
 The pseudo-energy of a State is the weighted sum of the energy terms that can be computed from a mosaic prediction, **using bagel's
 own term code** (residue groups included): `PTMEnergy`, `PLDDTEnergy`, `OverallPLDDTEnergy`, `PAEEnergy`, `LISEnergy`,
-`ipSAEEnergy`, on an `ESMFold2` or `Boltz2` oracle. These terms read only pLDDT, PAE and pTM. Every other term (anything that needs
-all-atom coordinates or embeddings) is left out of the pseudo-energy. At the start of a run the protocol logs which terms are used
+`ipSAEEnergy`, on an `ESMFold2` or `Boltz2` oracle. These terms read only pLDDT, PAE and pTM. Every other term (embeddings, other States, and,
+unless `use_structure_terms=True`, anything that reads atom coordinates) is left out of the pseudo-energy. At the start of a run the protocol logs which terms are used
 and writes `Mosaic_pseudo_energy.txt` into the log folder of the run, with the coverage by number of terms and by weight
 (sum of |weight| used / total). Low coverage means the pseudo-energy ignores much of what the real energy rewards; the calibration
 check below is the safeguard.
 
 With several States, the score of a candidate is the sum of the pseudo-energy changes of the States that contain the mutated chain.
+
+### Structure-based terms (opt-in)
+
+With `use_structure_terms=True`, mosaic also returns its all-atom coordinates, bagel rebuilds a structure with the same atoms, names and
+order as its oracles' structures (a round-trip test shows the term values are identical on the rebuilt and the original structure), and
+`SurfaceAreaEnergy`, `HydrophobicEnergy`, `HydropathyEnergy`, `GlobularEnergy`, `BuriedHistidineEnergy` and
+`HistidineCarboxylateContactEnergy` join the pseudo-energy. It is **off by default** because the agreement with bagel's own ESMFold2
+structures was weak in the one check made (`scripts/mosaic_screening/structure_terms_check.py`, 25 mutants of a 40-residue binder against
+ubiquitin): Spearman correlation -0.12 for the whole-complex surface area, 0.35 for the binder's, -0.28 for the globular term, -0.04 for buried
+histidine (and `his_carboxylate` was constant); the hydrophobic and hydropathy terms without a surface/core mode depend on the sequence only and
+agree exactly. With 25 points a correlation is uncertain by about ±0.2, so this shows no demonstrated benefit, not proven uselessness. Mosaic's
+structures were also systematically more compact (mean surface-area term 0.28 against 0.34). Other structure terms (salt bridges, shape
+complementarity, secondary structure, template match, ring symmetry, separation) are not supported yet.
 
 ## Calibration
 

@@ -11,9 +11,10 @@ without bagel installed.
 
 Wire format
 -----------
-Request  ``{"op": "predict", "model": <MosaicModelSpec dict>, "target_sequences": [...], "design_sequences": [...]}``
+Request  ``{"op": "predict", "model": <MosaicModelSpec dict>, "target_sequences": [...], "design_sequences": [...],
+         "structure": bool}`` (``structure`` also returns the atom37 coordinates and mask)
          ``{"op": "versions"}`` / ``{"op": "ping"}``
-Response ``{"plddt": A, "pae": A, "ptm": A, "seconds": float}`` where each ``A`` is ``{"shape": [...], "b64": str}``
+Response ``{"plddt": A, "pae": A, "ptm": A, "seconds": float, ["atom37_coords": A, "atom37_mask": A]}`` where each ``A`` is ``{"shape": [...], "b64": str}``
          (little-endian float32), with a leading batch axis, in mosaic token order (designed chain first).
 """
 
@@ -96,7 +97,7 @@ class MosaicWorker:
                         key=key,
                     )
                     ptm = predicted_tm_score(logits=out.pae_logits, bin_centers=out.pae_bins).max()
-                    return out.plddt, out.pae, ptm
+                    return out.plddt, out.pae, ptm, out.atom37_coords, out.atom37_mask
 
                 return jax.vmap(one)(xs)
 
@@ -120,20 +121,27 @@ class MosaicWorker:
         features = self._features_for(spec, design_length, targets)
         run = self._batch()
         key = jax.random.key(int(request.get('seed', 0)))
-        plddt, pae, ptm = [], [], []
+        plddt, pae, ptm, coords, mask = [], [], [], [], []
         for start in range(0, len(sequences), MAX_BATCH):
             chunk = sequences[start : start + MAX_BATCH]
             xs = jnp.stack([jax.nn.one_hot(tokenize(s), 20) for s in chunk])
-            p, a, t = run(model, features, xs, key, int(spec['recycling_steps']), int(spec['sampling_steps']))
+            p, a, t, c, m = run(model, features, xs, key, int(spec['recycling_steps']), int(spec['sampling_steps']))
             plddt.append(np.asarray(p))
             pae.append(np.asarray(a))
             ptm.append(np.asarray(t))
-        return {
+            if request.get('structure'):
+                coords.append(np.asarray(c))
+                mask.append(np.asarray(m))
+        response = {
             'plddt': encode_array(np.concatenate(plddt)),
             'pae': encode_array(np.concatenate(pae)),
             'ptm': encode_array(np.concatenate(ptm)),
             'seconds': time.time() - t0,
         }
+        if coords:
+            response['atom37_coords'] = encode_array(np.concatenate(coords))
+            response['atom37_mask'] = encode_array(np.concatenate(mask))
+        return response
 
     def versions(self) -> dict[str, str]:
         import importlib.metadata as md
@@ -177,12 +185,31 @@ class FakeWorker:
             plddt.append(0.5 + 0.4 * hydrophobic.mean() * np.ones(n))
             pae.append(np.full((n, n), 20.0 - 10.0 * hydrophobic.mean()))
             ptm.append(0.4 + 0.4 * hydrophobic.mean())
-        return {
+        response = {
             'plddt': encode_array(np.array(plddt)),
             'pae': encode_array(np.array(pae)),
             'ptm': encode_array(np.array(ptm)),
             'seconds': 0.0,
         }
+        if request.get('structure'):  # a helix-like trace with four backbone atoms and CB per residue
+            n = len(request['design_sequences'][0]) + n_target
+            t = np.arange(n)
+            ca = np.stack([2.3 * np.cos(1.745 * t), 2.3 * np.sin(1.745 * t), 1.5 * t], axis=-1)
+            coords = np.zeros((n, 37, 3))
+            mask = np.zeros((n, 37))
+            for slot, offset in (
+                (0, (-1.0, 0.0, -0.5)),
+                (1, (0.0, 0.0, 0.0)),
+                (2, (1.0, 0.0, 0.5)),
+                (4, (1.5, 0.5, 0.8)),
+                (3, (0.0, 1.5, 0.0)),
+            ):
+                coords[:, slot] = ca + np.array(offset)
+                mask[:, slot] = 1.0
+            batch = len(request['design_sequences'])
+            response['atom37_coords'] = encode_array(np.broadcast_to(coords, (batch, n, 37, 3)))
+            response['atom37_mask'] = encode_array(np.broadcast_to(mask, (batch, n, 37)))
+        return response
 
 
 def serve_stdio(worker: Any) -> None:

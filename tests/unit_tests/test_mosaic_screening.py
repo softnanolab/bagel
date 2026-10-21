@@ -46,9 +46,11 @@ class FakeBackend:
     def __init__(self, sign: float = 1.0) -> None:
         self.sign = sign
         self.calls: list[tuple[MosaicModelSpec, list[str], list[str]]] = []
+        self.structure_flags: list[bool] = []
 
-    def predict(self, spec, target_sequences, design_sequences):  # noqa: ANN001
+    def predict(self, spec, target_sequences, design_sequences, structure=False):  # noqa: ANN001
         self.calls.append((spec, list(target_sequences), list(design_sequences)))
+        self.structure_flags.append(structure)
         n_total = len(design_sequences[0]) + sum(len(s) for s in target_sequences)
         return [fake_prediction(s, n_total, self.sign) for s in design_sequences]
 
@@ -78,7 +80,9 @@ def _system(oracle, binder='ACDEFGHIKL', target='MKVLAWQRST', target_first=False
         bg.energies.OverallPLDDTEnergy(oracle=oracle, weight=0.5),
         bg.energies.PAEEnergy(oracle=oracle, residues=[hotspot, binder_chain.residues], weight=3.0),
         bg.energies.ipSAEEnergy(oracle=oracle, residues=[binder_chain.residues, hotspot], weight=4.0, direction='max'),
-        bg.energies.HydrophobicEnergy(oracle=oracle, weight=5.0),  # no counterpart
+        bg.energies.SaltBridgeEnergy(
+            oracle=oracle, residues=[binder_chain.residues, target_chain.residues], weight=5.0
+        ),  # not supported
     ]
     if not unsupported:
         terms = terms[:-1]
@@ -95,12 +99,12 @@ def test_plan_lists_used_and_unused_terms_with_coverage(fake_esmfold2) -> None:
     used = [s.name for s in plan.statuses if s.used]
     assert used == ['pTM', 'local_pLDDT_binder', 'global_pLDDT', 'cross_PAE', 'ipSAE']
     unused = [s for s in plan.statuses if not s.used]
-    assert len(unused) == 1 and 'HydrophobicEnergy' in unused[0].reason
+    assert len(unused) == 1 and 'SaltBridgeEnergy' in unused[0].reason
     cov = coverage(plan.statuses)
     assert (cov.n_used, cov.n_total) == (5, 6)
     assert cov.weight_used == pytest.approx(10.5) and cov.weight_total == pytest.approx(15.5)
     text = format_report([plan])
-    assert 'USED' in text and 'UNUSED' in text and '5/6' in text and 'Hydrophobic' in text
+    assert 'USED' in text and 'UNUSED' in text and '5/6' in text and 'SaltBridge' in text
 
 
 def test_plan_puts_designed_chain_first_even_if_listed_second(fake_esmfold2) -> None:
@@ -124,7 +128,11 @@ def test_plan_guardrails(fake_esmfold2) -> None:
         build_plans(system)
 
     system = _system(fake_esmfold2)
-    system.states[0].energy_terms = [bg.energies.HydrophobicEnergy(oracle=fake_esmfold2)]
+    system.states[0].energy_terms = [
+        bg.energies.SaltBridgeEnergy(
+            oracle=fake_esmfold2, residues=[system.states[0].chains[0].residues, system.states[0].chains[1].residues]
+        )
+    ]
     with pytest.raises(MosaicIncompatibleError, match='nothing to screen'):
         build_plans(system)
 
@@ -478,5 +486,143 @@ def test_end_to_end_with_subprocess_backend(fake_esmfold2) -> None:
         protocol = MosaicScreening(backend=backend, calibration_steps=0)
         mutated, record = protocol.one_step(_system(fake_esmfold2))
         assert len(record.mutations) == 1 and protocol.stats['mosaic_calls'] == 1
+    finally:
+        backend.close()
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# all-atom structures rebuilt from mosaic's atom37 output
+# ---------------------------------------------------------------------------------------------------------------------
+def _atom37_from_structure(chains, structure):  # noqa: ANN001
+    """Inverse of structure_from_atom37, for a structure whose atoms are heavy atoms of standard residues."""
+    from bagel.mosaic_screening.adapter import ATOM37_NAMES
+
+    residues = [r for c in chains for r in c.residues]
+    index = {(r.chain_ID, r.index): i for i, r in enumerate(residues)}
+    coords = np.zeros((len(residues), 37, 3))
+    mask = np.zeros((len(residues), 37))
+    for atom in structure:
+        if atom.atom_name in ATOM37_NAMES and atom.atom_name != 'OXT':
+            i = index[(str(atom.chain_id), int(atom.res_id))]
+            coords[i, ATOM37_NAMES.index(atom.atom_name)] = atom.coord
+            mask[i, ATOM37_NAMES.index(atom.atom_name)] = 1.0
+    return coords, mask
+
+
+@pytest.fixture
+def two_chain_structure():  # noqa: ANN201
+    """Two chains of a real protein (chain A designed, B fixed), renumbered from 0, heavy atoms without OXT."""
+    from biotite.structure.io import load_structure
+
+    path = Path(__file__).resolve().parents[1] / 'structures' / 'example_protein.pdb'
+    atoms = load_structure(str(path))
+    atoms = atoms[(atoms.element != 'H') & (atoms.atom_name != 'OXT') & ~atoms.hetero]
+    chains, pieces = [], []
+    for chain_id in ('A', 'B'):
+        sub = atoms[atoms.chain_id == chain_id].copy()
+        ids = sub.res_id
+        _, first = np.unique(ids, return_index=True)
+        order = ids[np.sort(first)]
+        renumber = {old: new for new, old in enumerate(order)}
+        sub.res_id = np.array([renumber[i] for i in ids])
+        names = [sub.res_name[sub.res_id == k][0] for k in range(len(order))]
+        from bagel.constants import aa_dict
+
+        three_to_one = {v: k for k, v in aa_dict.items()}
+        chains.append(
+            bg.Chain([bg.Residue(three_to_one[n], chain_id, k, mutable=chain_id == 'A') for k, n in enumerate(names)])
+        )
+        pieces.append(sub)
+    structure = pieces[0] + pieces[1]
+    return chains, structure
+
+
+def test_rebuilt_structure_matches_the_original_atom_for_atom(two_chain_structure) -> None:
+    from bagel.mosaic_screening.adapter import structure_from_atom37
+
+    chains, structure = two_chain_structure
+    coords, mask = _atom37_from_structure(chains, structure)
+    rebuilt = structure_from_atom37(chains, coords, mask)
+    assert len(rebuilt) == len(structure)
+    for field in ('chain_id', 'res_id', 'res_name', 'atom_name', 'element'):
+        assert list(getattr(rebuilt, field)) == list(getattr(structure, field)), field
+    assert np.allclose(rebuilt.coord, structure.coord, atol=1e-4)
+
+
+def test_structure_terms_give_the_same_value_on_the_rebuilt_structure(two_chain_structure, fake_esmfold2) -> None:
+    from bagel.oracles import OraclesResultDict
+
+    chains, structure = two_chain_structure
+    n = sum(c.length for c in chains)
+    coords, mask = _atom37_from_structure(chains, structure)
+    prediction = MosaicPrediction(
+        plddt=np.full(n, 0.8),
+        pae=np.full((n, n), 10.0),
+        ptm=0.7,
+        atom37_coords=coords.astype(np.float32).astype(np.float64),
+        atom37_mask=mask,
+    )
+    original = fake_esmfold2.result_class(
+        input_chains=chains,
+        structure=structure,
+        local_plddt=np.full((1, n), 0.8),
+        ptm=np.full((1, 1), 0.7),
+        pae=np.full((1, n, n), 10.0),
+    )
+    rebuilt = build_result(fake_esmfold2, chains, prediction)
+    E = bg.energies
+    A, B = chains[0].residues, chains[1].residues
+    terms = [
+        E.SurfaceAreaEnergy(oracle=fake_esmfold2),
+        E.SurfaceAreaEnergy(oracle=fake_esmfold2, residues=A, name='A'),
+        E.HydrophobicEnergy(oracle=fake_esmfold2),
+        E.HydrophobicEnergy(oracle=fake_esmfold2, residues=A, surface_only=True, name='surf'),
+        E.HydropathyEnergy(oracle=fake_esmfold2),
+        E.GlobularEnergy(oracle=fake_esmfold2),
+        E.BuriedHistidineEnergy(oracle=fake_esmfold2),
+        E.HistidineCarboxylateContactEnergy(oracle=fake_esmfold2),
+    ]
+    from bagel.mosaic_screening.plan import STRUCTURE_TERMS
+
+    assert all(type(t) in STRUCTURE_TERMS for t in terms)
+    for term in terms:
+        a = OraclesResultDict()
+        a[fake_esmfold2] = original
+        b = OraclesResultDict()
+        b[fake_esmfold2] = rebuilt
+        va, vb = term.compute(a)[0], term.compute(b)[0]
+        assert np.allclose(va, vb, rtol=1e-4, atol=1e-6), (term.name, va, vb)
+
+
+def test_structure_is_requested_only_when_a_term_needs_it(fake_esmfold2) -> None:
+    system = _system(fake_esmfold2, unsupported=False)
+    assert not build_plans(system)[0].groups[0].needs_structure
+    system.states[0].energy_terms.append(bg.energies.HydrophobicEnergy(oracle=fake_esmfold2))
+    off = build_plans(system)[0]  # structure terms are opt-in
+    assert not off.groups[0].needs_structure
+    assert any(not s.used and 'use_structure_terms' in s.reason for s in off.statuses)
+    plan = build_plans(system, structure_terms=True)[0]
+    assert plan.groups[0].needs_structure
+    backend = FakeBackend()
+    np.random.seed(0)
+    MosaicScreening(backend=backend, calibration_steps=0, use_structure_terms=True).one_step(system)
+    assert backend.structure_flags == [True]
+    backend = FakeBackend()
+    MosaicScreening(backend=backend, calibration_steps=0).one_step(system)
+    assert backend.structure_flags == [False]
+
+
+def test_subprocess_backend_returns_structures_on_request() -> None:
+    import sys
+
+    from bagel.mosaic_screening.backends import WORKER_SCRIPT
+
+    backend = SubprocessMosaicBackend([sys.executable, str(WORKER_SCRIPT), '--fake'], timeout=60)
+    try:
+        spec = MosaicModelSpec.esmfold2()
+        plain = backend.predict(spec, ['MKV'], ['ACDE'])[0]
+        full = backend.predict(spec, ['MKV'], ['ACDE'], structure=True)[0]
+        assert plain.atom37_coords is None
+        assert full.atom37_coords.shape == (7, 37, 3) and full.atom37_mask.shape == (7, 37)
     finally:
         backend.close()

@@ -36,16 +36,26 @@ class MosaicBackend(Protocol):
     """Anything that can run mosaic forward passes."""
 
     def predict(
-        self, spec: MosaicModelSpec, target_sequences: list[str], design_sequences: list[str]
+        self,
+        spec: MosaicModelSpec,
+        target_sequences: list[str],
+        design_sequences: list[str],
+        structure: bool = False,
     ) -> list[MosaicPrediction]:
-        """One forward pass per designed-chain sequence, all with the same fixed ``target_sequences``."""
+        """One forward pass per designed-chain sequence, all with the same fixed ``target_sequences``.
+
+        With ``structure=True`` the predictions also carry the all-atom coordinates (``atom37_coords``, ``atom37_mask``).
+        """
         ...
 
     def versions(self) -> dict[str, str]: ...
 
 
-def _request(spec: MosaicModelSpec, target_sequences: list[str], design_sequences: list[str]) -> dict[str, Any]:
+def _request(
+    spec: MosaicModelSpec, target_sequences: list[str], design_sequences: list[str], structure: bool = False
+) -> dict[str, Any]:
     return {
+        'structure': structure,
         'op': 'predict',
         'model': spec.to_dict(),
         'target_sequences': list(target_sequences),
@@ -61,7 +71,18 @@ def _decode(response: dict[str, Any], n_expected: int) -> list[MosaicPrediction]
         raise MosaicBackendError(f'mosaic backend returned {len(plddt)} predictions for {n_expected} sequences')
     if not (np.isfinite(plddt).all() and np.isfinite(pae).all() and np.isfinite(ptm).all()):
         raise MosaicBackendError('mosaic backend returned non-finite confidences')
-    return [MosaicPrediction(plddt=plddt[i], pae=pae[i], ptm=float(ptm[i])) for i in range(n_expected)]
+    coords = decode_array(response['atom37_coords']) if 'atom37_coords' in response else None
+    mask = decode_array(response['atom37_mask']) if 'atom37_mask' in response else None
+    return [
+        MosaicPrediction(
+            plddt=plddt[i],
+            pae=pae[i],
+            ptm=float(ptm[i]),
+            atom37_coords=None if coords is None else coords[i],
+            atom37_mask=None if mask is None else mask[i],
+        )
+        for i in range(n_expected)
+    ]
 
 
 class ModalMosaicBackend:
@@ -95,10 +116,16 @@ class ModalMosaicBackend:
         return self._service
 
     def predict(
-        self, spec: MosaicModelSpec, target_sequences: list[str], design_sequences: list[str]
+        self,
+        spec: MosaicModelSpec,
+        target_sequences: list[str],
+        design_sequences: list[str],
+        structure: bool = False,
     ) -> list[MosaicPrediction]:
         try:
-            response = self._get().predict.remote(json.dumps(_request(spec, target_sequences, design_sequences)))
+            response = self._get().predict.remote(
+                json.dumps(_request(spec, target_sequences, design_sequences, structure))
+            )
         except MosaicBackendError:
             raise
         except Exception as exc:
@@ -209,9 +236,13 @@ class SubprocessMosaicBackend:
                     return response
 
     def predict(
-        self, spec: MosaicModelSpec, target_sequences: list[str], design_sequences: list[str]
+        self,
+        spec: MosaicModelSpec,
+        target_sequences: list[str],
+        design_sequences: list[str],
+        structure: bool = False,
     ) -> list[MosaicPrediction]:
-        return _decode(self._call(_request(spec, target_sequences, design_sequences)), len(design_sequences))
+        return _decode(self._call(_request(spec, target_sequences, design_sequences, structure)), len(design_sequences))
 
     def versions(self) -> dict[str, str]:
         response = self._call({'op': 'versions'})

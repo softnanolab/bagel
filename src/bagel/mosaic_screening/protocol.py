@@ -59,7 +59,8 @@ class MosaicScreening(MutationProtocol):
     The pseudo-energy of a State is the weighted sum of those of its energy terms that can be evaluated on a mosaic
     prediction, computed by bagel's own term code on the mosaic output (residue groups included). The supported terms
     are ``PTMEnergy``, ``PLDDTEnergy``, ``OverallPLDDTEnergy``, ``PAEEnergy``, ``LISEnergy`` and ``ipSAEEnergy``, on an
-    ``ESMFold2`` or ``Boltz2`` oracle. Other terms are simply left out of the pseudo-energy; which terms were used, which
+    ``ESMFold2`` or ``Boltz2`` oracle; with ``use_structure_terms=True`` also ``SurfaceAreaEnergy``, ``HydrophobicEnergy``,
+    ``HydropathyEnergy``, ``GlobularEnergy``, ``BuriedHistidineEnergy`` and ``HistidineCarboxylateContactEnergy``. Other terms are simply left out of the pseudo-energy; which terms were used, which
     not and why, and the coverage (terms used/total and sum of |weight| used/total) are logged and written to
     ``Mosaic_pseudo_energy.txt`` in the log folder of the run. The score of a candidate is the sum, over the States that
     contain the mutated chain, of the pseudo-energy change of that State (the real total energy is a sum over States too).
@@ -119,6 +120,14 @@ class MosaicScreening(MutationProtocol):
     calibration_folds : int
         Bagel folds averaged per calibrated candidate (default 1). Increase it when the bagel oracle is stochastic, to
         average its noise out of the comparison; every extra fold multiplies the calibration cost.
+    use_structure_terms : bool
+        Default False. If True, the terms that read atom coordinates (surface area, hydrophobic, hydropathy, globular,
+        buried histidine, histidine-carboxylate contacts) are also part of the pseudo-energy, evaluated on a structure
+        rebuilt from mosaic's all-atom output (this makes mosaic return the coordinates, a larger transfer). Off by default
+        because the structural terms agreed poorly with the oracle's structures in the one check made (25 mutants of one
+        binder: Spearman correlation between -0.3 and 0.35 for surface area, globular and buried histidine; the exceptions
+        are the hydrophobic and hydropathy terms without a residue-group mode, which depend on the sequence only and agree
+        exactly). If you enable it, keep the calibration on.
     mutation_bias : dict[str, float]
         Amino acids with zero (or missing) bias are never proposed. The non-zero values are not used as weights; the
         candidates are sampled uniformly over the allowed amino acids.
@@ -154,6 +163,7 @@ class MosaicScreening(MutationProtocol):
         calibration_threshold: float = 0.25,
         calibration_rule: str = 'point',
         calibration_folds: int = 1,
+        use_structure_terms: bool = False,
         mutation_bias: dict[str, float] = mutation_bias_no_cystein,
         fallback: MutationProtocol | None = None,
         report_name: str = 'Mosaic_pseudo_energy.txt',
@@ -186,6 +196,7 @@ class MosaicScreening(MutationProtocol):
         self.calibration_threshold = calibration_threshold
         self.calibration_rule = calibration_rule
         self.calibration_folds = calibration_folds
+        self.use_structure_terms = use_structure_terms
         self.mutation_bias = mutation_bias
         self.n_mutations = 1
         self.exclude_self = True
@@ -231,7 +242,7 @@ class MosaicScreening(MutationProtocol):
             (self.report_dir / self.report_name).write_text(text)
 
     def _initialise(self, system: System) -> None:
-        self.plans = build_plans(system, self.models)
+        self.plans = build_plans(system, self.models, self.use_structure_terms)
         statuses = [s for p in self.plans if p is not None for s in p.statuses]
         cov = coverage(statuses)
         unused = [f'{s.name} ({s.reason})' for s in statuses if not s.used]
@@ -262,7 +273,9 @@ class MosaicScreening(MutationProtocol):
                 # constant batch size: the mosaic loss is recompiled for every new batch size
                 batch = fresh + [fresh[-1]] * max(0, self.n_candidates + 1 - len(fresh))
                 t0 = time.time()
-                predictions = self.backend.predict(group.spec, plan.target_sequences, batch)
+                predictions = self.backend.predict(
+                    group.spec, plan.target_sequences, batch, structure=group.needs_structure
+                )
                 self.stats['mosaic_calls'] += 1
                 self.stats['mosaic_seconds'] += time.time() - t0
                 terms = plan.terms_of(state, group)

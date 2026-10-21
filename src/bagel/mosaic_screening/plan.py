@@ -22,12 +22,18 @@ from typing import Any, Mapping
 from ..chain import Chain
 from ..constants import aa_dict
 from ..energies import (
+    BuriedHistidineEnergy,
     EnergyTerm,
+    GlobularEnergy,
+    HistidineCarboxylateContactEnergy,
+    HydrophobicEnergy,
+    HydropathyEnergy,
     LISEnergy,
     OverallPLDDTEnergy,
     PAEEnergy,
     PLDDTEnergy,
     PTMEnergy,
+    SurfaceAreaEnergy,
     ipSAEEnergy,
 )
 from ..oracles.base import Oracle
@@ -36,10 +42,9 @@ from ..system import System
 from .errors import MosaicIncompatibleError
 from .models import MosaicModelSpec, default_spec_for
 
-#: Energy terms that bagel can compute from a mosaic prediction: they read only ``local_plddt``, ``pae`` and ``ptm``
-#: (and use the structure only to turn their residue groups into masks). Exact types, not subclasses, because a
-#: subclass may override ``compute``.
-SUPPORTED_TERMS: tuple[type[EnergyTerm], ...] = (
+#: Energy terms that bagel can compute from a mosaic prediction using only ``local_plddt``, ``pae`` and ``ptm`` (the structure
+#: is used only to turn their residue groups into masks). Exact types, not subclasses, because a subclass may override ``compute``.
+CONFIDENCE_TERMS: tuple[type[EnergyTerm], ...] = (
     PTMEnergy,
     PLDDTEnergy,
     OverallPLDDTEnergy,
@@ -47,6 +52,20 @@ SUPPORTED_TERMS: tuple[type[EnergyTerm], ...] = (
     LISEnergy,
     ipSAEEnergy,
 )
+
+#: Terms that read atom coordinates. They are evaluated on a structure rebuilt from mosaic's all-atom output (see
+#: :func:`bagel.mosaic_screening.adapter.structure_from_atom37`), which has the same heavy atoms, names and order as the
+#: structures bagel gets from its oracles.
+STRUCTURE_TERMS: tuple[type[EnergyTerm], ...] = (
+    SurfaceAreaEnergy,
+    HydrophobicEnergy,
+    HydropathyEnergy,
+    GlobularEnergy,
+    BuriedHistidineEnergy,
+    HistidineCarboxylateContactEnergy,
+)
+
+SUPPORTED_TERMS: tuple[type[EnergyTerm], ...] = CONFIDENCE_TERMS + STRUCTURE_TERMS
 
 _REASONS = {
     'BinderRMSDEnergy': 'compares structures across States and needs all-atom coordinates',
@@ -75,6 +94,7 @@ class ScoringGroup:
     spec: MosaicModelSpec
     term_indices: list[int]  # positions in ``state.energy_terms``
     term_names: list[str]
+    needs_structure: bool = False  # some term reads atom coordinates, so mosaic must return them
 
 
 @dataclass
@@ -147,8 +167,15 @@ def _validate_chain(chain: Chain, state_name: str) -> None:
             )
 
 
-def _classify_term(term: EnergyTerm, models: Mapping[Oracle, MosaicModelSpec]) -> tuple[MosaicModelSpec | None, str]:
+def _classify_term(
+    term: EnergyTerm, models: Mapping[Oracle, MosaicModelSpec], structure_terms: bool
+) -> tuple[MosaicModelSpec | None, str]:
     """Return (spec, '') if the term can be evaluated on a mosaic prediction, else (None, reason)."""
+    if type(term) in STRUCTURE_TERMS and not structure_terms:
+        return None, (
+            f'{type(term).__name__}: evaluated on mosaic coordinates only if use_structure_terms=True '
+            '(agreement with the oracle structure is weak for most structural terms)'
+        )
     if type(term) not in SUPPORTED_TERMS:
         reason = _REASONS.get(
             type(term).__name__, 'needs the all-atom structure, which is not reconstructed from mosaic'
@@ -160,7 +187,9 @@ def _classify_term(term: EnergyTerm, models: Mapping[Oracle, MosaicModelSpec]) -
     return spec, ''
 
 
-def build_plans(system: System, models: Mapping[Oracle, MosaicModelSpec] | None = None) -> list[StatePlan | None]:
+def build_plans(
+    system: System, models: Mapping[Oracle, MosaicModelSpec] | None = None, structure_terms: bool = False
+) -> list[StatePlan | None]:
     """
     Build one :class:`StatePlan` per State of ``system`` (``None`` for States without a designed chain, which no move
     can change and which therefore never need mosaic).
@@ -194,7 +223,7 @@ def build_plans(system: System, models: Mapping[Oracle, MosaicModelSpec] | None 
         statuses: list[TermStatus] = []
         by_spec: dict[MosaicModelSpec, ScoringGroup] = {}
         for index, term in enumerate(state.energy_terms):
-            spec, reason = _classify_term(term, models)
+            spec, reason = _classify_term(term, models, structure_terms)
             statuses.append(
                 TermStatus(
                     state_name=state.name,
@@ -209,6 +238,7 @@ def build_plans(system: System, models: Mapping[Oracle, MosaicModelSpec] | None 
                 group = by_spec.setdefault(spec, ScoringGroup(spec=spec, term_indices=[], term_names=[]))
                 group.term_indices.append(index)
                 group.term_names.append(term.name)
+                group.needs_structure = group.needs_structure or type(term) in STRUCTURE_TERMS
         if not by_spec:
             raise MosaicIncompatibleError(
                 f"No energy term of state '{state.name}' has a mosaic counterpart, so there is nothing to screen "
