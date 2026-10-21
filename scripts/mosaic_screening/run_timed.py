@@ -43,7 +43,7 @@ class Recorder(bg.mutation.MutationProtocol):
     def set_log_path(self, path: pl.Path) -> None:
         self.inner.set_log_path(path)
 
-    def one_step(self, system):  # noqa: ANN001
+    def one_step(self, system, temperature=None):  # noqa: ANN001
         t0 = time.time()
         mutated, record = self.inner.one_step(system)
         t_propose = time.time() - t0

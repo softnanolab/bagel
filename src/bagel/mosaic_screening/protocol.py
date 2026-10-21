@@ -347,7 +347,8 @@ class MosaicScreening(MutationProtocol):
         self._write_report()
 
     # ------------------------------------------------------------------------------------------------------------
-    def one_step(self, system: System) -> tuple[System, MutationRecord]:
+    def one_step(self, system: System, temperature: float | None = None) -> tuple[System, MutationRecord]:
+        # temperature (the Monte Carlo temperature, passed by newer minimizers) is accepted for interface compatibility only
         if self.plans is None:
             self._initialise(system)
         assert self.plans is not None
