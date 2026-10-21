@@ -119,3 +119,27 @@ comparison that matters in practice. Compute cost per run is the same (about $1.
 Reading: screening helps most for short budgets and for ubiquitin/GB1; at 40 minutes the advantage is borderline. Screening only for the
 first N steps and then switching to random sampling (`screening_steps`) is a natural option but has not been tested.
 Analysis script: `scripts/mosaic_proposal/analyze_timed.py`; driver for new runs: `scripts/mosaic_screening/run_timed.py`.
+
+Energy change of the proposals (same 24 pairs, pooled, cumulative from the start; negative is an improvement):
+
+| arm | at | mean delta, all proposals | median | share improving | mean delta, accepted moves |
+|---|---|---|---|---|---|
+| random | 10 min | +0.45 | +0.24 | 12% | -0.015 |
+| random | 20 min | +0.72 | +0.48 | 8% | -0.015 |
+| random | 40 min | +1.03 | +0.90 | 5% | -0.016 |
+| screened | 10 min | +0.25 | +0.11 | 25% | -0.056 |
+| screened | 20 min | +0.43 | +0.25 | 15% | -0.052 |
+| screened | 40 min | +0.74 | +0.47 | 10% | -0.035 |
+
+Screening makes the typical proposal less bad and roughly doubles the share that improve the energy; accepted screened moves are larger improvements
+on average, and that advantage shrinks over time. These are the oracle's own (noisy, optimistic) energies.
+
+## Summary of the evidence (2026-10-21)
+
+* Screening 8 random candidates with a mosaic forward pass and proposing the best one beats random proposals at an equal number of steps
+  (22/24 pairs) and, at equal wall-clock time on an A100 for both, at 10 and 20 minutes (p = 0.004 and 0.002, descriptive); at the pre-specified
+  40-minute comparison the difference is -0.58 (95% CI [-1.12, -0.01], p = 0.060), borderline. Compute cost per run is the same.
+* The advantage is largest early and for ubiquitin/GB1; it shrinks as the runs converge. Not tested: switching to random sampling after N steps.
+* On one target and 25 mutants, the pseudo-energy built from confidence terms correlated with the real energy at Spearman ~0.5; structural terms
+  (surface area, globular, buried histidine) agreed poorly (-0.3 to 0.35), so they are opt-in (`use_structure_terms`).
+* Not measured: Boltz2 as screening model, mismatched screening/evaluation models, multi-State systems, large complexes, a full 5 x 8 calibration.
