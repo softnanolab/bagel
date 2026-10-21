@@ -78,3 +78,44 @@ targets; the surrogate-only arm, which matched random before (-0.10, p = 0.40), 
 between surrogate and re-folded energies (Spearman +0.38 against +0.78), so mosaic's loss with the hotspot masks is a less reliable stand-in for bagel's energy.
 Not checked: whether the optimised binders actually contact the hotspot patch (this would need the folded structures of the final sequences).
 
+
+## 11h. Equal wall-clock comparison (2026-10-21)
+
+Question: at equal wall-clock time, does proposing with mosaic screening beat random proposals, when both use bagel's ESMFold2 on an
+A100-80GB? 3 targets (BCMA, ubiquitin, GB1) x 8 start sequences x 2 arms = 48 runs of 40 minutes, 24 pairs (same target and start sequence).
+Screened arm: 8 random candidates scored with mosaic (A100-80GB), lowest pseudo-energy proposed (`selection_temperature = 0`), calibration off.
+The same cyclic temperature schedule per step (0.1 for 50 steps, 0.02 for 200) in both arms.
+
+**Pre-specified** primary metric: energy of the best sequence at 40 minutes, re-folded 8 times with bagel (removes the optimism of picking the
+best of a noisy oracle); test: two-sided paired sign-flip permutation, alpha = 0.05. Everything at 10 and 20 minutes is descriptive.
+
+| time | screened - random (re-folded best energy) | 95% bootstrap CI | p (sign-flip) | screened lower in |
+|---|---|---|---|---|
+| 40 min (primary) | -0.58 | [-1.12, -0.01] | 0.060 | 16/24 |
+| 20 min | -0.85 | [-1.29, -0.40] | 0.002 | 18/24 |
+| 10 min | -0.70 | [-1.13, -0.29] | 0.004 | 16/24 |
+
+The primary test does **not** reach alpha = 0.05; the smallest difference this design could detect with 80% power was 0.82. By target at 40 minutes
+the mean differences were -0.31 (BCMA, lower in 4/8), -0.76 (ubiquitin, 7/8) and -0.67 (GB1, 5/8).
+
+Steps tried and acceptance (mean over the 24 runs of each arm; accepted = the energy of the current system changed after the step, which
+includes accepted uphill moves):
+
+| arm | at | steps tried | accepted | acceptance rate |
+|---|---|---|---|---|
+| random | 10 min | 407 (328-512) | 83 | 20.8% |
+| random | 20 min | 813 (656-1026) | 110 | 13.9% |
+| random | 40 min | 1621 (1292-2053) | 136 | 8.6% |
+| screened | 10 min | 94 (15-143) | 35 | 41.7% |
+| screened | 20 min | 205 (92-321) | 47 | 23.1% |
+| screened | 40 min | 495 (324-891) | 74 | 15.6% |
+
+(rates are the mean of the per-run rates; pooled over runs they are 20.4/13.5/8.4% and 37.4/22.7/14.9%.) A screened step takes about three times
+as long as a random one (a mosaic call plus the fold), so it makes ~3x fewer steps, but accepts roughly twice as large a fraction of them. In
+the first 10 minutes the screened arm gains energy faster (11.9 vs 8.0 per hour) but in the last 10 minutes more slowly (0.49 vs 1.00), so the
+advantage shrinks with time. At an equal number of steps the screened arm is clearly better (-1.23, lower in 22/24 pairs), which is not the
+comparison that matters in practice. Compute cost per run is the same (about $1.67 for both arms on A100 prices at the time).
+
+Reading: screening helps most for short budgets and for ubiquitin/GB1; at 40 minutes the advantage is borderline. Screening only for the
+first N steps and then switching to random sampling (`screening_steps`) is a natural option but has not been tested.
+Analysis script: `scripts/mosaic_proposal/analyze_timed.py`; driver for new runs: `scripts/mosaic_screening/run_timed.py`.
