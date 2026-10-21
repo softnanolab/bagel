@@ -1,21 +1,6 @@
 ---
 name: bagel-script-builder
-description: >-
-  Interactively turn a natural-language protein-design goal into runnable, reviewable BAGEL
-  scripts (the `biobagel` / `import bagel as bg` framework). Use this whenever the user
-  describes a protein-design or sequence-optimization problem in plain language and wants
-  BAGEL code — binders, de novo scaffolds, sequence optimization, enzyme miniaturization,
-  negative/selective design, or any custom energy-minimization over a System of States. Also
-  use it when the user wants to "build a BAGEL system", define States/Chains/EnergyTerms, pick
-  oracles (ESMFold, ESM2/ESM-C/ESM3, Chai1, Boltz2) or a minimizer (Monte Carlo, Simulated
-  Annealing, Simulated Tempering, custom temperature schedules, chained optimizers), smoke-test
-  a script on Modal, or run a SWEEP that repeats a minimization while varying some "difference"
-  (protected residues, step counts, seeds, weights, …) in parallel on a SLURM/PBS cluster or
-  Modal, or serially in the background. This skill is a guided, question-driven workflow: it
-  drafts, then interviews the user to pin down every undefined piece before finalizing, writes
-  verbose well-explained scripts to disk for review, and can generate the execution harness.
-  Trigger it even when the user doesn't say "script" — e.g. "design a binder to CD20",
-  "optimize this enzyme conserving the catalytic triad", "sweep over 10 seeds on SLURM".
+description: 'Interactively turn a natural-language protein-design goal into runnable BAGEL scripts (`biobagel` / `import bagel as bg`) plus their reproducibility docs. Use whenever the user describes a protein-design or sequence-optimization problem and wants BAGEL code: binders, de novo scaffolds, sequence optimization, enzyme miniaturization, negative/selective design, or custom energy minimization over a System of States. Also use it to define States/Chains/EnergyTerms, pick oracles (ESMFold, ESM2/ESM-C/ESM3, Chai1, Boltz2) or minimizers (Monte Carlo, Simulated Annealing, Simulated Tempering), smoke-test on Modal, sweep seeds/weights/residues on SLURM/PBS/Modal, or document and reproduce an existing BAGEL script. Drafts, interviews to pin down undefined details, saves verbose scripts to disk, and always writes the companion `Instructions_for_script.md` and `Extended_description_and_goals.md`. Trigger even without the word script, e.g. design a binder to CD20, optimize this enzyme.'
 ---
 
 # Building BAGEL protein-design scripts, interactively
@@ -37,16 +22,18 @@ user left unspecified is the main failure mode this skill exists to prevent.
    description left unclear, until every State, Chain, and EnergyTerm (and each term's inputs)
    is explicitly pinned down.
 2. **Write the design script** — verbose, heavily commented, saved to disk for review.
-3. **Smoke test** — generate a minimal test script; run it on Modal if credentials are
+3. **Document the script** — always write the two companion files, `Instructions_for_script.md`
+   and `Extended_description_and_goals.md`, next to it.
+4. **Smoke test** — generate a minimal test script; run it on Modal if credentials are
    available, and report exactly what worked or failed.
-4. **Single run or sweep?** — ask whether this is one run or a repeat over some "difference".
-5. **Execution harness** — if a sweep, generate the launcher (SLURM / PBS / Modal-parallel /
+5. **Single run or sweep?** — ask whether this is one run or a repeat over some "difference".
+6. **Execution harness** — if a sweep, generate the launcher (SLURM / PBS / Modal-parallel /
    serial-background), one output folder per run, runnable via a single command.
 
 Always **save every script to disk** (never only paste into chat) so the user can review, edit,
 and re-run them. Default to a `bagel_designs/<short-project-name>/` directory in the working
-directory unless the user names a location; put the design script, smoke test, and any sweep
-harness there together.
+directory unless the user names a location; put the design script, its two documentation files,
+the smoke test, and any sweep harness there together.
 
 **Every file this skill generates must begin with an agent-disclaimer comment**, so it is always
 clear the file was written with AI assistance and should be reviewed before use. Use this block
@@ -142,7 +129,58 @@ Write the final design script to disk. It must be **runnable**, follow the repo 
 
 Tell the user the saved path and give a one-line summary of each energy term so they can review.
 
-## Phase 3 — Smoke test
+## Phase 3 — Document the script (always, two files)
+
+A BAGEL script encodes a scientific hypothesis, but six months later nobody can recover from the
+code alone *why* those terms, weights and residue groups were chosen — and that is exactly what
+is needed to interpret the results or repeat the experiment. So whenever a design script is
+written or changed, write **both** of these files next to it, without being asked:
+
+1. **`Instructions_for_script.md`** — a self-contained prompt that would let a fresh Claude
+   session with this skill regenerate the same script. It carries every sequence, index, weight,
+   temperature and step count in full, because the new session will have none of this
+   conversation's context.
+2. **`Extended_description_and_goals.md`** — the human-readable record of what the run does and
+   why, in plain scientific English with no jargon beyond the BAGEL class names (glossed on first
+   use) and no padding.
+
+`Extended_description_and_goals.md` covers at minimum, and spells each out explicitly rather than
+gesturing at it:
+
+- **Energy terms** — every term, its weight and sign, and every non-default parameter. Where a
+  term targets particular residues or residue pairs, list those residues (chain, indices,
+  numbering convention, identities); for interface terms give **both** groups in full.
+- **Sequences and mutability** — every fixed chain's full sequence, and which positions are mutable
+  vs immutable, with the reason each protected region is protected. For runtime-generated chains,
+  give the generation method, length, seed and source inputs instead of an invented sequence.
+- **The System** — which States exist, what each represents physically, and which Chains are in
+  each, described in prose rather than Python.
+- **Mutation protocol** — `Canonical` vs `GrandCanonical`, mutations per step, bias, move
+  probabilities, and what that means for sequence length.
+- **Optimization protocol** — minimizer, step counts, the temperature schedule written out,
+  restart/preserve-best behaviour, chained phases, callbacks.
+- **What the energy function is for** — a plain-English paragraph on the combined intent, e.g.
+  "increase binding of chain A to chain B while restricting the interface to residues 10–20 of
+  chain B as the epitope", including how competing terms trade off.
+- **Oracles** — each oracle, its model/checkpoint, backend and image (Modal app or
+  `apptainer:<tag>`), config, any optimization (caching, batching, precision), and which terms it
+  serves.
+- **Anything done outside BAGEL** — an external folding or docking step every N steps, a greedy
+  refinement between BAGEL phases, filtering or hand-editing of sequences: the tool, when it
+  runs, and how its output re-enters the run. Say "None" explicitly if the protocol is entirely
+  in the script.
+
+Read `references/documentation-outputs.md` before writing them — it holds the templates for both
+files and the style rules. Two things matter most: **do not invent rationale** (if the reason for
+a term never came up, ask the user in this phase instead of guessing a plausible-sounding one),
+and **keep the files in sync** — if the script is edited later, in this conversation or a
+follow-up, rewrite both files in the same turn so they never describe code that no longer exists.
+
+Tell the user both paths, and offer to adjust the scientific framing in
+`Extended_description_and_goals.md` — that part is their hypothesis, and it is worth getting in
+their words.
+
+## Phase 4 — Smoke test
 
 A smoke test runs the *whole pipeline* for a trivial number of steps to catch import errors,
 bad residue groups, oracle/backend problems, and shape mismatches — before committing to a long
@@ -164,7 +202,7 @@ python -c "import modal, pathlib, os; print('AUTH' if (pathlib.Path.home()/'.mod
 
 Never enter or store the user's Modal credentials yourself — direct them to `modal token new`.
 
-## Phase 4 — Single run or sweep?
+## Phase 5 — Single run or sweep?
 
 Ask explicitly: **is this a single run, or should it repeat the minimization while varying some
 "difference" between runs?** The "difference" is any axis the user wants to sweep — a different
@@ -174,10 +212,10 @@ different random seed. Have the user specify:
   protected-residue sets; or `n_steps ∈ {1000, 5000, 20000}`), and
 - a short **run-naming scheme** so each run is identifiable.
 
-If it's a single run, you're done after Phase 3 (offer to kick off the full run). If it's a
-sweep, go to Phase 5.
+If it's a single run, you're done after Phase 4 (offer to kick off the full run). If it's a
+sweep, go to Phase 6.
 
-## Phase 5 — Execution harness for a sweep
+## Phase 6 — Execution harness for a sweep
 
 Every run must write to its **own folder** so runs never overwrite each other — pass a distinct
 `log_path` (and/or `experiment_name`) per run; `runs/<run_name>/` is the default convention. The
@@ -223,7 +261,9 @@ Read these as needed — don't hold every detail in context:
   custom temperature schedules + chained optimizers.
 - **`references/clarification-checklist.md`** — the Phase-1 interview checklist: every question
   to ask so the System is fully specified.
-- **`references/execution-harness.md`** — Phase-5 detail: folder conventions, per-run isolation,
+- **`references/documentation-outputs.md`** — Phase-3 detail: the templates and style rules for
+  `Instructions_for_script.md` and `Extended_description_and_goals.md`. Read before writing them.
+- **`references/execution-harness.md`** — Phase-6 detail: folder conventions, per-run isolation,
   and how to build the SLURM/PBS/Modal-parallel/serial-background launchers from the `assets/`
   templates.
 
@@ -235,3 +275,8 @@ explain the *reasoning* behind each energy term and optimizer choice. Keep the c
 simple (see the guiding principle) — plain, straight-line, no speculative machinery. Start every
 generated file with the agent-disclaimer block. Save everything to disk. Favor asking a quick
 question over shipping a silent assumption.
+
+Every design script leaves with its two companion files, `Instructions_for_script.md` and
+`Extended_description_and_goals.md` (Phase 3) — written on first delivery and rewritten in the
+same turn whenever the script changes. A script delivered without them is an incomplete
+deliverable, however good the code is.
