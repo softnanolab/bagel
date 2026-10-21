@@ -123,9 +123,11 @@ what it physically represents (bound complex, free binder, off-target complex), 
 holds, and whether it is being pushed towards or away from.>
 
 ## 3. Chains and sequences
-<For each chain: chain_ID, role, length, full sequence in a fenced block, and the mutable and
-immutable positions written out explicitly with the numbering convention stated. Give the reason
-each immutable region is protected (catalytic residue, disulfide, epitope on a fixed target...).>
+<For each fixed chain: chain_ID, role, length, full sequence in a fenced block, and the mutable
+and immutable positions written out explicitly with the numbering convention stated. For each
+runtime-generated chain, give the generation method, length, seed, and source inputs instead of
+inventing a sequence. Give the reason each immutable region is protected (catalytic residue,
+disulfide, epitope on a fixed target...).>
 
 ## 4. Energy terms
 <One subsection per state. For each term: its name in the script, the BAGEL class, its weight and
@@ -146,7 +148,7 @@ step, mutation bias (e.g. cysteines excluded), move probabilities, and which res
 can actually touch.>
 
 ## 7. Optimization protocol and temperature schedule
-<Minimizer, total number of steps and therefore total oracle calls, the temperature schedule
+<Minimizer, total number of steps (record step counts, not derived oracle-call counts: a step can evaluate several oracles and caching can skip evaluations; measure calls if they matter), the temperature schedule
 written out (constant value, ramp endpoints, or cycle structure with step counts), restart /
 preserve-best behaviour, chained phases in order, callbacks and what they log, and where outputs
 are written.>

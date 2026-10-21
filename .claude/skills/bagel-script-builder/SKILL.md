@@ -150,8 +150,9 @@ gesturing at it:
 - **Energy terms** — every term, its weight and sign, and every non-default parameter. Where a
   term targets particular residues or residue pairs, list those residues (chain, indices,
   numbering convention, identities); for interface terms give **both** groups in full.
-- **Sequences and mutability** — every chain's full sequence, and which positions are mutable vs
-  immutable, with the reason each protected region is protected.
+- **Sequences and mutability** — every fixed chain's full sequence, and which positions are mutable
+  vs immutable, with the reason each protected region is protected. For runtime-generated chains,
+  give the generation method, length, seed and source inputs instead of an invented sequence.
 - **The System** — which States exist, what each represents physically, and which Chains are in
   each, described in prose rather than Python.
 - **Mutation protocol** — `Canonical` vs `GrandCanonical`, mutations per step, bias, move
