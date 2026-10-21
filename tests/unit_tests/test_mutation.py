@@ -777,3 +777,23 @@ def test_bagel_sets_a_default_boileroom_image_tag() -> None:
     script = 'import os; os.environ["BOILEROOM_IMAGE_TAG"] = "explicit"; import bagel; print(os.environ["BOILEROOM_IMAGE_TAG"])'
     explicit = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True, check=True)
     assert explicit.stdout.strip() == 'explicit'
+
+
+def test_default_boileroom_image_tag_is_revisited_when_the_pin_moves() -> None:
+    """Tripwire: bagel's tag wins over boileroom's own lookup, so a stale one would be used silently.
+
+    ``DEFAULT_BOILEROOM_IMAGE_TAG`` only exists because the pinned boileroom version has no published
+    image. It is set with ``os.environ.setdefault``, which boileroom honours over the tag it derives from
+    its version -- so once the pin moves, bagel would keep forcing the old prerelease image rather than
+    falling back. Repinning must therefore re-check the tag, or drop it if the new version is published.
+
+    This catches a change of pinned *version*. It cannot catch boileroom publishing an image for the
+    version already pinned; that still needs a human to notice and delete the constant.
+    """
+    import importlib.metadata
+
+    assert importlib.metadata.version('boileroom') == '0.4.5', (
+        'The pinned boileroom version changed. Re-check DEFAULT_BOILEROOM_IMAGE_TAG in bagel/__init__.py: '
+        'point it at a prerelease published for every image bagel uses (boileroom-esm, boileroom-esmfold2, '
+        'boileroom-boltz, boileroom-chai1), or delete it and this test if the new version is published.'
+    )
