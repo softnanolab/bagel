@@ -34,7 +34,7 @@ For **each state**, pin down the list of terms. For **each term**:
 - **Weight** (relative; negative to discourage). Confirm the intended sign, especially in
   negative-design states.
 - **Residue group(s)** it applies to. Single-group terms (`PLDDTEnergy`, `HydrophobicEnergy`)
-  take a flat `residues=[...]`; **interface terms** (`PAEEnergy`, `SeparationEnergy`, `LISEnergy`, `ipSAEEnergy`, `SaltBridgeEnergy`)
+  take a flat `residues=[...]`; **interface terms** (`PAEEnergy`, `SeparationEnergy`, `LISEnergy`)
   take a list of **two** groups `residues=[group_a, group_b]`. Confirm exactly which residues form
   each group (hotspot/epitope/catalytic set/whole chain).
 - **Oracle** that evaluates it — folding (`ESMFold`, …) for structure/confidence/geometry terms;
@@ -69,6 +69,18 @@ For **each state**, pin down the list of terms. For **each term**:
 - Single run, or a **sweep** over some difference?
 - If a sweep: the **axis/axes** to vary, the **list of values**, a **run-naming scheme**, and the
   **execution mode** (SLURM / PBS / Modal-parallel / serial-background).
+
+## For the documentation files (Phase 3)
+These are the things the code cannot tell a future reader, so collect them now rather than
+inventing them later:
+- The **hypothesis**: what the run is testing, and what result would count as success or failure.
+- The **reason behind each energy term** in the user's own words — especially why a particular
+  residue group is the target. If the user has no reason beyond "it's standard", record that.
+- Any step **outside BAGEL**: an external folding/docking run every N steps, a greedy or manual
+  refinement between phases, filtering or clustering of outputs, a hand-edited starting sequence.
+  Ask explicitly — users often forget to mention these because they happen "around" the script.
+- **Provenance**: where target sequences came from (PDB ID, UniProt, a collaborator), the oracle
+  checkpoints/images in use, random seeds, and the environment or package versions.
 
 When every item above is either specified by the user or an explicitly-confirmed default, Phase 1
 is complete.

@@ -11,8 +11,9 @@ import numpy as np
 # from .folding import FoldingAlgorithm
 from .chain import Chain
 from .system import System
-from .constants import mutation_bias_no_cystein
+from .constants import aminoacids_letters, mutation_bias_no_cystein
 from dataclasses import dataclass, field
+from collections.abc import Callable, Sequence
 from typing import Any, Dict, Optional
 from abc import ABC, abstractmethod
 import logging
@@ -58,6 +59,7 @@ class MutationProtocol(ABC):
     def one_step(
         self,
         system: System,
+        temperature: float | None = None,
     ) -> tuple[System, MutationRecord]:
         """
         Abstract method for performing a single mutation step.
@@ -66,6 +68,10 @@ class MutationProtocol(ABC):
         ----------
         system : System
             The system to be mutated
+        temperature : float, optional
+            Temperature of the current Monte Carlo step, i.e. the one the minimizer uses to accept or reject the
+            proposed mutation. Protocols that propose mutations at random ignore it; protocols that sample from a
+            model may use it to temper their proposal distribution (see ``InverseFoldingSampling``).
 
         Returns
         -------
@@ -259,7 +265,9 @@ class Canonical(MutationProtocol):
     def one_step(
         self,
         system: System,
+        temperature: float | None = None,
     ) -> tuple[System, MutationRecord]:
+        # temperature is accepted for interface compatibility only: proposals here are random, not tempered
         mutated_system = system.__copy__()
         mutations: list[Mutation] = []
 
@@ -372,7 +380,9 @@ class GrandCanonical(MutationProtocol):
     def one_step(
         self,
         system: System,
+        temperature: float | None = None,
     ) -> tuple[System, MutationRecord]:
+        # temperature is accepted for interface compatibility only: proposals here are random, not tempered
         mutated_system = system.__copy__()
         mutations: list[Mutation] = []
 
@@ -401,17 +411,41 @@ class GrandCanonical(MutationProtocol):
 
 class InverseFoldingSampling(MutationProtocol):
     """
-    Substitution protocol that proposes the new residue by inverse folding.
+    Substitution protocol that proposes the new residue(s) by inverse folding.
 
-    For each mutation: (1) a random mutable residue is masked while all others stay fixed, (2) the inverse
-    folding model gives the probability of every amino acid at that position, conditioned on the rest of the
-    sequence and the currently folded structure, (3) the probability of the current amino acid is set to 0, the
-    distribution renormalised, and the new residue sampled from it. Chains cannot be added or removed.
+    ``n_mutations`` is the number of residues the step mutates, and it also selects how the model is asked.
+
+    **One residue (``n_mutations = 1``, the default).** (1) a random mutable residue is masked while all others
+    stay fixed, (2) the inverse folding model gives the probability of every amino acid at that position,
+    conditioned on the rest of the sequence and the currently folded structure, (3) the probability of the
+    current amino acid is set to 0, the distribution renormalised, and the new residue sampled from it.
+
+    **Several residues (``n_mutations > 1``).** That many random mutable residues of one chain are masked
+    *together* and then decoded one residue per round, so each is sampled in the context of the ones already
+    decoded rather than against a mask. This is the multi-residue redesign ESM3 does natively. Three
+    consequences: every residue comes from the same chain (the model is asked about one chain at
+    a time), the current amino acid is *not* excluded (the model may re-propose it, and only the residues that
+    actually changed are recorded), and the excluded amino acids are enforced by forbidding their tokens in the
+    model rather than by renormalising afterwards. The count is clamped to the number of mutable residues on the
+    chosen chain.
+
+    Either way the whole proposal is one Monte Carlo move, accepted or rejected as a unit, and chains cannot be
+    added or removed.
+
+    The model is sampled at ``t_sampling_proposals``, which is the protocol's own temperature and is independent
+    of the Monte Carlo temperature the minimizer uses to accept or reject the move. With one residue it tempers
+    the inverse folding probabilities: once the current amino acid and the excluded ones are removed, the
+    remaining probabilities are raised to ``1 / T`` and renormalised (equivalent to ``softmax(logits / T)`` over
+    the allowed alternatives). With several it is the sampling temperature of the decoding itself. It defaults to
+    0.1 because ESM3 recommends not sampling sequences above that: beyond it the distribution is so flat that the
+    proposals are essentially random, with little to no difference from the ``Canonical`` random-substitution
+    protocol. Higher values are allowed and not capped; it is your call.
 
     The structure is taken from the (cached, else freshly computed) result of a folding oracle used by a State
     containing the chosen chain; if several States contain it, one is picked at random. Amino acids with zero (or
-    missing) ``mutation_bias`` are excluded: their probability is set to 0 before renormalising. Non-zero bias
-    values are not used as weights; the inverse folding probabilities are.
+    missing) ``mutation_bias`` are excluded: with one residue their probability is set to 0 before renormalising,
+    and with several they are passed to the model as amino acids it may not sample. Non-zero bias values are not
+    used as weights; the inverse folding probabilities are.
 
     Parameters
     ----------
@@ -420,12 +454,21 @@ class InverseFoldingSampling(MutationProtocol):
     oracle : ESM3, optional
         ESM3 oracle to use. If None, ``bagel.oracles.embedding.ESM3()`` is created on first use.
     n_mutations : int, optional
-        Number of mutations to perform in each step.
+        Number of residues mutated in each step. ``1`` (the default) keeps the single-residue behaviour; above
+        that the residues are masked and redesigned jointly, all on the same chain.
     mutation_bias : Dict[str, float], optional
         Amino acids whose value is zero (or that are missing) can never be proposed.
+    t_sampling_proposals : float | Sequence[float] | Callable[[int], float], keyword-only, optional
+        Temperature the inverse folding model is sampled at, defaulting to ``0.1``. A float keeps it constant; a
+        sequence is read per step (``t_sampling_proposals[step]``, with ``step`` counted from 0 over the calls to
+        ``one_step``, like the minimizer's own temperature schedule); a callable is passed the step and returns
+        the temperature, which is how a scheduler is plugged in. It must resolve to a positive number.
+        Keyword-only, so it cannot shift the positional arguments that came before it.
     """
 
     SUPPORTED_METHODS = ('ESM3',)
+    # ESM3 recommends against sampling above 0.1: beyond that proposals are basically random.
+    DEFAULT_T_SAMPLING_PROPOSALS = 0.1
 
     def __init__(
         self,
@@ -433,17 +476,24 @@ class InverseFoldingSampling(MutationProtocol):
         oracle: Any = None,
         n_mutations: int = 1,
         mutation_bias: Dict[str, float] = mutation_bias_no_cystein,
+        *,
+        t_sampling_proposals: float | Sequence[float] | Callable[[int], float] = DEFAULT_T_SAMPLING_PROPOSALS,
     ):
         if inverse_folding_method not in self.SUPPORTED_METHODS:
             raise ValueError(
                 f'Unsupported inverse folding method {inverse_folding_method!r}. '
                 f'Supported methods: {list(self.SUPPORTED_METHODS)}'
             )
+        if n_mutations < 1:
+            raise ValueError(f'n_mutations must be at least 1, got {n_mutations}.')
         self.inverse_folding_method = inverse_folding_method
         self.oracle = oracle
         self.n_mutations = n_mutations
+        self.t_sampling_proposals = t_sampling_proposals
         self.mutation_bias = mutation_bias
-        self.exclude_self = True
+        # Joint decoding samples from the model directly, so it cannot forbid the current residue.
+        self.exclude_self = n_mutations == 1
+        self._step = 0  # counts calls to one_step, so a schedule can be read per step
 
     def _get_oracle(self) -> Any:
         if self.oracle is None:
@@ -466,42 +516,133 @@ class InverseFoldingSampling(MutationProtocol):
             state._oracles_result[oracle] = oracle.predict(chains=state.chains)
         return state._oracles_result.get_structure(oracle)
 
-    def propose_amino_acid(self, probabilities: Dict[str, float], current_aa: str) -> str:
-        """Zero the probability of ``current_aa`` and of amino acids excluded by ``mutation_bias``, renormalise, sample."""
+    def proposal_temperature(self, step: int) -> float:
+        """
+        Resolve ``t_sampling_proposals`` for a given step into the temperature the model is sampled at.
+
+        This is the protocol's own temperature, not the Monte Carlo one the minimizer uses to accept or reject
+        the move. ESM3 recommends staying at or below 0.1, but a higher value is allowed and not capped.
+
+        Parameters
+        ----------
+        step : int
+            Index of the current step, counted from 0 over the calls to ``one_step``. Only used when
+            ``t_sampling_proposals`` is a sequence or a callable.
+
+        Returns
+        -------
+        float
+            The temperature to sample at.
+
+        Raises
+        ------
+        ValueError
+            If a sequence is too short for ``step``, or the resolved temperature is not finite and
+            positive (NaN and infinity are rejected: both survive a bare positivity check, and infinity
+            would silently flatten the proposal distribution to uniform).
+        """
+        schedule = self.t_sampling_proposals
+        if callable(schedule):
+            temperature = float(schedule(step))
+        elif isinstance(schedule, (int, float)):
+            temperature = float(schedule)
+        else:
+            values = list(schedule)
+            if step >= len(values):
+                raise ValueError(
+                    f't_sampling_proposals has {len(values)} entries, too few for step {step}. Give a float, a '
+                    f'callable, or a sequence at least as long as the number of steps.'
+                )
+            temperature = float(values[step])
+        # NaN and inf both slip past `<= 0.0` (every NaN comparison is False). NaN then reaches numpy as a
+        # NaN probability vector, and inf silently flattens the distribution to uniform, which turns inverse
+        # folding into random substitution without raising. Reject both here.
+        if not np.isfinite(temperature) or temperature <= 0.0:
+            raise ValueError(f't_sampling_proposals must resolve to a finite positive temperature, got {temperature}.')
+        return temperature
+
+    def excluded_amino_acids(self) -> str:
+        """One-letter codes that ``mutation_bias`` forbids, as a string for the inverse folding model.
+
+        The joint (``n_mutations > 1``) path cannot renormalise a distribution after the fact, so the excluded
+        amino acids are forbidden inside the model instead. Amino acids missing from ``mutation_bias``, or
+        with a value of zero or less, are excluded, matching :meth:`propose_amino_acid`.
+
+        Returns
+        -------
+        str
+            The excluded one-letter codes, sorted.
+        """
+        return ''.join(sorted(aa for aa in aminoacids_letters if self.mutation_bias.get(aa, 0.0) <= 0.0))
+
+    def propose_amino_acid(self, probabilities: Dict[str, float], current_aa: str, temperature: float = 1.0) -> str:
+        """
+        Sample the new amino acid from the tempered inverse folding distribution.
+
+        ``current_aa`` and the amino acids excluded by ``mutation_bias`` (zero or missing) are removed, the remaining
+        probabilities are raised to ``1 / temperature`` and renormalised, and the new amino acid is sampled. The
+        tempering is done in log space and only over the allowed alternatives, so a very likely current amino acid
+        cannot make every alternative underflow to zero at low temperatures.
+        """
+        if not np.isfinite(temperature) or temperature <= 0.0:
+            # See `proposal_temperature`: NaN and inf pass a bare `<= 0.0` check and corrupt the sampling.
+            raise ValueError(f'temperature must be finite and positive, got {temperature}')
         aa_keys = list(probabilities.keys())
-        probs = np.array(
-            [0.0 if (a == current_aa or self.mutation_bias.get(a, 0.0) <= 0.0) else probabilities[a] for a in aa_keys],
-            dtype=float,
+        allowed = np.array(
+            [a != current_aa and self.mutation_bias.get(a, 0.0) > 0.0 and probabilities[a] > 0.0 for a in aa_keys]
         )
-        total = probs.sum()
-        if total <= 0:
+        if not allowed.any():
             raise ValueError(f'No valid mutation targets after excluding current AA={current_aa}.')
-        return str(np.random.choice(aa_keys, p=probs / total))
+        with np.errstate(divide='ignore'):  # log(0) = -inf for the excluded amino acids is intended
+            log_probs = np.log(np.array([probabilities[a] for a in aa_keys], dtype=float))
+        # shift by the largest allowed log-probability *before* dividing, so that the best alternative always has
+        # weight exp(0) = 1 and tiny temperatures cannot turn every weight into -inf (and the ratios into NaN)
+        log_probs = np.where(allowed, (log_probs - log_probs[allowed].max()) / temperature, -np.inf)
+        probs = np.exp(log_probs)
+        return str(np.random.choice(aa_keys, p=probs / probs.sum()))
 
     def one_step(
         self,
         system: System,
+        temperature: float | None = None,
     ) -> tuple[System, MutationRecord]:
+        """
+        Propose ``n_mutations`` inverse-folding substitutions as a single Monte Carlo move.
+
+        Parameters
+        ----------
+        system : System
+            The system to be mutated.
+        temperature : float, optional
+            Monte Carlo temperature of the current step (the one BAGEL uses to accept or reject the mutation).
+            Accepted so the minimizer can pass it, but not used: the model is sampled at ``t_sampling_proposals``,
+            which is set on the protocol and resolved per step by ``proposal_temperature``.
+        """
+        sampling_temperature = self.proposal_temperature(self._step)
+        self._step += 1
         mutated_system = system.__copy__()
         mutations: list[Mutation] = []
-        structures: dict[str, Any] = {}  # per step, so later mutations reuse the structure of the unmutated system
+        structures: dict[str, Any] = {}  # the structure the proposal was conditioned on, for this step
 
-        for _ in range(self.n_mutations):
-            chain = self.choose_chain(mutated_system)
-            index = int(np.random.choice(chain.mutable_residue_indexes))
+        chain = self.choose_chain(mutated_system)
+        candidate_indices = [i for i, s in enumerate(mutated_system.states) if any(c is chain for c in s.chains)]
+        state_index = candidate_indices[np.random.randint(len(candidate_indices))]
+        state = mutated_system.states[state_index]
+        # Chains shared between states are already mutated in the copy, so take the structure from the
+        # corresponding unmutated state of the input system.
+        structures[state.name] = self._get_structure(system.states[state_index])
+        structure = structures[state.name]
+
+        if self.n_mutations == 1:
+            proposal = self._propose_one(state, structure, chain, sampling_temperature)
+        else:
+            proposal = self._propose_several(state, structure, chain, sampling_temperature)
+
+        for index, amino_acid in proposal.items():
             current_aa = chain.residues[index].name
-
-            candidate_indices = [i for i, s in enumerate(mutated_system.states) if any(c is chain for c in s.chains)]
-            state_index = candidate_indices[np.random.randint(len(candidate_indices))]
-            state = mutated_system.states[state_index]
-            if state.name not in structures:
-                # Chains shared between states are already mutated in the copy, so take the structure from the
-                # corresponding unmutated state of the input system.
-                structures[state.name] = self._get_structure(system.states[state_index])
-            probabilities = self._get_oracle().inverse_fold(
-                chains=state.chains, structure=structures[state.name], chain_id=chain.chain_ID, residue_index=index
-            )
-            amino_acid = self.propose_amino_acid(probabilities, current_aa)
+            if amino_acid == current_aa:
+                # Joint decoding can re-propose the residue that is already there; nothing to record.
+                continue
             chain.mutate_residue(index=index, amino_acid=amino_acid)
             mutations.append(
                 Mutation(
@@ -513,3 +654,78 @@ class InverseFoldingSampling(MutationProtocol):
                 )
             )
         return mutated_system, MutationRecord(mutations=mutations)
+
+    def _propose_one(
+        self,
+        state: Any,
+        structure: Any,
+        chain: Chain,
+        sampling_temperature: float,
+    ) -> dict[int, str]:
+        """Propose a new residue for one random mutable position, from the tempered inverse folding distribution.
+
+        Parameters
+        ----------
+        state : State
+            State whose chains and structure condition the model.
+        structure : AtomArray
+            Folded structure of ``state``'s chains.
+        chain : Chain
+            Chain to mutate.
+        sampling_temperature : float
+            Temperature the proposal distribution is tempered at.
+
+        Returns
+        -------
+        dict[int, str]
+            The single ``{residue index: new amino acid}`` entry proposed.
+        """
+        index = int(np.random.choice(chain.mutable_residue_indexes))
+        probabilities = self._get_oracle().inverse_fold(
+            chains=state.chains, structure=structure, chain_id=chain.chain_ID, residue_index=index
+        )
+        amino_acid = self.propose_amino_acid(
+            probabilities, chain.residues[index].name, temperature=sampling_temperature
+        )
+        return {index: amino_acid}
+
+    def _propose_several(
+        self,
+        state: Any,
+        structure: Any,
+        chain: Chain,
+        sampling_temperature: float,
+    ) -> dict[int, str]:
+        """Jointly redesign ``n_mutations`` random mutable positions of ``chain`` by iterative decoding.
+
+        The positions are masked together, so each residue is sampled in the context of the ones already
+        decoded. The current residues are not excluded, so some positions may come back unchanged.
+
+        Parameters
+        ----------
+        state : State
+            State whose chains and structure condition the model.
+        structure : AtomArray
+            Folded structure of ``state``'s chains.
+        chain : Chain
+            Chain to mutate.
+        sampling_temperature : float
+            Temperature the model samples at.
+
+        Returns
+        -------
+        dict[int, str]
+            The proposed ``{residue index: amino acid}`` for every masked position, changed or not.
+        """
+        mutable = np.asarray(chain.mutable_residue_indexes)
+        n_chosen = min(self.n_mutations, int(mutable.size))
+        indices = [int(index) for index in np.random.choice(mutable, size=n_chosen, replace=False)]
+        proposed: dict[int, str] = self._get_oracle().inverse_generate(
+            chains=state.chains,
+            structure=structure,
+            chain_id=chain.chain_ID,
+            residue_indices=indices,
+            temperature=sampling_temperature,
+            excluded_amino_acids=self.excluded_amino_acids(),
+        )
+        return proposed

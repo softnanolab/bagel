@@ -22,8 +22,28 @@ First, you need to install the development dependencies:
 uv sync --extra dev
 ```
 
-BAGEL targets the pinned `boileroom==0.4.1` release from PyPI. The lock file
-records the published distribution metadata for reproducibility.
+BAGEL pins boileroom to a commit on its `main` branch (currently `8763ac5`),
+not a PyPI release, because it needs APIs that are not in one yet. The lock file
+records that commit for reproducibility. See the comment on the dependency in
+`pyproject.toml` for what each pin is for.
+
+The pinned package reports version `0.4.5`, but that is the target of
+boileroom's next release and has never been tagged or published: `main` builds
+publish prereleases such as `0.4.5-alpha.N`. Since boileroom picks its runtime
+image tag from the installed version, the bare lookup would ask for an image
+that does not exist. Importing bagel therefore applies
+`DEFAULT_BOILEROOM_IMAGE_TAG` (`bagel/__init__.py`) as the default
+`BOILEROOM_IMAGE_TAG`: a published prerelease matching the pinned commit. The
+image only carries the runtime environment, so it does not have to be built from
+that commit. Bump it alongside the pin, and delete it once boileroom cuts a
+release whose version is published.
+
+To use a different image:
+
+- `modal`: set `BOILEROOM_IMAGE_TAG` yourself **before** importing bagel (it is
+  applied with `setdefault`, so your value wins).
+- `apptainer`: the same variable, or inline on the constructor as
+  `backend="apptainer:<image-tag>"`, which takes precedence over it.
 
 BAGEL 0.2 requires Python 3.12. Its oracle API replaces `use_modal` and
 `modal_app_context` with explicit `backend` and optional `device` parameters.
