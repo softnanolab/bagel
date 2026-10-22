@@ -133,7 +133,17 @@ class ModalMosaicBackend:
         return _decode(response, len(design_sequences))
 
     def versions(self) -> dict[str, str]:
-        return dict(self._get().versions.remote())
+        # ``modal.Cls.from_name`` is lazy: an undeployed app is only reported by the first remote call, so that has to be
+        # wrapped too (the integration tests rely on ``MosaicBackendError`` to skip when the app is not deployed).
+        try:
+            return dict(self._get().versions.remote())
+        except MosaicBackendError:
+            raise
+        except Exception as exc:
+            raise MosaicBackendError(
+                f"Modal call failed for app '{self.app_name}' (class '{self.class_name}'): {exc}. "
+                'Deploy it with `modal deploy src/bagel/mosaic_screening/modal_service.py`.'
+            ) from exc
 
 
 class SubprocessMosaicBackend:
