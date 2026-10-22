@@ -1,0 +1,106 @@
+name: Mosaic worker image
+
+# Builds the image of the mosaic worker used by MosaicScreening (docker/mosaic-screening/Dockerfile) and publishes it to
+# the GitHub Container Registry. No credentials beyond the automatic GITHUB_TOKEN are needed; the package is created on
+# the first push (private) and has to be made public once (package settings -> Danger Zone -> Change visibility), after
+# which pulling and storage are free. Pull requests only build and smoke-test the image, they do not push.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'docker/mosaic-screening/**'
+      - 'src/bagel/mosaic_screening/worker.py'
+      - '.github/workflows/mosaic-image.yaml'
+  pull_request:
+    paths:
+      - 'docker/mosaic-screening/**'
+      - 'src/bagel/mosaic_screening/worker.py'
+      - '.github/workflows/mosaic-image.yaml'
+  workflow_dispatch:
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/bagel-mosaic-screening
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space (the CUDA/JAX environment is several GB)
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /usr/local/share/boost
+          df -h /
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Read the pinned mosaic commit
+        id: pin
+        run: echo "commit=$(grep -m1 '^ARG MOSAIC_COMMIT=' docker/mosaic-screening/Dockerfile | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+
+      - name: Image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-
+            type=raw,value=mosaic-${{ steps.pin.outputs.commit }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/mosaic-screening/Dockerfile
+          load: true
+          push: false
+          tags: bagel-mosaic-screening:test
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test (imports and the pinned commit; no GPU on the runner)
+        run: |
+          docker run -i --rm bagel-mosaic-screening:test /opt/mosaic/.venv/bin/python - <<'PY'
+          import os
+          import mosaic.models.esmfold2, mosaic.models.boltz2, mosaic.losses.structure_prediction
+          import jax
+          print('mosaic commit', os.environ['MOSAIC_COMMIT'], 'jax', jax.__version__)
+          PY
+          docker run -i --rm bagel-mosaic-screening:test /opt/mosaic/.venv/bin/python /opt/svc/worker.py --fake <<< '{"op": "ping"}' | grep -q BAGEL_MOSAIC_RESPONSE
+
+      - name: Licences of the installed packages (for review; not blocking)
+        run: |
+          docker run -i --rm bagel-mosaic-screening:test /opt/mosaic/.venv/bin/python - <<'PY' | tee licences.txt >> "$GITHUB_STEP_SUMMARY"
+          import importlib.metadata as md
+          rows = sorted((d.metadata['Name'] or '', d.version, d.metadata.get('License-Expression') or d.metadata.get('License') or 'see classifiers') for d in md.distributions())
+          print('| package | version | licence |\n|---|---|---|')
+          for name, version, licence in rows:
+              print(f'| {name} | {version} | {str(licence).splitlines()[0][:60] if licence else ""} |')
+          PY
+
+      - name: Push
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/mosaic-screening/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha

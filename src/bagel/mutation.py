@@ -17,6 +17,7 @@ from collections.abc import Callable, Sequence
 from typing import Any, Dict, Optional
 from abc import ABC, abstractmethod
 import logging
+import pathlib as pl
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,10 @@ class MutationProtocol(ABC):
             Record of all mutations performed in this step
         """
         pass
+
+    def set_log_path(self, path: pl.Path) -> None:
+        """Called by the minimizer with the log folder of the run. Does nothing unless a protocol writes its own files."""
+        return
 
     def choose_chain(self, system: System) -> Chain:
         """

@@ -1,0 +1,83 @@
+{
+ "bcma": {
+  "pdb": "4ZFO",
+  "chain": "F",
+  "observed_start_index": 5,
+  "n_observed": 36,
+  "anchor_index": 16,
+  "hotspot": [
+   13,
+   14,
+   15,
+   16,
+   17,
+   18,
+   19,
+   20
+  ],
+  "hotspot_residues": [
+   "F14",
+   "D15",
+   "S16",
+   "L17",
+   "L18",
+   "H19",
+   "A20",
+   "C21"
+  ]
+ },
+ "ubq": {
+  "pdb": "1UBQ",
+  "chain": "A",
+  "observed_start_index": 0,
+  "n_observed": 76,
+  "anchor_index": 70,
+  "hotspot": [
+   7,
+   37,
+   38,
+   41,
+   69,
+   70,
+   71,
+   72
+  ],
+  "hotspot_residues": [
+   "L8",
+   "P38",
+   "D39",
+   "R42",
+   "V70",
+   "L71",
+   "R72",
+   "L73"
+  ]
+ },
+ "gb1": {
+  "pdb": "1PGA",
+  "chain": "A",
+  "observed_start_index": 0,
+  "n_observed": 56,
+  "anchor_index": 20,
+  "hotspot": [
+   0,
+   1,
+   18,
+   20,
+   21,
+   22,
+   23,
+   24
+  ],
+  "hotspot_residues": [
+   "M1",
+   "T2",
+   "E19",
+   "V21",
+   "D22",
+   "A23",
+   "A24",
+   "T25"
+  ]
+ }
+}

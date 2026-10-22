@@ -54,6 +54,7 @@ class Minimizer(ABC):
 
         # Canonical logging directory for this experiment
         self.log_path: pl.Path = self.initialize_log_path(log_path)
+        self.mutator.set_log_path(self.log_path)
 
         # Initialize callback manager (DefaultLogger is injected by callers or higher-level APIs)
         from .callbacks import CallbackManager, DefaultLogger

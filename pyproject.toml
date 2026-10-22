@@ -1,6 +1,6 @@
 [project]
 name = "biobagel"
-version = "0.2.22"
+version = "0.2.23"
 authors = [
   {name = "Jakub Lála", email = "jakublala@gmail.com"},
   {name = "Ayham Al-Saffar", email = "ayham.saffar@gmail.com"},
@@ -62,6 +62,12 @@ explicit_package_bases = true #allows giving directories different mypy settings
 
 [[tool.mypy.overrides]]
 module = ["biotite.*", "boileroom.*", "pytest.*", "pandas.*", "bagel.*", "wandb"] # libraries that don't have type stubs
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# These two run inside the mosaic environment (JAX, mosaic, modal), which is not installed alongside bagel.
+module = ["bagel.mosaic_screening.worker", "bagel.mosaic_screening.modal_service", "src.bagel.mosaic_screening.worker", "src.bagel.mosaic_screening.modal_service"]
+ignore_errors = true
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
