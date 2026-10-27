@@ -109,7 +109,7 @@ def test_oracle_rejects_inconsistent_sample_counts(make_oracle, monomer, oracle_
         ptm=[np.array(0.7)] * 2,
     )
     oracle, _ = make_oracle(oracle_class, output)
-    with pytest.raises(ValueError, match='plddt has 1 samples; expected 2'):
+    with pytest.raises(ValueError, match='plddt must contain exactly one sample per structure; got 1 for 2 structure'):
         oracle.fold(monomer)
 
 

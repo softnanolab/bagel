@@ -212,11 +212,27 @@ def test_chai1_defaults_to_one_diffusion_sample(monkeypatch) -> None:
     assert captured_config == {'num_diffn_timesteps': 10, 'num_diffn_samples': 1}
 
 
-def test_chai1_rejects_multiple_diffusion_samples(monkeypatch) -> None:
-    monkeypatch.setattr('boileroom.models.chai.chai1.Chai1', object)
+def test_chai1_rejects_fewer_diffusion_samples_than_n_samples(monkeypatch) -> None:
+    monkeypatch.setattr('boileroom.models.chai.chai1.Chai1', lambda **kwargs: None)
 
-    with pytest.raises(ValueError, match='exactly one Chai-1 diffusion sample'):
-        bg.oracles.folding.Chai1(config={'num_diffn_samples': 5})
+    with pytest.raises(ValueError, match='fewer samples than n_samples=3'):
+        bg.oracles.folding.Chai1(config={'num_diffn_samples': 2}, n_samples=3)
+
+
+def test_chai1_generates_n_samples_diffusion_samples(monkeypatch) -> None:
+    captured_config = {}
+
+    class FakeChai1:
+        def __init__(self, backend, device, config):
+            captured_config.update(config)
+
+    monkeypatch.setattr('boileroom.models.chai.chai1.Chai1', FakeChai1)
+
+    bg.oracles.folding.Chai1(n_samples=3)
+    assert captured_config == {'num_diffn_samples': 3}
+    captured_config.clear()
+    bg.oracles.folding.Chai1(config={'num_diffn_samples': 5}, n_samples=2)  # more than needed: the best 2 are kept
+    assert captured_config == {'num_diffn_samples': 5}
 
 
 @pytest.mark.parametrize(
