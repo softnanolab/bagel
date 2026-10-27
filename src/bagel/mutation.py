@@ -104,7 +104,7 @@ class MutationProtocol(ABC):
         unique_chain_list: list[Chain] = []
         for state in system.states if states is None else states:
             for chain in state.chains:
-                # Using a set ensures that each chain is only counted once
+                # each chain (by identity: shared Chain objects are the same object) is only counted once
                 if not any(chain is other for other in unique_chain_list):
                     unique_chain_list.append(chain)
 
@@ -689,8 +689,8 @@ class InverseFoldingSampling(MutationProtocol):
             state_index = names.index(self.conditioning_state_name)
             chain = self.choose_chain(mutated_system, states=[mutated_system.states[state_index]])
         state = mutated_system.states[state_index]
-        # Chains shared between states are already mutated in the copy, so take the structure from the
-        # corresponding unmutated state of the input system.
+        # Take the structure from the corresponding State of the input system, not of the mutated copy: the
+        # cached prediction then stays on the system that is kept and is not lost with the throwaway copy.
         structures[state.name] = self._get_structure(system.states[state_index], self.folding_oracle)
         structure = structures[state.name]
 

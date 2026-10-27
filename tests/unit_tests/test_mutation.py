@@ -989,6 +989,8 @@ def test_InverseFoldingSampling_conditioning_state_takes_the_structure_from_the_
     assert len(record.mutations) == 1
     assert folded == [['AAAAA']]
     assert oracle.calls[0]['sequences'] == ['AAAAA']
+    # the structure is cached on the input system's State (kept for the next step), not on the throwaway copy
+    assert fake_esmfold in system.states[1]._oracles_result
 
 
 def test_InverseFoldingSampling_duplicate_state_names_make_conditioning_state_ambiguous(
