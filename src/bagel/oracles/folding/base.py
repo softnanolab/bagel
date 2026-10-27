@@ -255,6 +255,7 @@ class RankedSamplesFoldingOracle(ConfidenceFoldingOracle):
                 and all(v is not None and np.size(v) > 0 for v in plddt)
             )
             if well_formed:
+                assert ptm is not None and plddt is not None
                 scores = [
                     (-float(np.asarray(ptm[i]).reshape(-1)[0]), -float(np.mean(plddt[i])), i)
                     for i in range(n_available)
