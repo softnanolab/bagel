@@ -116,6 +116,46 @@ def chai1(request) -> bg.oracles.folding.Chai1:
         raise ValueError(f'Unknown --oracles flag: {flag}')
 
 
+def _modal_folding_oracle(request, oracle_class: type, name: str):
+    """Yield one session-wide oracle of ``oracle_class`` on Modal; skip unless ``--oracles modal``."""
+    flag = request.config.getoption('--oracles')
+    if flag == 'skip':
+        pytest.skip(reason='--oracles flag of the original pytest call set to skip')
+    elif flag == 'apptainer':
+        pytest.skip(reason=f'{name} apptainer backend not yet exercised in CI; use --oracles modal')
+    elif flag == 'modal':
+        with modal.enable_output():
+            model = oracle_class(backend='modal')
+            yield model
+            del model
+    else:
+        raise ValueError(f'Unknown --oracles flag: {flag}')
+
+
+@pytest.fixture(scope='session')
+def rf3(request) -> bg.oracles.folding.RF3:
+    """RF3 oracle on Modal."""
+    yield from _modal_folding_oracle(request, bg.oracles.folding.RF3, 'RF3')
+
+
+@pytest.fixture(scope='session')
+def protenix(request) -> bg.oracles.folding.Protenix:
+    """Protenix oracle on Modal."""
+    yield from _modal_folding_oracle(request, bg.oracles.folding.Protenix, 'Protenix')
+
+
+@pytest.fixture(scope='session')
+def opendde(request) -> bg.oracles.folding.OpenDDE:
+    """OpenDDE oracle on Modal."""
+    yield from _modal_folding_oracle(request, bg.oracles.folding.OpenDDE, 'OpenDDE')
+
+
+@pytest.fixture(scope='session')
+def alphafold2_multimer(request) -> bg.oracles.folding.AlphaFold2Multimer:
+    """AlphaFold2-Multimer oracle on Modal."""
+    yield from _modal_folding_oracle(request, bg.oracles.folding.AlphaFold2Multimer, 'AlphaFold2Multimer')
+
+
 @pytest.fixture(scope='session')
 def esm2(request) -> bg.oracles.embedding.ESM2:
     """Fixture that returns an ESM2 object."""

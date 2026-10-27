@@ -1,8 +1,8 @@
 """User-supplied multiple sequence alignments (MSAs) for folding oracles.
 
 An MSA is supplied once, when the oracle is built, as ``{chain_ID: A3M text or A3M file path}``. Files are read a single
-time at construction; every later fold only forwards the stored text. Folding oracles that accept an MSA never search
-for one on their own, so the search cost is paid once (by the user, offline) and never again during a minimization.
+time at construction; every later fold only forwards the stored text. Folding oracles that accept an MSA do not search
+for one by default, so the search cost is paid once (by the user, offline) and not again during a minimization.
 
 An MSA describes a fixed sequence: its first row must equal the chain it is attached to. It is therefore meant for chains
 that are never mutated (e.g. a target); a designed chain simply has no entry and is folded from its sequence alone.
@@ -59,9 +59,12 @@ def load_msas(msa: MSAInputs | None) -> dict[str, str]:
     return texts
 
 
-def msas_for_chains(msas: Mapping[str, str], chains: list[Chain]) -> list[str | None] | None:
+def msas_for_chains(msas: Mapping[str, str], chains: list[Chain], keep_empty: bool = False) -> list[str | None] | None:
     """
     Return one A3M text (or None) per chain, in chain order, or None when no chain has an MSA.
+
+    With ``keep_empty`` the all-None list is returned instead of None when the oracle holds MSAs but none of them
+    matches these chains; models that search an MSA whenever none is passed need it to know that none is wanted.
 
     Raises
     ------
@@ -81,5 +84,5 @@ def msas_for_chains(msas: Mapping[str, str], chains: list[Chain]) -> list[str | 
         entries.append(text)
     if all(entry is None for entry in entries):
         logger.debug('No MSA entry matches the chains being folded; folding without MSA.')
-        return None
+        return entries if keep_empty else None
     return entries

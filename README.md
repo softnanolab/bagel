@@ -118,7 +118,7 @@ available through BoilerRoom but has not yet been validated in BAGEL's CI.
 
 ### Fixed MSAs and optimization kernels
 
-`ESMFold2`, `RF3`, `Protenix`, `OpenDDE` and `AlphaFold2Multimer` accept a fixed, user-supplied MSA through `msa={chain_ID: A3M text or A3M file}`. Files are read once, when the oracle is built, and no oracle ever searches for an MSA during a minimization (`Protenix`, `OpenDDE` and `AlphaFold2Multimer` default to no search). An MSA describes a fixed sequence (its first row must equal the chain), so give MSAs only to chains that are never mutated, e.g. a target; a designed chain is folded from its sequence alone.
+`ESMFold2`, `RF3`, `Protenix`, `OpenDDE` and `AlphaFold2Multimer` accept a fixed, user-supplied MSA through `msa={chain_ID: A3M text or A3M file}`. Files are read once, when the oracle is built, and MSA search is disabled by default (`Protenix` and `OpenDDE` can enable it with `config={'use_msa': True}`, `AlphaFold2Multimer` with `config={'use_msa_server': True}`, at the cost of a search at every step). An MSA describes a fixed sequence (its first row must equal the chain), so give MSAs only to chains that are never mutated, e.g. a target; a designed chain is folded from its sequence alone.
 
 ```python
 target_msa = {'target': 'target.a3m'}

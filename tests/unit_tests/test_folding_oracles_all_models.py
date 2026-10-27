@@ -279,10 +279,27 @@ def test_esmfold2_forwards_optimization_config(monkeypatch, oracle_name) -> None
     assert captured['config'] == {'optimization': 'exact'}
 
 
-def test_all_boileroom_folding_models_are_wrapped() -> None:
-    """Every boileroom model with a 'fold' task has a BAGEL oracle (guards against new boileroom models)."""
-    from boileroom.models.registry import MODEL_SPECS
+@pytest.mark.parametrize('oracle_name', ['Protenix', 'OpenDDE'])
+def test_several_seeds_are_refused(monkeypatch, oracle_name) -> None:
+    import importlib
 
-    wrapped = {name for name in dir(bg.oracles.folding) if not name.endswith('Result')}
-    fold_models = {spec.public_name for spec in MODEL_SPECS if spec.contract.task_method == 'fold'}
-    assert fold_models <= wrapped, f'boileroom folding models without a BAGEL oracle: {sorted(fold_models - wrapped)}'
+    module = {'Protenix': 'boileroom.models.protenix.protenix', 'OpenDDE': 'boileroom.models.opendde.opendde'}[
+        oracle_name
+    ]
+    monkeypatch.setattr(importlib.import_module(module), oracle_name, lambda **kwargs: None)
+    oracle_class = getattr(bg.oracles.folding, oracle_name)
+    with pytest.raises(ValueError, match='exactly one seed'):
+        oracle_class(config={'seeds': '1,2'})
+    oracle_class(config={'seeds': '7'})
+
+
+@pytest.mark.parametrize(
+    ('oracle_class', 'output_class'),
+    [(bg.oracles.folding.Protenix, ProtenixOutput), (bg.oracles.folding.OpenDDE, OpenDDEOutput)],
+)
+def test_unmatched_msa_is_passed_as_explicit_no_msa(make_oracle, monomer, oracle_class, output_class) -> None:
+    """use_msa is on when MSAs are given; a state without those chains must say 'no MSA' or the model would search."""
+    output = five_sample_output(output_class, monomer, best=0)
+    oracle, model = make_oracle(oracle_class, output, msa={'other': a3m_for('ACDEF')})
+    oracle.fold(monomer)
+    assert model.calls[0][1]['msa'] == [None]

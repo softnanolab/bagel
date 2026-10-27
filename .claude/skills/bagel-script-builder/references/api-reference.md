@@ -67,7 +67,7 @@ many energy terms.
   `config={'glycine_linker': 'G'*25, 'position_ids_skip': 1024}` (skip is 512 or 1024).
 - `bg.oracles.ESMFold2(...)` — newer ESMFold.
 - `bg.oracles.Chai1(...)`, `bg.oracles.Boltz2(...)` — higher-accuracy complex folders.
-- `bg.oracles.RF3(...)`, `bg.oracles.Protenix(...)`, `bg.oracles.OpenDDE(...)`, `bg.oracles.AlphaFold2Multimer(...)` — further complex folders; they return several ranked samples and BAGEL uses the top one. `ESMFold2`, `RF3`, `Protenix`, `OpenDDE` and `AlphaFold2Multimer` take `msa={chain_ID: A3M text or file}` for chains that are never mutated; none searches an MSA during a run. `config={'optimization': 'exact'}` (ESMFold2/RF3/Protenix/OpenDDE) needs an A100/H100/H200.
+- `bg.oracles.RF3(...)`, `bg.oracles.Protenix(...)`, `bg.oracles.OpenDDE(...)`, `bg.oracles.AlphaFold2Multimer(...)` — further complex folders; they return several ranked samples and BAGEL uses the top one. `ESMFold2`, `RF3`, `Protenix`, `OpenDDE` and `AlphaFold2Multimer` take `msa={chain_ID: A3M text or file}` for chains that are never mutated; MSA search is disabled by default (`Protenix`/`OpenDDE`: `config={'use_msa': True}`, `AlphaFold2Multimer`: `config={'use_msa_server': True}` enable it, at the cost of a search at every step). `config={'optimization': 'exact'}` (ESMFold2/RF3/Protenix/OpenDDE) needs an A100/H100/H200.
 - Method: `.fold(...)`; generic entry `.predict(...)`.
 
 ### Embedding oracles — per-residue embeddings / tracks

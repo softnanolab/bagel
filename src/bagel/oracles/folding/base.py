@@ -120,6 +120,9 @@ class ConfidenceFoldingOracle(FoldingOracle):
     required_fields = ('plddt', 'pae', 'ptm')
     #: Whether the model can take a user-supplied MSA (``msa=`` in the constructor).
     supports_user_msa = False
+    #: Whether a fold whose chains have no MSA must still say so (an all-None ``msa`` list) when the oracle holds MSAs.
+    #: True for models that would otherwise search an MSA because ``use_msa`` was switched on for the given MSAs.
+    explicit_empty_msa = False
 
     def __init__(
         self,
@@ -147,7 +150,7 @@ class ConfidenceFoldingOracle(FoldingOracle):
 
     def fold(self, chains: list[Chain]) -> ConfidenceFoldingResult:
         options: dict[str, Any] = {'include_fields': list(self.required_fields)}
-        msa = msas_for_chains(self.msas, chains)
+        msa = msas_for_chains(self.msas, chains, keep_empty=self.explicit_empty_msa)
         if msa is not None:
             options['msa'] = msa
         output = self.model.fold(self._pre_process(chains), options=options)
