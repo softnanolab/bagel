@@ -4,6 +4,11 @@ import bagel as bg
 from biotite.structure import AtomArray
 
 
+PROTENIX_WEIGHTS_UNAVAILABLE = pytest.mark.skip(
+    reason='Protenix cannot download its checkpoint on Modal (HTTP 403 from the weights host); re-enable once boileroom fixes it'
+)
+
+
 @pytest.mark.parametrize(
     ('oracle_fixture', 'result_class'),
     [
@@ -12,7 +17,7 @@ from biotite.structure import AtomArray
         ('boltz2', bg.oracles.folding.Boltz2Result),
         ('chai1', bg.oracles.folding.Chai1Result),
         ('rf3', bg.oracles.folding.RF3Result),
-        ('protenix', bg.oracles.folding.ProtenixResult),
+        pytest.param('protenix', bg.oracles.folding.ProtenixResult, marks=PROTENIX_WEIGHTS_UNAVAILABLE),
         ('opendde', bg.oracles.folding.OpenDDEResult),
         ('alphafold2_multimer', bg.oracles.folding.AlphaFold2MultimerResult),
     ],
@@ -42,7 +47,10 @@ def test_folding_oracle_modal_smoke(
     assert np.array_equal(np.unique(result.structure.chain_id), [monomer[0].chain_ID])
 
 
-@pytest.mark.parametrize('oracle_fixture', ['rf3', 'protenix', 'opendde', 'alphafold2_multimer'])
+@pytest.mark.parametrize(
+    'oracle_fixture',
+    ['rf3', pytest.param('protenix', marks=PROTENIX_WEIGHTS_UNAVAILABLE), 'opendde', 'alphafold2_multimer'],
+)
 def test_multi_sample_oracle_modal_dimer(request, oracle_fixture: str, dimer: list[bg.Chain]) -> None:
     """The new oracles fold a complex and return one structure with BAGEL's chain ids and residue numbering."""
     result = request.getfixturevalue(oracle_fixture).fold(dimer)
@@ -63,7 +71,7 @@ def test_multi_sample_oracle_modal_dimer(request, oracle_fixture: str, dimer: li
     [
         bg.oracles.folding.ESMFold2,
         bg.oracles.folding.RF3,
-        bg.oracles.folding.Protenix,
+        pytest.param(bg.oracles.folding.Protenix, marks=PROTENIX_WEIGHTS_UNAVAILABLE),
         bg.oracles.folding.OpenDDE,
         bg.oracles.folding.AlphaFold2Multimer,
     ],
