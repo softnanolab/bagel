@@ -106,7 +106,12 @@ class EnergyTerm(ABC):
 
     @contextmanager
     def bound_to(self, oracle: Oracle) -> Iterator['EnergyTerm']:
-        """Temporarily make ``oracle`` the oracle of the term, so that ``compute`` reads that oracle's result."""
+        """
+        Temporarily make ``oracle`` the oracle of the term, so that ``compute`` reads that oracle's result.
+
+        The term is changed in place (and restored on exit), so it is not safe to evaluate the same term object from
+        several threads at once.
+        """
         if oracle not in self.oracles:
             raise ValueError(f"Oracle is not one of the oracles of energy term '{self.name}'")
         previous = self.oracle

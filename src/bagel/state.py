@@ -107,8 +107,11 @@ class State:
 
     def _samples_of(self, oracle: Oracle) -> list[OracleResult]:
         """All the cached results (samples, best first) of an oracle that has already been run."""
-        if oracle in self._sample_results:
-            return self._sample_results[oracle]
+        samples = self._sample_results.get(oracle)
+        # the samples are only valid for the best result cached next to them (a result set directly, e.g. by a test
+        # or another cache writer, would otherwise be shadowed by older samples)
+        if samples and samples[0] is self._oracles_result[oracle]:
+            return samples
         return [self._oracles_result[oracle]]
 
     @property

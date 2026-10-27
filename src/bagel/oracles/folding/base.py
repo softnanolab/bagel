@@ -149,8 +149,9 @@ class ConfidenceFoldingOracle(FoldingOracle):
     ) -> None:
         if msa and not self.supports_user_msa:
             raise ValueError(f'{self.model_name} does not support a user-supplied MSA')
-        if not isinstance(n_samples, int) or isinstance(n_samples, bool) or n_samples < 1:
+        if not isinstance(n_samples, (int, np.integer)) or isinstance(n_samples, bool) or n_samples < 1:
             raise ValueError(f'n_samples must be a positive integer, got {n_samples!r}')
+        n_samples = int(n_samples)
         if self.max_samples is not None and n_samples > self.max_samples:
             raise ValueError(
                 f'{self.model_name} gives at most {self.max_samples} sample(s) per prediction'
@@ -256,6 +257,10 @@ class RankedSamplesFoldingOracle(ConfidenceFoldingOracle):
             )
             if well_formed:
                 assert ptm is not None and plddt is not None
+                if not all(np.all(np.isfinite(np.asarray(v, dtype=float))) for v in (*ptm, *plddt)):
+                    raise ValueError(
+                        f'{self.model_name} output contains a non-finite pTM or pLDDT, so it cannot be ranked'
+                    )
                 scores = [
                     (-float(np.asarray(ptm[i]).reshape(-1)[0]), -float(np.mean(plddt[i])), i)
                     for i in range(n_available)
@@ -264,6 +269,8 @@ class RankedSamplesFoldingOracle(ConfidenceFoldingOracle):
             return list(range(n_available))  # malformed values are reported when the samples are reduced
         ranks = getattr(output, 'sample_ranks', None)
         if ranks is not None:
+            if len(ranks) != n_available:
+                raise ValueError(f'{self.model_name} reported {len(ranks)} sample ranks for {n_available} structure(s)')
             return [int(i) for i in np.argsort(ranks, kind='stable')]
         return list(range(n_available))  # BoilerRoom lists samples best first when it reports no explicit rank
 

@@ -371,7 +371,6 @@ def test_alphafold2_has_five_models(monkeypatch) -> None:
         ('Protenix', 'boileroom.models.protenix.protenix', 'sample', 5),
         ('OpenDDE', 'boileroom.models.opendde.opendde', 'sample', 5),
         ('Boltz2', 'boileroom.models.boltz.boltz2', 'diffusion_samples', 1),
-        ('Chai1', 'boileroom.models.chai.chai1', 'num_diffn_samples', 1),
         ('AlphaFold2Multimer', 'boileroom.models.alphafold.alphafold2_multimer', 'num_models', 5),
     ],
 )
@@ -448,7 +447,7 @@ def test_alphafold2_keeps_the_first_models(monkeypatch, monomer) -> None:
     assert [round(float(s.local_plddt[0, 0]), 1) for s in samples] == [0.3, 0.1]  # models are listed best first
 
 
-@pytest.mark.parametrize('oracle_name', ['ESMFold2', 'Boltz2', 'Chai1'])
+@pytest.mark.parametrize('oracle_name', ['ESMFold2', 'Boltz2'])
 def test_models_without_ranking_are_ranked_by_ptm_then_plddt(monkeypatch, monomer, oracle_name) -> None:
     n = len(monomer[0].residues)
     ptm = [0.5, 0.9, 0.9, 0.7]
@@ -535,3 +534,113 @@ def test_every_oracle_of_a_term_is_checked_when_the_term_is_built(fake_esm2, mak
         make_term([folding, fake_esm2])
     with pytest.raises(AssertionError):
         make_term([fake_esm2, folding])
+
+
+def _sae_oracle(model_id: str = 'esmc-6b-2024-12-sae-layer60-k64-codebook16384'):
+    from bagel.oracles.embedding.sae import SAE, SAEResult
+
+    oracle = SAE.__new__(SAE)
+    oracle.result_class = SAEResult
+    oracle.sae_model_id = model_id
+    oracle.sae_identity_tokens = ''
+    return oracle
+
+
+def _residues():
+    chains = chains_of('ACDEFGH')
+    return chains[0].residues
+
+
+@pytest.mark.parametrize(
+    ('make_term', 'good', 'bad'),
+    [
+        (
+            lambda o: bg.energies.PAEEnergy(oracle=o, residues=[_residues()[:3], _residues()[3:]]),
+            'folding',
+            'embedding',
+        ),
+        (
+            lambda o: bg.energies.ipSAEEnergy(oracle=o, residues=[_residues()[:3], _residues()[3:]]),
+            'folding',
+            'embedding',
+        ),
+        (lambda o: bg.energies.SAEnergy(oracle=o, feature_indices=[0, 1]), 'sae', 'folding'),
+        (lambda o: bg.energies.SAEnergy(oracle=o, feature_indices=[0, 1]), 'sae', 'unsupported_sae'),
+    ],
+    ids=['PAE', 'ipSAE', 'SAEnergy-not-an-embedding-oracle', 'SAEnergy-unsupported-sae-model'],
+)
+def test_every_oracle_is_checked_by_pae_ipsae_and_sae_terms(fake_esm2, make_term, good, bad) -> None:
+    oracles = {
+        'folding': SampledOracle([0.5]),
+        'embedding': fake_esm2,
+        'sae': _sae_oracle(),
+        'unsupported_sae': _sae_oracle(model_id='some-other-sae'),
+    }
+    make_term([oracles[good]])
+    with pytest.raises((AssertionError, ValueError)):
+        make_term([oracles[good], oracles[bad]])  # a bad oracle after a good one
+    with pytest.raises((AssertionError, ValueError)):
+        make_term([oracles[bad], oracles[good]])
+
+
+def test_binder_rmsd_checks_every_oracle(fake_esm2) -> None:
+    binder, _ = _binder_and_target()
+    reference = bg.State('reference', [binder], [bg.energies.PLDDTEnergy(SampledOracle([0.5]), None)])
+    good = SampledOracle([0.5])
+    bg.energies.BinderRMSDEnergy([good], binder.residues, reference)
+    with pytest.raises(AssertionError):
+        bg.energies.BinderRMSDEnergy([good, fake_esm2], binder.residues, reference)
+
+
+def test_invalidation_clears_the_sample_caches() -> None:
+    oracle = SampledOracle([0.9, 0.3])
+    chains = chains_of()
+    state = bg.State('s', chains, [SquaredMeanPLDDT(oracle)])
+    state.energy
+    assert state._sample_results and state._energy_term_stds
+
+    chains[0].mutate_residue(index=0, amino_acid='W')
+    state._invalidate_cache_if_needed()
+
+    assert state._sample_results == {} and state._energy_term_stds == {} and len(state._oracles_result) == 0
+
+
+def test_samples_are_ignored_when_the_best_result_was_replaced_directly() -> None:
+    """A result written straight into ``_oracles_result`` must not be shadowed by older samples."""
+    oracle = SampledOracle([0.9, 0.3])
+    chains = chains_of()
+    state = bg.State('s', chains, [SquaredMeanPLDDT(oracle)])
+    state.energy
+    replacement = make_result(chains, 0.1)
+    state._oracles_result[oracle] = replacement
+    assert state._samples_of(oracle) == [replacement]
+
+
+def test_numpy_integers_are_valid_n_samples(monkeypatch) -> None:
+    monkeypatch.setattr(bg.oracles.folding.RF3, '_load', lambda self, config=None: None)
+    oracle = bg.oracles.folding.RF3(n_samples=np.int64(3))
+    assert oracle.n_samples == 3 and type(oracle.n_samples) is int
+
+
+def test_ranking_refuses_non_finite_scores_and_inconsistent_ranks(monkeypatch, monomer) -> None:
+    n = len(monomer[0].residues)
+
+    def output(ptm, plddt=0.8, **extra):
+        return SimpleNamespace(
+            atom_array=[fake_atom_array(monomer)] * len(ptm),
+            plddt=[np.full(n, plddt)] * len(ptm),
+            pae=[np.zeros((n, n))] * len(ptm),
+            ptm=[np.array(p) for p in ptm],
+            **extra,
+        )
+
+    monkeypatch.setattr(bg.oracles.folding.Boltz2, '_load', lambda self, config=None: None)
+    boltz = bg.oracles.folding.Boltz2(n_samples=2)
+    with pytest.raises(ValueError, match='non-finite pTM or pLDDT'):
+        boltz._reduce_samples(output([0.5, float('nan')]), monomer)
+    with pytest.raises(ValueError, match='non-finite pTM or pLDDT'):
+        boltz._reduce_samples(output([0.5, 0.6], plddt=float('nan')), monomer)
+
+    monkeypatch.setattr(bg.oracles.folding.RF3, '_load', lambda self, config=None: None)
+    with pytest.raises(ValueError, match='reported 3 sample ranks for 2 structure'):
+        bg.oracles.folding.RF3(n_samples=2)._reduce_samples(output([0.5, 0.6], sample_ranks=[0, 1, 2]), monomer)

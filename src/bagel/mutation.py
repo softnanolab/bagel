@@ -458,8 +458,9 @@ class InverseFoldingSampling(MutationProtocol):
     (chains that are not part of it are never proposed by this protocol, and the chain is chosen proportionally to
     the mutable residues of that State's chains only, not of the whole system). State names must then be unique.
     A State's structure is always that of its current sequence: a cached result is reused only while the sequences
-    are unchanged, otherwise it is recomputed. A State with several folding oracles needs ``folding_oracle`` to say which one supplies it. Amino acids with zero (or
-    missing) ``mutation_bias`` are excluded: with one residue their probability is set to 0 before renormalising,
+    are unchanged, otherwise it is recomputed. A State with several folding oracles needs ``folding_oracle`` to say
+    which one supplies it; with several samples per prediction, it is the oracle's best sample. Amino acids with zero
+    (or missing) ``mutation_bias`` are excluded: with one residue their probability is set to 0 before renormalising,
     and with several they are passed to the model as amino acids it may not sample. Non-zero bias values are not
     used as weights; the inverse folding probabilities are.
 

@@ -12,10 +12,11 @@ class Chai1Result(ConfidenceFoldingResult):
 class Chai1(RankedSamplesFoldingOracle):
     """Predict protein structures with Chai-1 through BoilerRoom.
 
-    ``n_samples`` diffusion samples are generated per prediction (``num_diffn_samples``, 1 unless asked otherwise) and
-    ranked by pTM.
+    Exactly one diffusion sample is supported (``n_samples=1``): BoilerRoom only returns pTM when Chai-1 reports a
+    single ranking entry, and BAGEL needs pTM, so several samples cannot be used.
     """
 
+    max_samples = 1
     rank_by_ptm = True
 
     result_class: type[Chai1Result] = Chai1Result
@@ -25,6 +26,7 @@ class Chai1(RankedSamplesFoldingOracle):
         from boileroom.models.chai.chai1 import Chai1 as Chai1Boiler
 
         model_config = dict(config or {})
-        model_config.setdefault('num_diffn_samples', self.n_samples)
-        self._require_samples(model_config, 'num_diffn_samples', default=self.n_samples)
+        num_samples = model_config.setdefault('num_diffn_samples', 1)
+        if num_samples != 1:
+            raise ValueError('BAGEL supports exactly one Chai-1 diffusion sample; set num_diffn_samples=1')
         self.model = Chai1Boiler(backend=self.backend, device=self.device, config=model_config)
