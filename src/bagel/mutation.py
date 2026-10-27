@@ -10,14 +10,18 @@ import numpy as np
 
 # from .folding import FoldingAlgorithm
 from .chain import Chain
-from .system import System
+from .state import State
+from .system import System, validate_unique_chain_ids
 from .constants import aminoacids_letters, mutation_bias_no_cystein
 from dataclasses import dataclass, field
 from collections.abc import Callable, Sequence
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 from abc import ABC, abstractmethod
 import logging
 import pathlib as pl
+
+if TYPE_CHECKING:
+    from .oracles.folding.base import FoldingOracle
 
 logger = logging.getLogger(__name__)
 
@@ -86,21 +90,28 @@ class MutationProtocol(ABC):
         """Called by the minimizer with the log folder of the run. Does nothing unless a protocol writes its own files."""
         return
 
-    def choose_chain(self, system: System) -> Chain:
+    def choose_chain(self, system: System, states: list[State] | None = None) -> Chain:
         """
         Choose one of the chains in the whole System that needs to be mutated. This is done by selecting a chain
         proportionally to the number of mutable aminoacid it has compared to the total number of mutable aminoacids
         available within the whole system. Because the number of mutable aminoacids can change during the simulation,
         probability must be recalculated at each step (i.e. after each mutation).
+
+        If ``states`` is given, only the chains of those States are candidates (the proportionality is then over the
+        mutable residues of those chains).
         """
+        validate_unique_chain_ids(system.states)  # chains may have been added to States after the System was built
         unique_chain_list: list[Chain] = []
-        for state in system.states:
+        for state in system.states if states is None else states:
             for chain in state.chains:
-                # Using a set ensures that each chain is only counted once
-                if chain not in unique_chain_list:
+                # each chain (by identity: shared Chain objects are the same object) is only counted once
+                if not any(chain is other for other in unique_chain_list):
                     unique_chain_list.append(chain)
 
         n_total_mutables = sum([len(chain.mutable_residues) for chain in unique_chain_list])
+        if n_total_mutables == 0:
+            where = 'the system' if states is None else f'State(s) {[state.name for state in states]}'
+            raise ValueError(f'There is no mutable residue in {where}, so no chain can be chosen for mutation.')
         probability = np.zeros(len(unique_chain_list))
         for i, chain in enumerate(unique_chain_list):
             n_mutables = len(chain.mutable_residues)
@@ -442,7 +453,13 @@ class InverseFoldingSampling(MutationProtocol):
     protocol. Higher values are allowed and not capped; it is your call.
 
     The structure is taken from the (cached, else freshly computed) result of a folding oracle used by a State
-    containing the chosen chain; if several States contain it, one is picked at random. Amino acids with zero (or
+    containing the chosen chain. By default, if several States contain it, one is picked at random. With
+    ``conditioning_state`` the structure always comes from that State, and only the chains of that State are mutated
+    (chains that are not part of it are never proposed by this protocol, and the chain is chosen proportionally to
+    the mutable residues of that State's chains only, not of the whole system). State names must then be unique.
+    A State's structure is always that of its current sequence: a cached result is reused only while the sequences
+    are unchanged, otherwise it is recomputed. Which folding oracle supplies it is the first one among the State's
+    energy terms, unless ``folding_oracle`` names one. Amino acids with zero (or
     missing) ``mutation_bias`` are excluded: with one residue their probability is set to 0 before renormalising,
     and with several they are passed to the model as amino acids it may not sample. Non-zero bias values are not
     used as weights; the inverse folding probabilities are.
@@ -464,6 +481,13 @@ class InverseFoldingSampling(MutationProtocol):
         ``one_step``, like the minimizer's own temperature schedule); a callable is passed the step and returns
         the temperature, which is how a scheduler is plugged in. It must resolve to a positive number.
         Keyword-only, so it cannot shift the positional arguments that came before it.
+    conditioning_state : State | str, keyword-only, optional
+        State (or its name) whose structure conditions every proposal. Only the chains of this State are then
+        mutated. If None (the default), the chain is chosen among all mutable chains of the system and the State among
+        those that contain it, at random.
+    folding_oracle : FoldingOracle, keyword-only, optional
+        The folding oracle (an instance used by the State's energy terms) that supplies the structure. If None, the
+        first folding oracle in the order of the State's energy terms is used.
     """
 
     SUPPORTED_METHODS = ('ESM3',)
@@ -478,6 +502,8 @@ class InverseFoldingSampling(MutationProtocol):
         mutation_bias: Dict[str, float] = mutation_bias_no_cystein,
         *,
         t_sampling_proposals: float | Sequence[float] | Callable[[int], float] = DEFAULT_T_SAMPLING_PROPOSALS,
+        conditioning_state: State | str | None = None,
+        folding_oracle: 'FoldingOracle | None' = None,
     ):
         if inverse_folding_method not in self.SUPPORTED_METHODS:
             raise ValueError(
@@ -491,6 +517,13 @@ class InverseFoldingSampling(MutationProtocol):
         self.n_mutations = n_mutations
         self.t_sampling_proposals = t_sampling_proposals
         self.mutation_bias = mutation_bias
+        # States are copied with the system, so they are identified by name
+        self.conditioning_state_name: str | None = (
+            conditioning_state
+            if conditioning_state is None or isinstance(conditioning_state, str)
+            else conditioning_state.name
+        )
+        self.folding_oracle = folding_oracle
         # Joint decoding samples from the model directly, so it cannot forbid the current residue.
         self.exclude_self = n_mutations == 1
         self._step = 0  # counts calls to one_step, so a schedule can be read per step
@@ -503,14 +536,27 @@ class InverseFoldingSampling(MutationProtocol):
         return self.oracle
 
     @staticmethod
-    def _get_structure(state: Any) -> Any:
-        """Folded structure of the state's current sequence (cached if valid, else computed)."""
+    def _get_structure(state: Any, oracle: Any = None) -> Any:
+        """Folded structure of the state's current sequence (cached if valid, else computed).
+
+        ``oracle`` selects the folding oracle; by default it is the first folding oracle in the order of the
+        state's energy terms.
+        """
         from .oracles.folding.base import FoldingOracle
 
-        folding_oracles = [oracle for oracle in state.oracles_list if isinstance(oracle, FoldingOracle)]
+        folding_oracles: list[Any] = []
+        for term in state.energy_terms:
+            if isinstance(term.oracle, FoldingOracle) and term.oracle not in folding_oracles:
+                folding_oracles.append(term.oracle)
         if not folding_oracles:
             raise ValueError(f"State '{state.name}' has no folding oracle, so no structure is available.")
-        oracle = folding_oracles[0]
+        if oracle is None:
+            oracle = folding_oracles[0]
+        elif oracle not in folding_oracles:
+            raise ValueError(
+                f"The requested folding oracle is not used by any energy term of State '{state.name}', "
+                f'so it cannot provide its structure.'
+            )
         state._invalidate_cache_if_needed()
         if oracle not in state._oracles_result:
             state._oracles_result[oracle] = oracle.predict(chains=state.chains)
@@ -624,13 +670,28 @@ class InverseFoldingSampling(MutationProtocol):
         mutations: list[Mutation] = []
         structures: dict[str, Any] = {}  # the structure the proposal was conditioned on, for this step
 
-        chain = self.choose_chain(mutated_system)
-        candidate_indices = [i for i, s in enumerate(mutated_system.states) if any(c is chain for c in s.chains)]
-        state_index = candidate_indices[np.random.randint(len(candidate_indices))]
+        if self.conditioning_state_name is None:
+            chain = self.choose_chain(mutated_system)
+            candidate_indices = [i for i, s in enumerate(mutated_system.states) if any(c is chain for c in s.chains)]
+            state_index = candidate_indices[np.random.randint(len(candidate_indices))]
+        else:
+            names = [s.name for s in mutated_system.states]
+            if self.conditioning_state_name not in names:
+                raise ValueError(
+                    f"conditioning_state '{self.conditioning_state_name}' is not a State of the system; "
+                    f'available States: {names}'
+                )
+            if names.count(self.conditioning_state_name) != 1:
+                raise ValueError(
+                    f"More than one State is named '{self.conditioning_state_name}', so conditioning_state is "
+                    f'ambiguous. Give every State of the system a unique name.'
+                )
+            state_index = names.index(self.conditioning_state_name)
+            chain = self.choose_chain(mutated_system, states=[mutated_system.states[state_index]])
         state = mutated_system.states[state_index]
-        # Chains shared between states are already mutated in the copy, so take the structure from the
-        # corresponding unmutated state of the input system.
-        structures[state.name] = self._get_structure(system.states[state_index])
+        # Take the structure from the corresponding State of the input system, not of the mutated copy: the
+        # cached prediction then stays on the system that is kept and is not lost with the throwaway copy.
+        structures[state.name] = self._get_structure(system.states[state_index], self.folding_oracle)
         structure = structures[state.name]
 
         if self.n_mutations == 1:
