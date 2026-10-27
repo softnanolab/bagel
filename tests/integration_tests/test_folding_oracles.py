@@ -117,7 +117,7 @@ def test_oracle_modal_n_samples_gives_ranked_structures_and_an_averaged_energy(
     coordinates = [sample.structure.coord for sample in samples]
     assert not np.allclose(coordinates[0], coordinates[1])  # different diffusion draws, not copies
 
-    term = bg.energies.PLDDTEnergy(oracle=oracle, weight=1.0)
+    term = bg.energies.PLDDTEnergy(oracle=oracle, residues=None, weight=1.0)
     state = bg.State('s', monomer, [term])
     state.energy
     state_per_sample = []

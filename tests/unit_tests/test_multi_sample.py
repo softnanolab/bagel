@@ -499,3 +499,19 @@ def test_state_runs_a_multi_sample_oracle_once_and_keeps_its_best_sample(monkeyp
     assert len(state._sample_results[oracle]) == 3
     assert state._oracles_result[oracle].local_plddt[0, 0] == pytest.approx(0.5)  # the best of the five
     assert len(state.energy_term_stds) == 1
+
+
+def test_copying_a_system_keeps_the_samples_and_the_oracles() -> None:
+    """System copies deep-copy the cached samples; the oracles themselves stay shared, so nothing is refolded."""
+    oracle = SampledOracle([0.9, 0.3])
+    term = SquaredMeanPLDDT([oracle], weight=2.0)
+    system = bg.System([bg.State('s', chains_of(), [term])])
+    energy = system.get_total_energy()
+
+    copied = system.__copy__()
+    state = copied.states[0]
+
+    assert state.energy_terms[0].oracles[0] is oracle  # shared, not copied
+    assert list(state._sample_results) == [oracle]
+    assert len(state._sample_results[oracle]) == 2
+    assert state.energy == energy and oracle.calls == 1  # served from the copied cache
