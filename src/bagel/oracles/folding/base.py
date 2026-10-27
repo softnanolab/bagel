@@ -123,6 +123,8 @@ class ConfidenceFoldingOracle(FoldingOracle):
     #: Whether a fold whose chains have no MSA must still say so (an all-None ``msa`` list) when the oracle holds MSAs.
     #: True for models that would otherwise search an MSA because ``use_msa`` was switched on for the given MSAs.
     explicit_empty_msa = False
+    #: Whether chains of equal sequence share one MSA in the model, so they must be given the same MSA entry.
+    identical_chains_share_msa = False
 
     def __init__(
         self,
@@ -150,7 +152,12 @@ class ConfidenceFoldingOracle(FoldingOracle):
 
     def fold(self, chains: list[Chain]) -> ConfidenceFoldingResult:
         options: dict[str, Any] = {'include_fields': list(self.required_fields)}
-        msa = msas_for_chains(self.msas, chains, keep_empty=self.explicit_empty_msa)
+        msa = msas_for_chains(
+            self.msas,
+            chains,
+            keep_empty=self.explicit_empty_msa,
+            identical_chains_share=self.identical_chains_share_msa,
+        )
         if msa is not None:
             options['msa'] = msa
         output = self.model.fold(self._pre_process(chains), options=options)

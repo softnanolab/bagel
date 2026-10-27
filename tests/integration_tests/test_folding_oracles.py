@@ -68,11 +68,16 @@ def test_multi_sample_oracle_modal_dimer(request, oracle_fixture: str, dimer: li
         bg.oracles.folding.AlphaFold2Multimer,
     ],
 )
-def test_oracle_modal_fixed_msa_for_target_chain(request, oracle_class, dimer: list[bg.Chain]) -> None:
+def test_oracle_modal_fixed_msa_for_target_chain(request, oracle_class, base_sequence: str) -> None:
     """A fixed (here single-row) MSA for the target chain is accepted; the other chain is folded alone."""
     if request.config.getoption('--oracles') != 'modal':
         pytest.skip(reason='needs --oracles modal')
-    target = dimer[0]
+    # distinct sequences: AlphaFold2 shares one MSA between equal chains, so an MSA on one copy would apply to both
+    target = bg.Chain([bg.Residue(name=aa, chain_ID='T', index=i) for i, aa in enumerate(base_sequence)])
+    binder = bg.Chain(
+        [bg.Residue(name=aa, chain_ID='B', index=i, mutable=True) for i, aa in enumerate(base_sequence[::-1])]
+    )
+    dimer = [target, binder]
     oracle = oracle_class(backend='modal', msa={target.chain_ID: f'>query\n{target.sequence}\n'})
 
     result = oracle.fold(dimer)

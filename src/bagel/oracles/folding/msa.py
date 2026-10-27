@@ -59,17 +59,26 @@ def load_msas(msa: MSAInputs | None) -> dict[str, str]:
     return texts
 
 
-def msas_for_chains(msas: Mapping[str, str], chains: list[Chain], keep_empty: bool = False) -> list[str | None] | None:
+def msas_for_chains(
+    msas: Mapping[str, str],
+    chains: list[Chain],
+    keep_empty: bool = False,
+    identical_chains_share: bool = False,
+) -> list[str | None] | None:
     """
     Return one A3M text (or None) per chain, in chain order, or None when no chain has an MSA.
 
     With ``keep_empty`` the all-None list is returned instead of None when the oracle holds MSAs but none of them
     matches these chains; models that search an MSA whenever none is passed need it to know that none is wanted.
 
+    With ``identical_chains_share`` (models that give chains of equal sequence one common MSA) chains with the same
+    sequence must have the same MSA entry, since an entry on only one of them would silently apply to all of them.
+
     Raises
     ------
     ValueError
-        If the first row of a chain's MSA is not that chain's current sequence, which means the chain was mutated.
+        If the first row of a chain's MSA is not that chain's current sequence, which means the chain was mutated, or
+        if ``identical_chains_share`` is set and chains of equal sequence have different MSA entries.
     """
     if not msas:
         return None
@@ -82,6 +91,15 @@ def msas_for_chains(msas: Mapping[str, str], chains: list[Chain], keep_empty: bo
                 f'only give MSAs for chains that are not mutated.'
             )
         entries.append(text)
+    if identical_chains_share:
+        by_sequence: dict[str, str | None] = {}
+        for chain, entry in zip(chains, entries):
+            if chain.sequence in by_sequence and by_sequence[chain.sequence] != entry:
+                raise ValueError(
+                    f'Chain {chain.chain_ID!r} has the same sequence as another chain but a different MSA entry. '
+                    f'This model uses one MSA for all chains of equal sequence: give every such chain the same MSA.'
+                )
+            by_sequence[chain.sequence] = entry
     if all(entry is None for entry in entries):
         logger.debug('No MSA entry matches the chains being folded; folding without MSA.')
         return entries if keep_empty else None

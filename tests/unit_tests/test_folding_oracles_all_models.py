@@ -303,3 +303,27 @@ def test_unmatched_msa_is_passed_as_explicit_no_msa(make_oracle, monomer, oracle
     oracle, model = make_oracle(oracle_class, output, msa={'other': a3m_for('ACDEF')})
     oracle.fold(monomer)
     assert model.calls[0][1]['msa'] == [None]
+
+
+def test_alphafold2_refuses_asymmetric_msa_for_identical_chains(make_oracle, dimer: list[bg.Chain]) -> None:
+    """AF2 shares one MSA between equal sequences, so an MSA on only one copy would silently apply to both."""
+    a3m = a3m_for(dimer[0].sequence)
+    output = five_sample_output(AlphaFold2MultimerOutput, dimer, best=0)
+
+    oracle, model = make_oracle(bg.oracles.folding.AlphaFold2Multimer, output, msa={dimer[0].chain_ID: a3m})
+    with pytest.raises(ValueError, match='same sequence as another chain'):
+        oracle.fold(dimer)
+    assert model.calls == []
+
+    both = {chain.chain_ID: a3m for chain in dimer}
+    oracle, model = make_oracle(bg.oracles.folding.AlphaFold2Multimer, output, msa=both)
+    oracle.fold(dimer)
+    assert model.calls[0][1]['msa'] == [a3m, a3m]
+
+
+def test_other_models_allow_asymmetric_msa_for_identical_chains(make_oracle, dimer: list[bg.Chain]) -> None:
+    a3m = a3m_for(dimer[0].sequence)
+    output = five_sample_output(RF3Output, dimer, best=0)
+    oracle, model = make_oracle(bg.oracles.folding.RF3, output, msa={dimer[0].chain_ID: a3m})
+    oracle.fold(dimer)
+    assert model.calls[0][1]['msa'] == [a3m, None]
