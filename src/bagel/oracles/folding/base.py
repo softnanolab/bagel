@@ -7,6 +7,7 @@ Copyright (c) 2025 Jakub Lála, Ayham Al-Saffar, Stefano Angioletti-Uberti
 """
 
 from abc import abstractmethod
+from types import SimpleNamespace
 from typing import Any
 
 from ...chain import Chain
@@ -19,6 +20,7 @@ from pydantic import ConfigDict, field_validator
 from pathlib import Path
 import logging
 
+from .msa import MSAInputs, load_msas, msas_for_chains
 from .utils import (
     prepare_single_structure,
     single_sample_matrix,
@@ -116,15 +118,22 @@ class ConfidenceFoldingOracle(FoldingOracle):
     model_name: str
     model: Any
     required_fields = ('plddt', 'pae', 'ptm')
+    #: Whether the model can take a user-supplied MSA (``msa=`` in the constructor).
+    supports_user_msa = False
 
     def __init__(
         self,
         backend: str = 'modal',
         device: str | None = None,
         config: dict[str, Any] | None = None,
+        msa: MSAInputs | None = None,
     ) -> None:
+        if msa and not self.supports_user_msa:
+            raise ValueError(f'{self.model_name} does not support a user-supplied MSA')
         self.backend = backend
         self.device = device
+        # Read once here: folding then only forwards the stored text, it never reads a file or searches for an MSA.
+        self.msas = load_msas(msa)
         self._load(config)
 
     @abstractmethod
@@ -137,7 +146,10 @@ class ConfidenceFoldingOracle(FoldingOracle):
         return [':'.join(chain.sequence for chain in chains)]
 
     def fold(self, chains: list[Chain]) -> ConfidenceFoldingResult:
-        options = {'include_fields': list(self.required_fields)}
+        options: dict[str, Any] = {'include_fields': list(self.required_fields)}
+        msa = msas_for_chains(self.msas, chains)
+        if msa is not None:
+            options['msa'] = msa
         output = self.model.fold(self._pre_process(chains), options=options)
         return self._reduce_output(output, chains)
 
@@ -149,3 +161,40 @@ class ConfidenceFoldingOracle(FoldingOracle):
             ptm=single_sample_scalar(output.ptm, 'ptm', self.model_name),
             pae=single_sample_matrix(output.pae, 'pae', self.model_name),
         )
+
+
+class RankedSamplesFoldingOracle(ConfidenceFoldingOracle):
+    """
+    Confidence folding oracle for models that return several ranked samples per fold.
+
+    BoilerRoom returns every sample (diffusion samples, AlphaFold models, ...); BAGEL uses a single structure per fold,
+    so the top-ranked sample is selected and the rest are dropped.
+    """
+
+    def _select_sample(self, output: Any) -> int:
+        """Index of the top-ranked sample: the one with the lowest ``sample_ranks`` if reported, else the first."""
+        ranks = getattr(output, 'sample_ranks', None)
+        if ranks is None:
+            return 0  # BoilerRoom lists samples best first when it reports no explicit rank
+        return int(np.argmin(ranks))
+
+    def _reduce_output(self, output: Any, chains: list[Chain]) -> ConfidenceFoldingResult:
+        atom_arrays = output.atom_array
+        if atom_arrays is None or len(atom_arrays) == 0:
+            raise ValueError(f'{self.model_name} output does not contain any atom_array')
+        n_samples = len(atom_arrays)
+        for field in self.required_fields:
+            values = getattr(output, field, None)
+            if values is not None and len(values) != n_samples:
+                raise ValueError(f'{self.model_name} {field} has {len(values)} samples; expected {n_samples}')
+        best = self._select_sample(output)
+        if not 0 <= best < n_samples:
+            raise ValueError(f'{self.model_name} selected sample {best}, but the output has {n_samples} samples')
+        selected = SimpleNamespace(
+            atom_array=atom_arrays[best : best + 1],
+            **{
+                field: None if getattr(output, field, None) is None else getattr(output, field)[best : best + 1]
+                for field in self.required_fields
+            },
+        )
+        return super()._reduce_output(selected, chains)

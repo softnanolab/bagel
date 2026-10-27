@@ -1,0 +1,31 @@
+"""OpenDDE structure-prediction oracle."""
+
+from typing import Any
+
+from .base import ConfidenceFoldingResult, RankedSamplesFoldingOracle
+
+
+class OpenDDEResult(ConfidenceFoldingResult):
+    """Structure and normalized confidence metrics from OpenDDE."""
+
+
+class OpenDDE(RankedSamplesFoldingOracle):
+    """Predict protein structures with OpenDDE through BoilerRoom.
+
+    BoilerRoom returns several samples (``sample=5`` by default); BAGEL uses the top-ranked one. No MSA is searched
+    unless you pass one: ``use_msa`` defaults to ``False`` (a fresh MSA-server search at every step would dominate the run
+    time) and to ``True`` when ``msa={chain_ID: A3M text or file}`` is given, for chains that are never mutated; chains
+    without an entry are folded from their sequence alone. ``config={"optimization": "exact"}`` runs the optimization-kit
+    kernels (A100/H100/H200 only; refused on other GPUs).
+    """
+
+    result_class: type[OpenDDEResult] = OpenDDEResult
+    model_name = 'OpenDDE'
+    supports_user_msa = True
+
+    def _load(self, config: dict[str, Any] | None = None) -> None:
+        from boileroom.models.opendde.opendde import OpenDDE as OpenDDEBoiler
+
+        model_config = dict(config or {})
+        model_config.setdefault('use_msa', bool(self.msas))
+        self.model = OpenDDEBoiler(backend=self.backend, device=self.device, config=model_config)

@@ -1,6 +1,8 @@
 from .base import Oracle, OracleResult, OraclesResultDict
 from .embedding import EmbeddingOracle, ESM2, ESM2Result, ESM3, ESM3Result, ESMC, ESMCResult, SAE, SAEResult
 from .folding import (
+    AlphaFold2Multimer,
+    AlphaFold2MultimerResult,
     Boltz2,
     Boltz2Result,
     Chai1,
@@ -10,6 +12,12 @@ from .folding import (
     ESMFold2Result,
     ESMFoldResult,
     FoldingOracle,
+    OpenDDE,
+    OpenDDEResult,
+    Protenix,
+    ProtenixResult,
+    RF3,
+    RF3Result,
 )
 
 __all__ = [
@@ -32,6 +40,14 @@ __all__ = [
     'Chai1Result',
     'Boltz2',
     'Boltz2Result',
+    'AlphaFold2Multimer',
+    'AlphaFold2MultimerResult',
+    'OpenDDE',
+    'OpenDDEResult',
+    'Protenix',
+    'ProtenixResult',
+    'RF3',
+    'RF3Result',
     'EmbeddingOracle',
     'FoldingOracle',
 ]

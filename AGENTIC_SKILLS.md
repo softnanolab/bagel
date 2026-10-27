@@ -49,7 +49,7 @@ It is **not** a one-shot code generator. It runs a guided, question-driven workf
    background.
 
 It knows the BAGEL building blocks — States/Chains/EnergyTerms, oracles (ESMFold,
-ESM2/ESM-C/ESM3, Chai1, Boltz2), and minimizers (Monte Carlo, Simulated Annealing,
+ESM2/ESM-C/ESM3, Chai1, Boltz2, Protenix, OpenDDE, RF3, AlphaFold2Multimer), and minimizers (Monte Carlo, Simulated Annealing,
 Simulated Tempering, custom temperature schedules, chained optimizers). Trigger it even when
 the user doesn't say "script" — e.g. *"design a binder to CD20"*, *"optimize this enzyme
 conserving the catalytic triad"*, *"sweep over 10 seeds on SLURM"*.

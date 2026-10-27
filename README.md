@@ -20,7 +20,7 @@ The BAGEL package is made up of several components that need to be specified to 
 | **Component**      | **Description**                                                                                      | **Examples**                                         |
 |--------------------|------------------------------------------------------------------------------------------------------|------------------------------------------------------|
 | `EnergyTerms`      | Define specific design constraints as terms in the energy function.                                  | `TemplateMatchEnergy`, `PLDDTEnergy`, `HydrophobicEnergy` |
-| `Oracles`          | Provide information (often via ML models) to compute optimization/sampling metrics.<br>Oracles are typically wrappers around models from [boileroom](https://github.com/softnanolab/boileroom). | `ESMFold`, `ESMFold2`, `Boltz2`, `Chai1`, `ESM3`, `ESM-C`, `ESM-2` |
+| `Oracles`          | Provide information (often via ML models) to compute optimization/sampling metrics.<br>Oracles are typically wrappers around models from [boileroom](https://github.com/softnanolab/boileroom). | `ESMFold`, `ESMFold2`, `Boltz2`, `Chai1`, `Protenix`, `OpenDDE`, `RF3`, `AlphaFold2Multimer`, `ESM3`, `ESM-C`, `ESM-2` |
 | `Minimizers`       | Algorithms that sample or optimize sequences to find optima or diverse variants.                     | Monte Carlo, `SimulatedTempering`, `SimulatedAnnealing` |
 | `MutationProtocols`| Methods for perturbing sequences to generate new candidates.                                         | `Canonical`, `GrandCanonical`, `InverseFoldingSampling`  |
 
@@ -107,7 +107,7 @@ uv run python scripts/binders/simple_binder.py
 To execute templates reproducibly from the [published paper](https://doi.org/10.1371/journal.pcbi.1013774) (within statistical noise due to the nature of Monte Carlo sampling), follow release v0.1.0, also stored on Zenodo [![DOI](https://zenodo.org/badge/968747892.svg)](https://doi.org/10.5281/zenodo.15812348). Otherwise, use the most recent `biobagel` distribution.
 
 ## Oracles
-Oracles are powered by [boileroom](https://github.com/softnanolab/boileroom), pinned to a `main` commit rather than a release (see `pyproject.toml`), and selected via a `backend` keyword on every oracle constructor. BAGEL exposes `ESMFold`, `ESMFold2`, `Chai1`, `Boltz2`, `ESM2`, `ESM-C`, and `ESM3` through the same interface.
+Oracles are powered by [boileroom](https://github.com/softnanolab/boileroom), pinned to a `main` commit rather than a release (see `pyproject.toml`), and selected via a `backend` keyword on every oracle constructor. BAGEL exposes every boileroom model: the folding oracles `ESMFold`, `ESMFold2`, `Chai1`, `Boltz2`, `Protenix`, `OpenDDE`, `RF3` and `AlphaFold2Multimer`, and the embedding oracles `ESM2`, `ESM-C`, `ESM3` and `SAE`, through the same interface.
 
 - `backend="modal"` (default): Run on [Modal](https://www.modal.com). No local GPU required, but a Modal account with credits is needed. Authenticate via `modal token new`. The boileroom image tag is handled for you (see `DEFAULT_BOILEROOM_IMAGE_TAG` in `bagel/__init__.py`); override it with `BOILEROOM_IMAGE_TAG` **before** importing bagel if you need a different image.
 - `backend="apptainer"`: Run locally via an [Apptainer](https://apptainer.org) image pulled by boileroom. Requires `apptainer` on the host machine and a GPU with enough memory for the chosen model. Optionally pin the image tag inline: `backend="apptainer:<image-tag>"`.
@@ -115,6 +115,17 @@ Oracles are powered by [boileroom](https://github.com/softnanolab/boileroom), pi
 All current oracles expose `modal` and `apptainer` backends. The Modal paths are
 covered by the integration suite; Apptainer support for Boltz2 and Chai1 is
 available through BoilerRoom but has not yet been validated in BAGEL's CI.
+
+### Fixed MSAs and optimization kernels
+
+`ESMFold2`, `RF3`, `Protenix`, `OpenDDE` and `AlphaFold2Multimer` accept a fixed, user-supplied MSA through `msa={chain_ID: A3M text or A3M file}`. Files are read once, when the oracle is built, and no oracle ever searches for an MSA during a minimization (`Protenix`, `OpenDDE` and `AlphaFold2Multimer` default to no search). An MSA describes a fixed sequence (its first row must equal the chain), so give MSAs only to chains that are never mutated, e.g. a target; a designed chain is folded from its sequence alone.
+
+```python
+target_msa = {'target': 'target.a3m'}
+oracle = bg.oracles.RF3(backend='modal', msa=target_msa)
+```
+
+`RF3`, `Protenix`, `OpenDDE` and `AlphaFold2Multimer` return several ranked samples; BAGEL uses the top-ranked one. For `ESMFold2`, `RF3`, `Protenix` and `OpenDDE`, `config={'optimization': 'exact'}` runs boileroom's optimization-kit kernels, which need an A100, H100 or H200 GPU (other GPUs are refused rather than run slowly).
 
 ### Upgrading to BAGEL 0.2
 

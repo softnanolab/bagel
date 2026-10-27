@@ -40,10 +40,16 @@ class ESMFold2(ConfidenceFoldingOracle):
         - model_name: ESMFold2 weights to load (e.g. "biohub/ESMFold2")
         - num_sampling_steps: Diffusion sampling steps
         - num_loops: Refinement loops
+        - optimization: ``"vanilla"`` (default) or ``"exact"`` to run BoilerRoom's optimization-kit kernels (A100/H100/H200
+          GPUs only; refused elsewhere)
+    msa : dict[str, str | Path] | None
+        Optional fixed MSAs as ``{chain_ID: A3M text or A3M file path}``, for chains that are never mutated. Chains
+        without an entry are folded from their sequence alone.
     """
 
     result_class: type[ESMFold2Result] = ESMFold2Result
     model_name = 'ESMFold2'
+    supports_user_msa = True
 
     def _load(self, config: dict[str, Any] | None = None) -> None:
         # Imported here (not at module scope) so the module stays importable
