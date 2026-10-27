@@ -127,6 +127,25 @@ oracle = bg.oracles.RF3(backend='modal', msa=target_msa)
 
 `RF3`, `Protenix`, `OpenDDE` and `AlphaFold2Multimer` return several ranked samples; BAGEL uses the top-ranked one. For `ESMFold2`, `RF3`, `Protenix` and `OpenDDE`, `config={'optimization': 'exact'}` runs boileroom's optimization-kit kernels, which need an A100, H100 or H200 GPU (other GPUs are refused rather than run slowly).
 
+### Several samples and several oracles
+
+Every folding oracle takes `n_samples` (default `1`): the number of structures its model generates per prediction (diffusion samples; for `AlphaFold2Multimer`, models, at most 5). The energy of a State is then the **mean over the samples of the energy each one gives**: every energy term is evaluated on each structure and averaged (not computed on an averaged structure, which would be wrong for non-linear terms such as RMSDs or contacts). With `n_samples=1` the energy is exactly what it was before.
+
+```python
+oracle = bg.oracles.RF3(backend='modal', n_samples=3)
+state = bg.State(name='binder', chains=chains, energy_terms=[bg.energies.PTMEnergy(oracle=oracle)])
+state.energy              # mean over the 3 samples
+state.energy_term_stds    # standard deviation over the samples, per term
+```
+
+- Only one seed is used and the trunk is not rerun: samples are draws from the diffusion module. `ESMFold` is deterministic and refuses `n_samples > 1`.
+- The samples are ranked: by the model's own ranking for `RF3`, `Protenix`, `OpenDDE` and `AlphaFold2Multimer`, and by pTM (ties: mean pLDDT) for `ESMFold2`, `Boltz2` and `Chai1`. If a model generates more samples than `n_samples` (e.g. `RF3` generates 5 by default), the `n_samples` best are used. The best one also represents the State wherever a single structure is needed: structure files, the conditioning structure of `InverseFoldingSampling`, and so on.
+- An energy term can take **several oracles**, `oracle=[a, b]`. It is then evaluated on every structure of every oracle and its value is the mean over all of them (each structure counts the same). `BinderRMSDEnergy` compares every structure of the State with every structure of the reference State and averages over all pairs.
+- `FoldingLogger(None, log_interval)` writes one CIF per folding oracle and State (its best structure); `DefaultLogger(log_interval, log_sample_std=True)` adds `<state>/<term>/std` columns to `energies.csv`.
+- `InverseFoldingSampling` needs `folding_oracle=` when the State has more than one folding oracle (otherwise it would silently pick one).
+- `MosaicScreening` refuses terms with `n_samples > 1` or several oracles: it models a single prediction.
+- **Memory and time:** a State keeps all its structures (and `System` copies copy them), so memory grows roughly with `n_samples` times the number of oracles per State, and every energy term is evaluated that many times per step.
+
 ### Upgrading to BAGEL 0.2
 
 BAGEL 0.2 requires Python 3.12. Oracle constructors now use

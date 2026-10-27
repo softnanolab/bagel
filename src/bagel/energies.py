@@ -2993,6 +2993,10 @@ class BinderRMSDEnergy(EnergyTerm):
     The C-alpha atoms of the selected residues are superimposed, using the rotation and translation that minimise the
     RMSD, and the distance between the two positions of each residue is then measured.
 
+    If an oracle gives several structures per prediction (``n_samples > 1``), or this term has several oracles, every
+    structure of this state is compared with every structure of the reference oracle and the value is the mean of the
+    RMSD over all those pairs.
+
     Optionally, the mean over residues is weighted by :math:`w_i = \\mathrm{pLDDT}_i^n`, so that residues the model is
     confident about in the reference state count for more, and those whose isolated structure is a guess for less.
     The pLDDT is always taken from the reference state. The result is
