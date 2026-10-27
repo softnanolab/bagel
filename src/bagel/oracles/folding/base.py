@@ -246,6 +246,8 @@ class RankedSamplesFoldingOracle(ConfidenceFoldingOracle):
 
     def _ranked_indices(self, output: Any, n_available: int) -> list[int]:
         """Indices of the samples of ``output``, best first."""
+        if n_available == 1:
+            return [0]  # nothing to rank: a single-structure prediction is passed on exactly as before
         if self.rank_by_ptm:
             ptm, plddt = getattr(output, 'ptm', None), getattr(output, 'plddt', None)
             well_formed = (

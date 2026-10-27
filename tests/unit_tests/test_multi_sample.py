@@ -644,3 +644,64 @@ def test_ranking_refuses_non_finite_scores_and_inconsistent_ranks(monkeypatch, m
     monkeypatch.setattr(bg.oracles.folding.RF3, '_load', lambda self, config=None: None)
     with pytest.raises(ValueError, match='reported 3 sample ranks for 2 structure'):
         bg.oracles.folding.RF3(n_samples=2)._reduce_samples(output([0.5, 0.6], sample_ranks=[0, 1, 2]), monomer)
+
+
+class _NoPaeResult(bg.oracles.folding.FoldingResult):
+    """A folding result that has a structure but no ``pae``."""
+
+    def save_attributes(self, filepath: Path) -> None:
+        return
+
+
+class _NoStructureResult(bg.oracles.OracleResult):
+    """A result of a folding oracle without a ``structure`` field."""
+
+    def save_attributes(self, filepath: Path) -> None:
+        return
+
+
+class _StubFolding(bg.oracles.folding.FoldingOracle):
+    def __init__(self, result_class) -> None:
+        self.result_class = result_class
+
+    def fold(self, chains):
+        raise NotImplementedError
+
+
+def test_the_result_fields_a_term_needs_are_checked_for_every_oracle() -> None:
+    """A folding oracle whose result lacks the needed field fails the term's construction, wherever it is listed."""
+    good = SampledOracle([0.5])
+    no_pae, no_structure = _StubFolding(_NoPaeResult), _StubFolding(_NoStructureResult)
+    groups = [_residues()[:3], _residues()[3:]]
+    binder, _ = _binder_and_target()
+    reference = bg.State('reference', [binder], [bg.energies.PLDDTEnergy(SampledOracle([0.5]), None)])
+
+    needs_pae = [
+        lambda o: bg.energies.PAEEnergy(oracle=o, residues=groups),
+        lambda o: bg.energies.ipSAEEnergy(oracle=o, residues=groups),
+    ]
+    for make in needs_pae:
+        make([good])
+        for oracles in ([good, no_pae], [no_pae, good]):
+            with pytest.raises(AssertionError, match='pae'):
+                make(oracles)
+    for oracles in ([good, no_structure], [no_structure, good]):
+        with pytest.raises(AssertionError, match='structure'):
+            bg.energies.SurfaceAreaEnergy(oracle=oracles, residues=None)
+        with pytest.raises(AssertionError, match='structure'):
+            bg.energies.BinderRMSDEnergy(oracles, binder.residues, reference)
+
+
+def test_single_structure_output_is_not_ranked_or_validated(monkeypatch, monomer) -> None:
+    """With one structure the output is passed on as before, even with values the ranking would refuse."""
+    n = len(monomer[0].residues)
+    output = SimpleNamespace(
+        atom_array=[fake_atom_array(monomer)],
+        plddt=[np.full(n, 0.8)],
+        pae=[np.zeros((n, n))],
+        ptm=[np.array(0.7)],
+        sample_ranks=[0, 1, 2],  # inconsistent with one structure, but nothing needs ranking
+    )
+    monkeypatch.setattr(bg.oracles.folding.RF3, '_load', lambda self, config=None: None)
+    results = bg.oracles.folding.RF3()._reduce_samples(output, monomer)
+    assert len(results) == 1 and results[0].ptm[0, 0] == pytest.approx(0.7)
