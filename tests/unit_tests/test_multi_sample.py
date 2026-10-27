@@ -515,3 +515,23 @@ def test_copying_a_system_keeps_the_samples_and_the_oracles() -> None:
     assert list(state._sample_results) == [oracle]
     assert len(state._sample_results[oracle]) == 2
     assert state.energy == energy and oracle.calls == 1  # served from the copied cache
+
+
+@pytest.mark.parametrize(
+    'make_term',
+    [
+        lambda oracles: bg.energies.PTMEnergy(oracle=oracles),
+        lambda oracles: bg.energies.OverallPLDDTEnergy(oracle=oracles),
+        lambda oracles: bg.energies.PLDDTEnergy(oracle=oracles, residues=None),
+        lambda oracles: bg.energies.SurfaceAreaEnergy(oracle=oracles, residues=None),
+    ],
+    ids=['PTM', 'OverallPLDDT', 'PLDDT', 'SurfaceArea'],
+)
+def test_every_oracle_of_a_term_is_checked_when_the_term_is_built(fake_esm2, make_term) -> None:
+    """An oracle of the wrong kind later in the list must fail at construction, not when the energy is computed."""
+    folding = SampledOracle([0.5])
+    make_term([folding])  # a valid list is fine
+    with pytest.raises(AssertionError):
+        make_term([folding, fake_esm2])
+    with pytest.raises(AssertionError):
+        make_term([fake_esm2, folding])

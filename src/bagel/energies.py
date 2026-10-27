@@ -126,7 +126,7 @@ class EnergyTerm(ABC):
             assert self.inheritable is False, 'template_match energy term should NEVER be inheritable'
 
         assert self.oracle is not None, 'oracle attribute must be set in class initialiser'
-        assert isinstance(self.oracle, Oracle), 'oracle attribute must be an instance of Oracle'
+        assert all(isinstance(o, Oracle) for o in self.oracles), 'oracle attribute must be an instance of Oracle'
 
     @abstractmethod
     def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
@@ -304,8 +304,10 @@ class PTMEnergy(EnergyTerm):
         else:
             name = f'pTM_{name}'
         super().__init__(name=name, inheritable=True, oracle=oracle, weight=weight)
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'ptm' in self.oracle.result_class.model_fields, 'PTMEnergy requires oracle to return ptm in result_class'
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('ptm' in o.result_class.model_fields for o in self.oracles), (
+            'PTMEnergy requires oracle to return ptm in result_class'
+        )
 
     def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
         folding_result = oracles_result[self.oracle]
@@ -383,8 +385,8 @@ class ChemicalPotentialEnergy(EnergyTerm):
         self.power = power
         self.target_size = target_size
         self.chemical_potential = chemical_potential
-        assert isinstance(self.oracle, Oracle), 'Input to oracle not an Oracle object'
-        assert 'input_chains' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, Oracle) for o in self.oracles), 'Input to oracle not an Oracle object'
+        assert all('input_chains' in o.result_class.model_fields for o in self.oracles), (
             'ChemicalPotentialEnergy requires oracle to return input_chains in result_class'
         )
 
@@ -449,8 +451,8 @@ class PLDDTEnergy(EnergyTerm):
             self.residue_groups = [residue_list_to_group(residues)]
         else:
             self.residue_groups = []
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'local_plddt' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('local_plddt' in o.result_class.model_fields for o in self.oracles), (
             'PLDDTEnergy requires oracle to return local_plddt in result_class'
         )
 
@@ -489,8 +491,8 @@ class OverallPLDDTEnergy(PLDDTEnergy):
             Optional name to append to the energy term name.
         """
         super().__init__(oracle=oracle, inheritable=True, weight=weight, residues=None, name=name)
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'local_plddt' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('local_plddt' in o.result_class.model_fields for o in self.oracles), (
             'OverallPLDDTEnergy requires oracle to return local_plddt in result_class'
         )
         self.residue_groups = []
@@ -544,8 +546,8 @@ class SurfaceAreaEnergy(EnergyTerm):
         self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
         self.probe_radius = probe_radius_water if probe_radius is None else probe_radius
         self.max_sasa = max_sasa_values['S'] if max_sasa is None else max_sasa
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'structure' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('structure' in o.result_class.model_fields for o in self.oracles), (
             'SurfaceAreaEnergy requires oracle to return structure in result_class'
         )
 
@@ -627,8 +629,8 @@ class HydrophobicEnergy(EnergyTerm):
             )
             mode = 'surface' if surface_only else 'core'
         self.mode: Literal['surface', 'core', 'all'] = mode
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'structure' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('structure' in o.result_class.model_fields for o in self.oracles), (
             'HydrophobicEnergy requires oracle to return structure in result_class'
         )
 
@@ -714,8 +716,8 @@ class HydropathyEnergy(EnergyTerm):
         self.mode: Literal['surface', 'core', 'all'] = mode
         if self.mode not in ['surface', 'core', 'all']:
             raise ValueError(f"Invalid mode: {mode}. Expected one of: 'surface', 'core', 'all'.")
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'structure' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('structure' in o.result_class.model_fields for o in self.oracles), (
             'HydropathyEnergy requires oracle to return structure in result_class'
         )
 
@@ -909,8 +911,10 @@ class PAEEnergy(EnergyTerm):
             self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[0])]
         else:
             self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'pae' in self.oracle.result_class.model_fields, 'PAEEnergy requires oracle to return pae in result_class'
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('pae' in o.result_class.model_fields for o in self.oracles), (
+            'PAEEnergy requires oracle to return pae in result_class'
+        )
 
     def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
         folding_result = oracles_result[self.oracle]
@@ -989,8 +993,10 @@ class LISEnergy(EnergyTerm):
             self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[0])]
         else:
             self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'pae' in self.oracle.result_class.model_fields, 'PAEEnergy requires oracle to return pae in result_class'
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('pae' in o.result_class.model_fields for o in self.oracles), (
+            'PAEEnergy requires oracle to return pae in result_class'
+        )
 
     def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
         folding_result = oracles_result[self.oracle]
@@ -1113,8 +1119,8 @@ class ipSAEEnergy(EnergyTerm):
             self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[0])]
         else:
             self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'pae' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('pae' in o.result_class.model_fields for o in self.oracles), (
             'ipSAEEnergy requires oracle to return pae in result_class'
         )
 
@@ -1257,8 +1263,8 @@ class SaltBridgeEnergy(EnergyTerm):
         self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
         # keyed by the 3-letter name in the structure: the sign of the charge and the atoms that carry it
         self._charged_atoms = {aa_dict[letter]: salt_bridge_residues[letter] for letter in self.residue_types}
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'structure' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('structure' in o.result_class.model_fields for o in self.oracles), (
             'SaltBridgeEnergy requires oracle to return structure in result_class'
         )
 
@@ -1345,8 +1351,8 @@ class RingSymmetryEnergy(EnergyTerm):
         assert (len(symmetry_groups) > 1) and (len(symmetry_groups[0]) >= 1), 'Multiple symmetry groups required.'
         self.residue_groups = [residue_list_to_group(symmetry_group) for symmetry_group in symmetry_groups]
         self.direct_neighbours_only: bool = direct_neighbours_only
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'structure' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('structure' in o.result_class.model_fields for o in self.oracles), (
             'RingSymmetryEnergy requires oracle to return structure in result_class'
         )
 
@@ -1427,8 +1433,8 @@ class SeparationEnergy(EnergyTerm):
         self.function: Callable[[float], float] | None = function
         if self.function is not None:
             assert callable(self.function), 'Function must be callable and accept a single float argument'
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'structure' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('structure' in o.result_class.model_fields for o in self.oracles), (
             'SeparationEnergy requires oracle to return structure in result_class'
         )
 
@@ -1529,8 +1535,8 @@ class FlexEvoBindEnergy(EnergyTerm):
         self.symmetrized = symmetrized
         self.plddt_weighted = plddt_weighted
         self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'structure' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('structure' in o.result_class.model_fields for o in self.oracles), (
             'FlexEvoBindEnergy requires oracle to return structure in result_class'
         )
 
@@ -1654,8 +1660,8 @@ class GlobularEnergy(EnergyTerm):
 
         super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight)
         self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'structure' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('structure' in o.result_class.model_fields for o in self.oracles), (
             'GlobularEnergy requires oracle to return structure in result_class'
         )
 
@@ -1725,8 +1731,8 @@ class TemplateMatchEnergy(EnergyTerm):
         self.template_atoms = template_atoms
         self.backbone_only = backbone_only
         self.distogram_separation = distogram_separation
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'structure' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('structure' in o.result_class.model_fields for o in self.oracles), (
             'TemplateMatchEnergy requires oracle to return structure in result_class'
         )
 
@@ -1809,8 +1815,8 @@ class SecondaryStructureEnergy(EnergyTerm):
         options = ('alpha-helix', 'beta-sheet', 'coil')
         assert target_secondary_structure in options, f'{target_secondary_structure} not recognised. options: {options}'
         self.target_secondary_structure = target_secondary_structure
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'structure' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('structure' in o.result_class.model_fields for o in self.oracles), (
             'SecondaryStructureEnergy requires oracle to return structure in result_class'
         )
 
@@ -1871,8 +1877,10 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
             f'match number of residues to include in energy term ({len(self.residue_groups[0][0])})'
         )
 
-        assert isinstance(self.oracle, EmbeddingOracle), 'Oracle must be an instance of EmbeddingOracle'
-        assert 'embeddings' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, EmbeddingOracle) for o in self.oracles), (
+            'Oracle must be an instance of EmbeddingOracle'
+        )
+        assert all('embeddings' in o.result_class.model_fields for o in self.oracles), (
             'EmbeddingsSimilarityEnergy requires oracle to return embeddings in result_class'
         )
 
@@ -2104,8 +2112,8 @@ class ShapeComplementarityEnergy(EnergyTerm):
                 f'{len(overlap)} residue(s) appear in both groups of {name}; a residue cannot be complementary to '
                 'itself, so the resulting energy will be hard to interpret.'
             )
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'structure' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('structure' in o.result_class.model_fields for o in self.oracles), (
             'ShapeComplementarityEnergy requires oracle to return structure in result_class'
         )
 
@@ -2275,8 +2283,10 @@ class SAEnergy(EnergyTerm):
         )
         self.maximize = bool(maximize)
 
-        assert isinstance(self.oracle, EmbeddingOracle), 'Oracle must be an instance of EmbeddingOracle'
-        assert 'features' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, EmbeddingOracle) for o in self.oracles), (
+            'Oracle must be an instance of EmbeddingOracle'
+        )
+        assert all('features' in o.result_class.model_fields for o in self.oracles), (
             'SAEnergy requires the oracle to return a per-protein "features" vector in its result_class'
         )
         for candidate in self.oracles:
@@ -2386,11 +2396,13 @@ class ResidueSAEnergy(EnergyTerm):
 
         self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
 
-        assert isinstance(self.oracle, EmbeddingOracle), 'Oracle must be an instance of EmbeddingOracle'
+        assert all(isinstance(o, EmbeddingOracle) for o in self.oracles), (
+            'Oracle must be an instance of EmbeddingOracle'
+        )
         # Require the SAE-specific "features" field (as SAEnergy does), not just the
         # ubiquitous "embeddings"; otherwise a plain embedding oracle (e.g. ESMC)
         # would pass and its raw hidden states would be scored as SAE activations.
-        assert {'embeddings', 'features'} <= set(self.oracle.result_class.model_fields), (
+        assert all({'embeddings', 'features'} <= set(o.result_class.model_fields) for o in self.oracles), (
             'ResidueSAEnergy requires an SAE oracle exposing per-residue "embeddings" and "features" '
             'in its result_class'
         )
@@ -2521,7 +2533,7 @@ class BuriedHistidineEnergy(EnergyTerm):
         self.sasa_cutoff = float(sasa_cutoff)
         assert self.target_count > 0, 'target_count must be positive'
         assert 0.0 < self.sasa_cutoff <= 1.0, 'sasa_cutoff must lie in (0, 1]'
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be a FoldingOracle'
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be a FoldingOracle'
 
     def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
         structure = oracles_result.get_structure(self.oracle)
@@ -2593,7 +2605,7 @@ class HistidineCarboxylateContactEnergy(EnergyTerm):
         self.distance_cutoff = float(distance_cutoff)
         self.max_contacts = int(max_contacts)
         assert self.max_contacts > 0, 'max_contacts must be positive'
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be a FoldingOracle'
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be a FoldingOracle'
 
     def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
         structure = oracles_result.get_structure(self.oracle)
@@ -3071,8 +3083,8 @@ class BinderRMSDEnergy(EnergyTerm):
         self.plddt_scaled = plddt_scaled
         self.plddt_exponent = plddt_exponent
         self.residue_groups = [residue_list_to_group(residues)]
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'structure' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('structure' in o.result_class.model_fields for o in self.oracles), (
             'BinderRMSDEnergy requires oracle to return structure in result_class'
         )
         if reference_oracle is not None:
