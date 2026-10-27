@@ -15,10 +15,13 @@ from .system import System, validate_unique_chain_ids
 from .constants import aminoacids_letters, mutation_bias_no_cystein
 from dataclasses import dataclass, field
 from collections.abc import Callable, Sequence
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 from abc import ABC, abstractmethod
 import logging
 import pathlib as pl
+
+if TYPE_CHECKING:
+    from .oracles.folding.base import FoldingOracle
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +105,7 @@ class MutationProtocol(ABC):
         for state in system.states if states is None else states:
             for chain in state.chains:
                 # Using a set ensures that each chain is only counted once
-                if chain not in unique_chain_list:
+                if not any(chain is other for other in unique_chain_list):
                     unique_chain_list.append(chain)
 
         n_total_mutables = sum([len(chain.mutable_residues) for chain in unique_chain_list])
@@ -452,7 +455,8 @@ class InverseFoldingSampling(MutationProtocol):
     The structure is taken from the (cached, else freshly computed) result of a folding oracle used by a State
     containing the chosen chain. By default, if several States contain it, one is picked at random. With
     ``conditioning_state`` the structure always comes from that State, and only the chains of that State are mutated
-    (chains that are not part of it are never proposed by this protocol).
+    (chains that are not part of it are never proposed by this protocol, and the chain is chosen proportionally to
+    the mutable residues of that State's chains only, not of the whole system). State names must then be unique.
     A State's structure is always that of its current sequence: a cached result is reused only while the sequences
     are unchanged, otherwise it is recomputed. Which folding oracle supplies it is the first one among the State's
     energy terms, unless ``folding_oracle`` names one. Amino acids with zero (or
@@ -498,8 +502,8 @@ class InverseFoldingSampling(MutationProtocol):
         mutation_bias: Dict[str, float] = mutation_bias_no_cystein,
         *,
         t_sampling_proposals: float | Sequence[float] | Callable[[int], float] = DEFAULT_T_SAMPLING_PROPOSALS,
-        conditioning_state: Any = None,
-        folding_oracle: Any = None,
+        conditioning_state: State | str | None = None,
+        folding_oracle: 'FoldingOracle | None' = None,
     ):
         if inverse_folding_method not in self.SUPPORTED_METHODS:
             raise ValueError(
@@ -676,6 +680,11 @@ class InverseFoldingSampling(MutationProtocol):
                 raise ValueError(
                     f"conditioning_state '{self.conditioning_state_name}' is not a State of the system; "
                     f'available States: {names}'
+                )
+            if names.count(self.conditioning_state_name) != 1:
+                raise ValueError(
+                    f"More than one State is named '{self.conditioning_state_name}', so conditioning_state is "
+                    f'ambiguous. Give every State of the system a unique name.'
                 )
             state_index = names.index(self.conditioning_state_name)
             chain = self.choose_chain(mutated_system, states=[mutated_system.states[state_index]])

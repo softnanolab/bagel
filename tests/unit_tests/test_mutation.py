@@ -936,3 +936,95 @@ def test_duplicate_chain_ids_are_refused_only_when_a_chain_can_be_mutated() -> N
     system.states[1].chains.append(chain('A'))
     with pytest.raises(ValueError, match='identifies two different Chains'):
         bg.mutation.Canonical().choose_chain(system)
+
+
+def test_InverseFoldingSampling_conditioning_state_refolds_after_the_input_system_changed(
+    fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch
+) -> None:
+    """The structure is that of the CURRENT sequence of the unmutated input system: a stale cache is refolded."""
+    system, _, binder, _ = _two_state_system(fake_esmfold)
+    folded: list[list[str]] = []
+    original_fold = fake_esmfold.fold
+    monkeypatch.setattr(
+        fake_esmfold, 'fold', lambda chains: (folded.append([c.sequence for c in chains]), original_fold(chains))[1]
+    )
+    oracle = _StubInverseFoldingOracle({aa: 1 / 20 for aa in _AAS})
+    mutator = bg.mutation.InverseFoldingSampling(oracle=oracle, conditioning_state='S1')
+
+    system.states[0].energy  # as in a minimization, the energy was computed (and its structure cached) before the move
+    assert folded == [['AAAA', 'AAAAA']]
+    mutator.one_step(system)
+    mutator.one_step(system)  # same sequences: the cached structure is reused
+    assert folded == [['AAAA', 'AAAAA']]
+
+    binder.mutate_residue(index=0, amino_acid='W')  # the input system changes, e.g. an accepted move
+    mutator.one_step(system)
+    assert folded == [['AAAA', 'AAAAA'], ['AAAA', 'WAAAA']]
+    assert oracle.calls[-1]['sequences'] == ['AAAA', 'WAAAA']
+
+
+def test_InverseFoldingSampling_conditioning_state_takes_the_structure_from_the_unmutated_system(
+    fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch
+) -> None:
+    """With a mutable chain shared by two States the fold sees the input sequences, not the mutated copy's."""
+    shared = bg.Chain([bg.Residue(name='A', chain_ID='B', index=i, mutable=True) for i in range(5)])
+    states = [
+        bg.State(
+            name=name,
+            chains=[shared],
+            energy_terms=[bg.energies.PLDDTEnergy(oracle=fake_esmfold, residues=shared.residues, weight=1.0)],
+        )
+        for name in ('S1', 'S2')
+    ]
+    system = bg.System(states)
+    folded: list[list[str]] = []
+    original_fold = fake_esmfold.fold
+    monkeypatch.setattr(
+        fake_esmfold, 'fold', lambda chains: (folded.append([c.sequence for c in chains]), original_fold(chains))[1]
+    )
+    oracle = _StubInverseFoldingOracle({aa: 1 / 20 for aa in _AAS})
+
+    _, record = bg.mutation.InverseFoldingSampling(oracle=oracle, conditioning_state='S2').one_step(system)
+
+    assert len(record.mutations) == 1
+    assert folded == [['AAAAA']]
+    assert oracle.calls[0]['sequences'] == ['AAAAA']
+
+
+def test_InverseFoldingSampling_duplicate_state_names_make_conditioning_state_ambiguous(
+    fake_esmfold: bg.oracles.folding.ESMFold,
+) -> None:
+    system, *_ = _two_state_system(fake_esmfold)
+    system.states[1].name = 'S1'
+    mutator = bg.mutation.InverseFoldingSampling(
+        oracle=_StubInverseFoldingOracle({aa: 1 / 20 for aa in _AAS}), conditioning_state='S1'
+    )
+    with pytest.raises(ValueError, match="More than one State is named 'S1'"):
+        mutator.one_step(system)
+
+
+def test_InverseFoldingSampling_oracle_choice_follows_energy_term_order_and_ignores_repeats(
+    fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch
+) -> None:
+    """Reversing the energy-term order swaps the oracle used; an oracle in several terms is counted once."""
+    system, *_ = _two_state_system(fake_esmfold)
+    second = bg.oracles.folding.ESMFold.__new__(bg.oracles.folding.ESMFold)
+    state = system.states[0]
+    plddt = state.energy_terms[0]
+    other = bg.energies.PTMEnergy(oracle=second, weight=1.0)
+    repeat = bg.energies.PTMEnergy(oracle=fake_esmfold, weight=1.0)
+    mutator_cls = bg.mutation.InverseFoldingSampling
+
+    for terms, expected in (([plddt, other, repeat], fake_esmfold), ([other, plddt, repeat], second)):
+        state.energy_terms = terms
+        state._oracles_result = bg.oracles.OraclesResultDict()
+        used: list[object] = []
+        for oracle in (fake_esmfold, second):
+            monkeypatch.setattr(
+                oracle,
+                'predict',
+                lambda chains, oracle=oracle: (used.append(oracle), fake_esmfold.fold(chains))[1],
+                raising=False,
+            )
+        mutator_cls._get_structure(state)
+        assert used == [expected]
