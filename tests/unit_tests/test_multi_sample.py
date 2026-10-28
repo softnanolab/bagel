@@ -395,7 +395,8 @@ def test_the_model_is_asked_for_enough_samples(monkeypatch, oracle_name, module,
         oracle_class(n_samples=n, config={key: n - 1})
 
 
-def test_n_samples_one_leaves_the_model_config_alone(monkeypatch) -> None:
+def test_boltz2_msa_cache_is_off_unless_the_user_turns_it_on(monkeypatch) -> None:
+    """boileroom's Boltz-2 MSA cache reuses stale MSAs in no-MSA mode and crashes on mixed chains: off by default."""
     import importlib
 
     captured = {}
@@ -405,10 +406,15 @@ def test_n_samples_one_leaves_the_model_config_alone(monkeypatch) -> None:
             captured['config'] = config
 
     monkeypatch.setattr(importlib.import_module('boileroom.models.boltz.boltz2'), 'Boltz2', FakeBoiler)
+
     bg.oracles.folding.Boltz2()
-    assert captured['config'] is None  # exactly what was passed before n_samples existed
-    bg.oracles.folding.Boltz2(config={'sampling_steps': 10})
-    assert captured['config'] == {'sampling_steps': 10}
+    assert captured['config'] == {'msa_cache_enabled': False}
+    bg.oracles.folding.Boltz2(config={'use_msa_server': False})  # no-MSA mode keeps the cache off
+    assert captured['config'] == {'use_msa_server': False, 'msa_cache_enabled': False}
+    bg.oracles.folding.Boltz2(config={'sampling_steps': 10}, n_samples=3)
+    assert captured['config'] == {'sampling_steps': 10, 'diffusion_samples': 3, 'msa_cache_enabled': False}
+    bg.oracles.folding.Boltz2(config={'msa_cache_enabled': True})  # an explicit choice is respected
+    assert captured['config'] == {'msa_cache_enabled': True}
 
 
 @pytest.mark.parametrize('n_samples', [1, 2, 3, 5])

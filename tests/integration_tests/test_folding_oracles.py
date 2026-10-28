@@ -128,3 +128,19 @@ def test_oracle_modal_n_samples_gives_ranked_structures_and_an_averaged_energy(
     assert len(state_per_sample) == 3
     assert state.energy_term_values[term.name] == pytest.approx(np.mean(state_per_sample))
     assert state.energy_term_stds[term.name] == pytest.approx(np.std(state_per_sample, ddof=1))
+
+
+def test_boltz2_modal_no_msa_mode_with_the_cache_off(request, dimer: list[bg.Chain]) -> None:
+    """No-MSA mode folds a complex (a fixed chain and a new one, as in a design loop) with the MSA cache off."""
+    if request.config.getoption('--oracles') != 'modal':
+        pytest.skip(reason='needs --oracles modal')
+    oracle = bg.oracles.folding.Boltz2(backend='modal', config={'use_msa_server': False})
+    other = bg.Chain([bg.Residue(aa, 'C-B', i, mutable=True) for i, aa in enumerate(dimer[1].sequence[::-1])])
+
+    first = oracle.fold(dimer)
+    second = oracle.fold([dimer[0], other])  # the second chain is new: it must not crash
+
+    num_residues = sum(len(chain.residues) for chain in dimer)
+    for result in (first, second):
+        assert result.local_plddt.shape == (1, num_residues)
+        assert result.ptm.shape == (1, 1)
