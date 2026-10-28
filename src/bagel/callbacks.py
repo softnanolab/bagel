@@ -8,6 +8,7 @@ Copyright (c) 2025 Jakub Lála, Ayham Al-Saffar, Stefano Angioletti-Uberti
 
 from dataclasses import dataclass
 from abc import ABC
+from collections.abc import Sequence
 from typing import Any, TYPE_CHECKING
 import logging
 import os
@@ -285,12 +286,16 @@ class DefaultLogger(Callback):
     ----------
     log_interval : int
         Interval (in steps) at which to log the current system.
+    log_sample_std : bool, default False
+        Also write, for every energy term, the standard deviation of its value over the structures it was averaged
+        over (several samples and/or oracles) as ``<state>/<term>/std``. Off by default.
     """
 
-    def __init__(self, log_interval: int) -> None:
+    def __init__(self, log_interval: int, log_sample_std: bool = False) -> None:
         if log_interval <= 0:
             raise ValueError(f'log_interval must be a positive integer, got {log_interval}')
         self.log_interval = log_interval
+        self.log_sample_std = log_sample_std
 
     def _ensure_dirs(self, base_path: pl.Path) -> tuple[pl.Path, pl.Path]:
         current_path = base_path / 'current'
@@ -318,6 +323,9 @@ class DefaultLogger(Callback):
             energy_terms = state.energy_term_values
             for energy_name, energy_value in energy_terms.items():
                 energies[f'{state.name}/{energy_name}'] = energy_value
+            if self.log_sample_std:
+                for energy_name, energy_std in state.energy_term_stds.items():
+                    energies[f'{state.name}/{energy_name}/std'] = energy_std
 
             state_energy = state.energy
             energies[f'{state.name}/state_energy'] = state_energy
@@ -367,22 +375,41 @@ class DefaultLogger(Callback):
 
 class FoldingLogger(Callback):
     """
-    Logger that saves CIF structures and oracle attributes for a specific FoldingOracle instance.
+    Logger that saves CIF structures and oracle attributes of FoldingOracle instances.
+
+    One CIF file is written per oracle and State: the best structure of that oracle (with several samples per
+    prediction, the best-ranked one; the other samples are not written).
 
     Parameters
     ----------
-    folding_oracle : FoldingOracle
-        The FoldingOracle instance to log (e.g. an ESMFold instance).
+    folding_oracle : FoldingOracle | Sequence[FoldingOracle] | None
+        The FoldingOracle instance(s) to log (e.g. an ESMFold instance). None logs every folding oracle of every State.
     log_interval : int
         Interval (in steps) at which to log structures for the current system.
+
+    Notes
+    -----
+    Files are named ``<state>_<oracle class>_<step>``. If a State has several logged oracles of the same class, their
+    names get an index (``<state>_<oracle class>_<index>_<step>``) in the order the State's oracles first appear.
     """
 
-    def __init__(self, folding_oracle: FoldingOracle, log_interval: int) -> None:
+    def __init__(self, folding_oracle: FoldingOracle | Sequence[FoldingOracle] | None, log_interval: int) -> None:
         if log_interval <= 0:
             raise ValueError(f'log_interval must be a positive integer, got {log_interval}')
-        if not isinstance(folding_oracle, FoldingOracle):
-            raise TypeError(f'folding_oracle must be a FoldingOracle instance, got {type(folding_oracle)}')
-        self.folding_oracle = folding_oracle
+        if folding_oracle is None:
+            oracles: list[FoldingOracle] | None = None
+        elif isinstance(folding_oracle, FoldingOracle):
+            oracles = [folding_oracle]
+        else:
+            oracles = list(folding_oracle)
+            if not oracles:
+                raise ValueError('folding_oracle must not be an empty sequence; use None to log every folding oracle')
+        for candidate in oracles or []:
+            if not isinstance(candidate, FoldingOracle):
+                raise TypeError(f'folding_oracle must be FoldingOracle instances, got {type(candidate)}')
+        self.folding_oracles = oracles
+        # the first oracle (None if every oracle is logged), kept for code that read the single-oracle attribute
+        self.folding_oracle = oracles[0] if oracles else None
         self.log_interval = log_interval
 
     def _ensure_folding_dirs(self, base_path: pl.Path) -> tuple[pl.Path, pl.Path]:
@@ -394,15 +421,27 @@ class FoldingLogger(Callback):
         return current_folding_path, best_folding_path
 
     def _dump_folding_results_for_system(self, step: int, system: System, folding_path: pl.Path) -> None:
-        """Save CIF files and oracle attributes to the specified folding directory."""
+        """Save CIF files and oracle attributes (best structure of each logged oracle) to the folding directory."""
         for state in system.states:
-            for oracle, oracle_result in state._oracles_result.items():
-                if oracle is not self.folding_oracle:
-                    continue
+            oracles = [
+                oracle
+                for oracle in state.oracles_list
+                if isinstance(oracle, FoldingOracle)
+                and oracle in state._oracles_result
+                and (self.folding_oracles is None or oracle in self.folding_oracles)
+            ]
+            class_count: dict[str, int] = {}
+            for oracle in oracles:
+                class_count[type(oracle).__name__] = class_count.get(type(oracle).__name__, 0) + 1
+            seen: dict[str, int] = {}
+            for oracle in oracles:
+                oracle_result = state._oracles_result[oracle]
                 if not isinstance(oracle_result, FoldingResult):
                     continue
-
                 oracle_name = type(oracle).__name__
+                if class_count[oracle_name] > 1:
+                    oracle_name = f'{oracle_name}_{seen.get(oracle_name, 0)}'
+                    seen[type(oracle).__name__] = seen.get(type(oracle).__name__, 0) + 1
                 cif_path = folding_path / f'{state.name}_{oracle_name}_{step}.cif'
                 oracle_result.to_cif(cif_path)
                 oracle_result.save_attributes(folding_path / f'{state.name}_{oracle_name}_{step}')

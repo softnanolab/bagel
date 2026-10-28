@@ -218,6 +218,16 @@ def build_plans(
             )
         if len({c.chain_ID for c in state.chains}) != len(state.chains):
             raise MosaicIncompatibleError(f"Chain IDs of state '{state.name}' must be unique.")
+        for term in state.energy_terms:
+            # mosaic models one prediction per term, so it cannot stand in for an average over structures
+            multiple = [o for o in term.oracles if getattr(o, 'n_samples', 1) > 1]
+            if len(term.oracles) > 1 or multiple:
+                raise MosaicIncompatibleError(
+                    f"Energy term '{term.name}' of state '{state.name}' averages over several structures "
+                    f'({len(term.oracles)} oracles, n_samples>1 for {[type(o).__name__ for o in multiple]}); '
+                    'MosaicScreening models a single prediction per term. Use oracles with n_samples=1 and one oracle '
+                    'per term, or another mutation protocol.'
+                )
         design = designed[0]
         others = [c for c in state.chains if c is not design]
         statuses: list[TermStatus] = []

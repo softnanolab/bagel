@@ -2,15 +2,22 @@
 
 from typing import Any
 
-from .base import ConfidenceFoldingOracle, ConfidenceFoldingResult
+from .base import ConfidenceFoldingResult, RankedSamplesFoldingOracle
 
 
 class Chai1Result(ConfidenceFoldingResult):
     """Structure and normalized confidence metrics from Chai-1."""
 
 
-class Chai1(ConfidenceFoldingOracle):
-    """Predict protein structures with Chai-1 through BoilerRoom."""
+class Chai1(RankedSamplesFoldingOracle):
+    """Predict protein structures with Chai-1 through BoilerRoom.
+
+    Exactly one diffusion sample is supported (``n_samples=1``): BoilerRoom only returns pTM when Chai-1 reports a
+    single ranking entry, and BAGEL needs pTM, so several samples cannot be used.
+    """
+
+    max_samples = 1
+    rank_by_ptm = True
 
     result_class: type[Chai1Result] = Chai1Result
     model_name = 'Chai1'

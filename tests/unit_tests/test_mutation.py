@@ -874,31 +874,34 @@ def test_InverseFoldingSampling_unknown_conditioning_state_and_immutable_state_r
         bg.mutation.InverseFoldingSampling(oracle=oracle, conditioning_state='S1').one_step(system)
 
 
-def test_InverseFoldingSampling_structure_oracle_is_the_first_folding_oracle_unless_named(
+def test_InverseFoldingSampling_with_several_folding_oracles_requires_folding_oracle(
     fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch
 ) -> None:
-    """With two folding oracles the energy-term order decides (not set order); folding_oracle overrides it."""
-    system, _, binder, _ = _two_state_system(fake_esmfold)
+    """Which oracle conditions the proposals is never a silent choice: several folding oracles need folding_oracle=."""
+    system, *_ = _two_state_system(fake_esmfold)
     second = bg.oracles.folding.ESMFold.__new__(bg.oracles.folding.ESMFold)
     state = system.states[0]
     state.energy_terms.append(bg.energies.PTMEnergy(oracle=second, weight=1.0))
     used: list[object] = []
     for oracle in (fake_esmfold, second):
         monkeypatch.setattr(
-            oracle, 'predict', lambda chains, oracle=oracle: (used.append(oracle), fake_esmfold.fold(chains))[1]
+            oracle,
+            'predict',
+            lambda chains, oracle=oracle: (used.append(oracle), fake_esmfold.fold(chains))[1],
+            raising=False,
         )
     stub = _StubInverseFoldingOracle({aa: 1 / 20 for aa in _AAS})
 
-    for _ in range(10):  # first oracle of the energy terms, every time
-        state._invalidate_cache_if_needed()
-        state._oracles_result = bg.oracles.OraclesResultDict()
+    with pytest.raises(ValueError, match='ambiguous which one provides the structure'):
         bg.mutation.InverseFoldingSampling(oracle=stub, conditioning_state='S1').one_step(system)
-    assert used == [fake_esmfold] * 10
+    assert used == []  # nothing was folded before refusing
 
-    used.clear()
-    state._oracles_result = bg.oracles.OraclesResultDict()
-    bg.mutation.InverseFoldingSampling(oracle=stub, conditioning_state='S1', folding_oracle=second).one_step(system)
-    assert used == [second]
+    for chosen in (second, fake_esmfold):
+        state._oracles_result = bg.oracles.OraclesResultDict()
+        state._sample_results = {}
+        used.clear()
+        bg.mutation.InverseFoldingSampling(oracle=stub, conditioning_state='S1', folding_oracle=chosen).one_step(system)
+        assert used == [chosen]
 
     unrelated = bg.oracles.folding.ESMFold.__new__(bg.oracles.folding.ESMFold)
     with pytest.raises(ValueError, match='not used by any energy term'):
@@ -1005,28 +1008,20 @@ def test_InverseFoldingSampling_duplicate_state_names_make_conditioning_state_am
         mutator.one_step(system)
 
 
-def test_InverseFoldingSampling_oracle_choice_follows_energy_term_order_and_ignores_repeats(
-    fake_esmfold: bg.oracles.folding.ESMFold, monkeypatch
+def test_InverseFoldingSampling_one_oracle_in_several_terms_or_in_a_multi_oracle_term(
+    fake_esmfold: bg.oracles.folding.ESMFold,
 ) -> None:
-    """Reversing the energy-term order swaps the oracle used; an oracle in several terms is counted once."""
+    """The same oracle in several terms is one oracle (no need to name it); a term's oracle list counts too."""
     system, *_ = _two_state_system(fake_esmfold)
-    second = bg.oracles.folding.ESMFold.__new__(bg.oracles.folding.ESMFold)
     state = system.states[0]
-    plddt = state.energy_terms[0]
-    other = bg.energies.PTMEnergy(oracle=second, weight=1.0)
+    second = bg.oracles.folding.ESMFold.__new__(bg.oracles.folding.ESMFold)
     repeat = bg.energies.PTMEnergy(oracle=fake_esmfold, weight=1.0)
-    mutator_cls = bg.mutation.InverseFoldingSampling
+    state.energy_terms = [state.energy_terms[0], repeat]
+    structure_oracle = bg.mutation.InverseFoldingSampling._get_structure
+    assert state.oracles_list == [fake_esmfold]
+    assert structure_oracle(state) is not None  # unambiguous without folding_oracle
 
-    for terms, expected in (([plddt, other, repeat], fake_esmfold), ([other, plddt, repeat], second)):
-        state.energy_terms = terms
-        state._oracles_result = bg.oracles.OraclesResultDict()
-        used: list[object] = []
-        for oracle in (fake_esmfold, second):
-            monkeypatch.setattr(
-                oracle,
-                'predict',
-                lambda chains, oracle=oracle: (used.append(oracle), fake_esmfold.fold(chains))[1],
-                raising=False,
-            )
-        mutator_cls._get_structure(state)
-        assert used == [expected]
+    state.energy_terms = [bg.energies.PTMEnergy(oracle=[second, fake_esmfold], weight=1.0)]
+    assert state.oracles_list == [second, fake_esmfold]  # order of appearance: the term's own order
+    with pytest.raises(ValueError, match='ambiguous'):
+        structure_oracle(state)

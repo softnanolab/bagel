@@ -219,6 +219,14 @@ def test_chai1_rejects_multiple_diffusion_samples(monkeypatch) -> None:
         bg.oracles.folding.Chai1(config={'num_diffn_samples': 5})
 
 
+def test_chai1_refuses_n_samples_above_one(monkeypatch) -> None:
+    """boileroom returns no pTM for several Chai-1 samples, which BAGEL needs."""
+    monkeypatch.setattr('boileroom.models.chai.chai1.Chai1', lambda **kwargs: None)
+
+    with pytest.raises(ValueError, match='at most 1 sample'):
+        bg.oracles.folding.Chai1(n_samples=2)
+
+
 @pytest.mark.parametrize(
     'ptm_input',
     [

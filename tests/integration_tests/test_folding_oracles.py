@@ -93,3 +93,38 @@ def test_oracle_modal_fixed_msa_for_target_chain(request, oracle_class, base_seq
     num_residues = sum(len(chain.residues) for chain in dimer)
     assert result.local_plddt.shape == (1, num_residues)
     assert result.ptm.shape == (1, 1)
+
+
+@pytest.mark.parametrize(
+    'oracle_class', [bg.oracles.folding.RF3, bg.oracles.folding.ESMFold2, bg.oracles.folding.OpenDDE]
+)
+def test_oracle_modal_n_samples_gives_ranked_structures_and_an_averaged_energy(
+    request, oracle_class, monomer: list[bg.Chain]
+) -> None:
+    """Several samples per prediction: n structures, best first, and a State energy averaged over them."""
+    if request.config.getoption('--oracles') != 'modal':
+        pytest.skip(reason='needs --oracles modal')
+    oracle = oracle_class(backend='modal', n_samples=3)
+    num_residues = sum(len(chain.residues) for chain in monomer)
+
+    samples = oracle.fold_samples(monomer)
+
+    assert len(samples) == 3
+    for sample in samples:
+        assert sample.local_plddt.shape == (1, num_residues)
+        assert sample.ptm.shape == (1, 1)
+        assert np.array_equal(np.unique(sample.structure.res_id), np.arange(num_residues))
+    coordinates = [sample.structure.coord for sample in samples]
+    assert not np.allclose(coordinates[0], coordinates[1])  # different diffusion draws, not copies
+
+    term = bg.energies.PLDDTEnergy(oracle=oracle, residues=None, weight=1.0)
+    state = bg.State('s', monomer, [term])
+    state.energy
+    state_per_sample = []
+    for sample in state._sample_results[oracle]:
+        results = bg.oracles.OraclesResultDict()
+        results[oracle] = sample
+        state_per_sample.append(term.compute(results)[0])
+    assert len(state_per_sample) == 3
+    assert state.energy_term_values[term.name] == pytest.approx(np.mean(state_per_sample))
+    assert state.energy_term_stds[term.name] == pytest.approx(np.std(state_per_sample, ddof=1))

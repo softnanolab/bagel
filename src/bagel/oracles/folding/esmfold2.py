@@ -3,7 +3,7 @@
 from typing import TYPE_CHECKING, Any
 
 from ...chain import Chain
-from .base import ConfidenceFoldingOracle, ConfidenceFoldingResult
+from .base import ConfidenceFoldingResult, RankedSamplesFoldingOracle
 
 if TYPE_CHECKING:
     from boileroom.models.esmfold2.types import StructurePredictionInput
@@ -13,7 +13,7 @@ class ESMFold2Result(ConfidenceFoldingResult):
     """Structure and normalized confidence metrics from ESMFold2."""
 
 
-class ESMFold2(ConfidenceFoldingOracle):
+class ESMFold2(RankedSamplesFoldingOracle):
     """Oracle that uses ESMFold2 to predict protein structures from sequence.
 
     ESMFold2 is a diffusion-based all-atom structure prediction model from
@@ -42,6 +42,10 @@ class ESMFold2(ConfidenceFoldingOracle):
         - num_loops: Refinement loops
         - optimization: ``"vanilla"`` (default) or ``"exact"`` to run BoilerRoom's optimization-kit kernels (A100/H100/H200
           GPUs only; refused elsewhere)
+    n_samples : int
+        Number of diffusion samples per prediction (``num_diffusion_samples``), ranked by pTM. The energy of a State is
+        averaged over them. 1 (the default) is a single prediction. Kit modes (``optimization="exact"``) may refuse
+        sample counts above 1.
     msa : dict[str, str | Path] | None
         Optional fixed MSAs as ``{chain_ID: A3M text or A3M file path}``, for chains that are never mutated. Chains
         without an entry are folded from their sequence alone.
@@ -50,6 +54,7 @@ class ESMFold2(ConfidenceFoldingOracle):
     result_class: type[ESMFold2Result] = ESMFold2Result
     model_name = 'ESMFold2'
     supports_user_msa = True
+    rank_by_ptm = True
 
     def _load(self, config: dict[str, Any] | None = None) -> None:
         # Imported here (not at module scope) so the module stays importable
@@ -58,6 +63,12 @@ class ESMFold2(ConfidenceFoldingOracle):
         from boileroom.models.esmfold2.esmfold2 import ESMFold2 as ESMFold2Boiler
 
         self.model = ESMFold2Boiler(backend=self.backend, device=self.device, config=config)
+
+    def _fold_options(self, chains: list[Chain]) -> dict[str, Any]:
+        options = super()._fold_options(chains)
+        if self.n_samples > 1:
+            options['num_diffusion_samples'] = self.n_samples
+        return options
 
     def _pre_process(self, chains: list[Chain]) -> 'StructurePredictionInput':
         """Build a structured ESMFold2 fold input that preserves each ``chain_ID``.

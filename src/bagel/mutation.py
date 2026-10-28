@@ -458,9 +458,9 @@ class InverseFoldingSampling(MutationProtocol):
     (chains that are not part of it are never proposed by this protocol, and the chain is chosen proportionally to
     the mutable residues of that State's chains only, not of the whole system). State names must then be unique.
     A State's structure is always that of its current sequence: a cached result is reused only while the sequences
-    are unchanged, otherwise it is recomputed. Which folding oracle supplies it is the first one among the State's
-    energy terms, unless ``folding_oracle`` names one. Amino acids with zero (or
-    missing) ``mutation_bias`` are excluded: with one residue their probability is set to 0 before renormalising,
+    are unchanged, otherwise it is recomputed. A State with several folding oracles needs ``folding_oracle`` to say
+    which one supplies it; with several samples per prediction, it is the oracle's best sample. Amino acids with zero
+    (or missing) ``mutation_bias`` are excluded: with one residue their probability is set to 0 before renormalising,
     and with several they are passed to the model as amino acids it may not sample. Non-zero bias values are not
     used as weights; the inverse folding probabilities are.
 
@@ -486,8 +486,10 @@ class InverseFoldingSampling(MutationProtocol):
         mutated. If None (the default), the chain is chosen among all mutable chains of the system and the State among
         those that contain it, at random.
     folding_oracle : FoldingOracle, keyword-only, optional
-        The folding oracle (an instance used by the State's energy terms) that supplies the structure. If None, the
-        first folding oracle in the order of the State's energy terms is used.
+        The folding oracle (an instance used by the State's energy terms) that supplies the structure. It can be left
+        out (None) only if the State has a single folding oracle; with several, not naming one is an error, since which
+        structure conditions the proposals would otherwise be a silent choice. With several samples per prediction it
+        is the oracle's best sample that is used.
     """
 
     SUPPORTED_METHODS = ('ESM3',)
@@ -539,18 +541,27 @@ class InverseFoldingSampling(MutationProtocol):
     def _get_structure(state: Any, oracle: Any = None) -> Any:
         """Folded structure of the state's current sequence (cached if valid, else computed).
 
-        ``oracle`` selects the folding oracle; by default it is the first folding oracle in the order of the
-        state's energy terms.
+        With several samples (or several oracles) this is the best structure of the chosen oracle. ``oracle`` selects the
+        folding oracle; it can be left out only if the state has a single folding oracle.
+
+        Raises
+        ------
+        ValueError
+            If the state has no folding oracle, if it has several and ``oracle`` is not given, or if ``oracle`` is not
+            used by the state's energy terms.
         """
         from .oracles.folding.base import FoldingOracle
 
-        folding_oracles: list[Any] = []
-        for term in state.energy_terms:
-            if isinstance(term.oracle, FoldingOracle) and term.oracle not in folding_oracles:
-                folding_oracles.append(term.oracle)
+        folding_oracles = [o for o in state.oracles_list if isinstance(o, FoldingOracle)]
         if not folding_oracles:
             raise ValueError(f"State '{state.name}' has no folding oracle, so no structure is available.")
         if oracle is None:
+            if len(folding_oracles) > 1:
+                raise ValueError(
+                    f"State '{state.name}' has {len(folding_oracles)} folding oracles "
+                    f'({[type(o).__name__ for o in folding_oracles]}), so it is ambiguous which one provides the structure '
+                    f'that conditions the proposals. Pass the one to use as folding_oracle=.'
+                )
             oracle = folding_oracles[0]
         elif oracle not in folding_oracles:
             raise ValueError(
@@ -559,7 +570,7 @@ class InverseFoldingSampling(MutationProtocol):
             )
         state._invalidate_cache_if_needed()
         if oracle not in state._oracles_result:
-            state._oracles_result[oracle] = oracle.predict(chains=state.chains)
+            state._predict(oracle)
         return state._oracles_result.get_structure(oracle)
 
     def proposal_temperature(self, step: int) -> float:

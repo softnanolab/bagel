@@ -22,6 +22,7 @@ class AlphaFold2Multimer(RankedSamplesFoldingOracle):
     result_class: type[AlphaFold2MultimerResult] = AlphaFold2MultimerResult
     model_name = 'AlphaFold2Multimer'
     supports_user_msa = True
+    max_samples = 5  # AlphaFold2 has 5 parameter sets: n_samples is the number of models averaged
     identical_chains_share_msa = True
 
     def _load(self, config: dict[str, Any] | None = None) -> None:
@@ -29,4 +30,5 @@ class AlphaFold2Multimer(RankedSamplesFoldingOracle):
 
         model_config = dict(config or {})
         model_config.setdefault('use_msa_server', False)
+        self._require_samples(model_config, 'num_models', default=5)
         self.model = AlphaFold2MultimerBoiler(backend=self.backend, device=self.device, config=model_config)

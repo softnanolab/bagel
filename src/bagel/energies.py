@@ -9,6 +9,8 @@ Copyright (c) 2025 Jakub Lála, Ayham Al-Saffar, Stefano Angioletti-Uberti
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 import re
 import warnings
 
@@ -63,7 +65,7 @@ class EnergyTerm(ABC):
     def __init__(
         self,
         name: str,
-        oracle: Oracle,
+        oracle: Oracle | Sequence[Oracle],
         inheritable: bool,
         weight: float = 1.0,
     ) -> None:
@@ -78,18 +80,46 @@ class EnergyTerm(ABC):
         ----------
         name: str
             The name of the energy term.
-        oracle: Oracle
-            The oracle to use for the energy term.
+        oracle: Oracle | Sequence[Oracle]
+            The oracle to use for the energy term, or several oracles. With several, the energy term is evaluated on
+            the structure(s) of each of them and the value of the term is the mean over all of them (every structure
+            of every oracle counts the same). ``self.oracle`` is the first oracle, ``self.oracles`` all of them.
         inheritable: bool
             Whether the energy term is inheritable.
         weight: float = 1.0
             The weight of the energy term.
         """
         self.name = name
-        self.oracle = oracle
+        oracles = [oracle] if isinstance(oracle, Oracle) else list(oracle)
+        if not oracles:
+            raise ValueError(f"Energy term '{name}' needs at least one oracle")
+        for candidate in oracles:
+            if not isinstance(candidate, Oracle):
+                raise TypeError(f"Energy term '{name}': oracle must be an Oracle, got {type(candidate).__name__}")
+        if len({id(candidate) for candidate in oracles}) != len(oracles):
+            raise ValueError(f"Energy term '{name}' was given the same oracle more than once")
+        self.oracles: list[Oracle] = oracles
+        self.oracle = oracles[0]
         self.weight = weight
         self.inheritable = inheritable
         self.residue_groups: list[ResidueGroup] = []
+
+    @contextmanager
+    def bound_to(self, oracle: Oracle) -> Iterator['EnergyTerm']:
+        """
+        Temporarily make ``oracle`` the oracle of the term, so that ``compute`` reads that oracle's result.
+
+        The term is changed in place (and restored on exit), so it is not safe to evaluate the same term object from
+        several threads at once.
+        """
+        if oracle not in self.oracles:
+            raise ValueError(f"Oracle is not one of the oracles of energy term '{self.name}'")
+        previous = self.oracle
+        self.oracle = oracle
+        try:
+            yield self
+        finally:
+            self.oracle = previous
 
     def __post_init__(self) -> None:
         """Checks required attributes have been set after class is initialised"""
@@ -101,7 +131,7 @@ class EnergyTerm(ABC):
             assert self.inheritable is False, 'template_match energy term should NEVER be inheritable'
 
         assert self.oracle is not None, 'oracle attribute must be set in class initialiser'
-        assert isinstance(self.oracle, Oracle), 'oracle attribute must be an instance of Oracle'
+        assert all(isinstance(o, Oracle) for o in self.oracles), 'oracle attribute must be an instance of Oracle'
 
     @abstractmethod
     def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
@@ -258,7 +288,7 @@ class PTMEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: FoldingOracle,
+        oracle: FoldingOracle | Sequence[FoldingOracle],
         weight: float = 1.0,
         name: str | None = None,
     ) -> None:
@@ -267,7 +297,7 @@ class PTMEnergy(EnergyTerm):
 
         Parameters
         ----------
-        oracle: FoldingOracle
+        oracle: FoldingOracle | Sequence[FoldingOracle]
             The oracle to use for the energy term.
         weight: float
             The weight of the energy term.
@@ -279,8 +309,10 @@ class PTMEnergy(EnergyTerm):
         else:
             name = f'pTM_{name}'
         super().__init__(name=name, inheritable=True, oracle=oracle, weight=weight)
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'ptm' in self.oracle.result_class.model_fields, 'PTMEnergy requires oracle to return ptm in result_class'
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('ptm' in o.result_class.model_fields for o in self.oracles), (
+            'PTMEnergy requires oracle to return ptm in result_class'
+        )
 
     def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
         folding_result = oracles_result[self.oracle]
@@ -317,7 +349,7 @@ class ChemicalPotentialEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: Oracle,
+        oracle: Oracle | Sequence[Oracle],
         power: float = 1.0,
         target_size: int | tuple[int, int] = 0,
         chemical_potential: float = 1.0,
@@ -329,7 +361,7 @@ class ChemicalPotentialEnergy(EnergyTerm):
 
         Parameters
         ----------
-        oracle: Oracle
+        oracle: Oracle | Sequence[Oracle]
             The oracle to use for the energy term.
         power: float
             The exponent to which the distance from the allowed range of sizes is raised. Must be positive.
@@ -358,8 +390,8 @@ class ChemicalPotentialEnergy(EnergyTerm):
         self.power = power
         self.target_size = target_size
         self.chemical_potential = chemical_potential
-        assert isinstance(self.oracle, Oracle), 'Input to oracle not an Oracle object'
-        assert 'input_chains' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, Oracle) for o in self.oracles), 'Input to oracle not an Oracle object'
+        assert all('input_chains' in o.result_class.model_fields for o in self.oracles), (
             'ChemicalPotentialEnergy requires oracle to return input_chains in result_class'
         )
 
@@ -385,7 +417,7 @@ class PLDDTEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: FoldingOracle,
+        oracle: FoldingOracle | Sequence[FoldingOracle],
         residues: list[Residue] | None,
         inheritable: bool = True,
         weight: float = 1.0,
@@ -395,7 +427,7 @@ class PLDDTEnergy(EnergyTerm):
 
         Parameters
         ----------
-        oracle: FoldingOracle
+        oracle: FoldingOracle | Sequence[FoldingOracle]
             The oracle to use for the energy term.
         residues: list[Residue]
             Which residues to include in the calculation.
@@ -424,8 +456,8 @@ class PLDDTEnergy(EnergyTerm):
             self.residue_groups = [residue_list_to_group(residues)]
         else:
             self.residue_groups = []
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'local_plddt' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('local_plddt' in o.result_class.model_fields for o in self.oracles), (
             'PLDDTEnergy requires oracle to return local_plddt in result_class'
         )
 
@@ -449,12 +481,14 @@ class OverallPLDDTEnergy(PLDDTEnergy):
     Overall Predicted Local Distance Difference Test energy.
     """
 
-    def __init__(self, oracle: FoldingOracle, weight: float = 1.0, name: str | None = None) -> None:
+    def __init__(
+        self, oracle: FoldingOracle | Sequence[FoldingOracle], weight: float = 1.0, name: str | None = None
+    ) -> None:
         """Initialises Overall Predicted Local Distance Difference Test Energy class.
 
         Parameters
         ----------
-        oracle: Oracle
+        oracle: Oracle | Sequence[Oracle]
             The oracle to use for the energy term.
         weight: float
             The weight of the energy term.
@@ -462,8 +496,8 @@ class OverallPLDDTEnergy(PLDDTEnergy):
             Optional name to append to the energy term name.
         """
         super().__init__(oracle=oracle, inheritable=True, weight=weight, residues=None, name=name)
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'local_plddt' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('local_plddt' in o.result_class.model_fields for o in self.oracles), (
             'OverallPLDDTEnergy requires oracle to return local_plddt in result_class'
         )
         self.residue_groups = []
@@ -477,7 +511,7 @@ class SurfaceAreaEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: FoldingOracle,
+        oracle: FoldingOracle | Sequence[FoldingOracle],
         inheritable: bool = True,
         residues: list[Residue] | None = None,
         probe_radius: float | None = None,
@@ -490,7 +524,7 @@ class SurfaceAreaEnergy(EnergyTerm):
 
         Parameters
         ----------
-        oracle: FoldingOracle
+        oracle: FoldingOracle | Sequence[FoldingOracle]
             The oracle to use for the energy term.
         inheritable: bool, default=True
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
@@ -517,8 +551,8 @@ class SurfaceAreaEnergy(EnergyTerm):
         self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
         self.probe_radius = probe_radius_water if probe_radius is None else probe_radius
         self.max_sasa = max_sasa_values['S'] if max_sasa is None else max_sasa
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'structure' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('structure' in o.result_class.model_fields for o in self.oracles), (
             'SurfaceAreaEnergy requires oracle to return structure in result_class'
         )
 
@@ -542,7 +576,7 @@ class HydrophobicEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: FoldingOracle,
+        oracle: FoldingOracle | Sequence[FoldingOracle],
         inheritable: bool = True,
         residues: list[Residue] | None = None,
         mode: Literal['surface', 'core', 'all'] = 'all',
@@ -556,7 +590,7 @@ class HydrophobicEnergy(EnergyTerm):
 
         Parameters
         ----------
-        oracle: FoldingOracle
+        oracle: FoldingOracle | Sequence[FoldingOracle]
             The oracle to use for the energy term.
         inheritable: bool, default=True
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
@@ -600,8 +634,8 @@ class HydrophobicEnergy(EnergyTerm):
             )
             mode = 'surface' if surface_only else 'core'
         self.mode: Literal['surface', 'core', 'all'] = mode
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'structure' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('structure' in o.result_class.model_fields for o in self.oracles), (
             'HydrophobicEnergy requires oracle to return structure in result_class'
         )
 
@@ -646,7 +680,7 @@ class HydropathyEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: FoldingOracle,
+        oracle: FoldingOracle | Sequence[FoldingOracle],
         inheritable: bool = True,
         residues: list[Residue] | None = None,
         mode: Literal['surface', 'core', 'all'] = 'all',
@@ -658,7 +692,7 @@ class HydropathyEnergy(EnergyTerm):
 
         Parameters
         ----------
-        oracle: FoldingOracle
+        oracle: FoldingOracle | Sequence[FoldingOracle]
             The oracle to use for the energy term.
         inheritable: bool, default=True
             If a new residue is added next to a residue included in this energy term, this dictates whether that new
@@ -687,8 +721,8 @@ class HydropathyEnergy(EnergyTerm):
         self.mode: Literal['surface', 'core', 'all'] = mode
         if self.mode not in ['surface', 'core', 'all']:
             raise ValueError(f"Invalid mode: {mode}. Expected one of: 'surface', 'core', 'all'.")
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'structure' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('structure' in o.result_class.model_fields for o in self.oracles), (
             'HydropathyEnergy requires oracle to return structure in result_class'
         )
 
@@ -842,7 +876,7 @@ class PAEEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: FoldingOracle,
+        oracle: FoldingOracle | Sequence[FoldingOracle],
         residues: list[list[Residue]],
         inheritable: bool = True,
         cross_term_only: bool = True,
@@ -854,7 +888,7 @@ class PAEEnergy(EnergyTerm):
 
         Parameters
         ----------
-        oracle: Oracle
+        oracle: Oracle | Sequence[Oracle]
             The oracle to use for the energy term.
         residues: tuple[list[Residue], list[Residue]]
             Which residues to include in the first and second group.
@@ -882,8 +916,10 @@ class PAEEnergy(EnergyTerm):
             self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[0])]
         else:
             self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'pae' in self.oracle.result_class.model_fields, 'PAEEnergy requires oracle to return pae in result_class'
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('pae' in o.result_class.model_fields for o in self.oracles), (
+            'PAEEnergy requires oracle to return pae in result_class'
+        )
 
     def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
         folding_result = oracles_result[self.oracle]
@@ -918,7 +954,7 @@ class LISEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: FoldingOracle,
+        oracle: FoldingOracle | Sequence[FoldingOracle],
         residues: list[list[Residue]],
         pae_cutoff: float = 12.0,
         intensive: bool = True,
@@ -931,7 +967,7 @@ class LISEnergy(EnergyTerm):
 
         Parameters
         ----------
-        oracle: Oracle
+        oracle: Oracle | Sequence[Oracle]
             The oracle to use for the energy term.
         residues: tuple[list[Residue], list[Residue]]
             Which residues to include in the first and second group.
@@ -962,8 +998,10 @@ class LISEnergy(EnergyTerm):
             self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[0])]
         else:
             self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'pae' in self.oracle.result_class.model_fields, 'PAEEnergy requires oracle to return pae in result_class'
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('pae' in o.result_class.model_fields for o in self.oracles), (
+            'PAEEnergy requires oracle to return pae in result_class'
+        )
 
     def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
         folding_result = oracles_result[self.oracle]
@@ -1036,7 +1074,7 @@ class ipSAEEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: FoldingOracle,
+        oracle: FoldingOracle | Sequence[FoldingOracle],
         residues: list[list[Residue]],
         pae_cutoff: float = 10.0,
         direction: Literal['max', 'min', 'mean', '1to2', '2to1'] = 'min',
@@ -1049,7 +1087,7 @@ class ipSAEEnergy(EnergyTerm):
 
         Parameters
         ----------
-        oracle: Oracle
+        oracle: Oracle | Sequence[Oracle]
             The oracle to use for the energy term.
         residues: tuple[list[Residue], list[Residue]]
             Which residues to include in the first and second group.
@@ -1086,8 +1124,8 @@ class ipSAEEnergy(EnergyTerm):
             self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[0])]
         else:
             self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'pae' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('pae' in o.result_class.model_fields for o in self.oracles), (
             'ipSAEEnergy requires oracle to return pae in result_class'
         )
 
@@ -1170,7 +1208,7 @@ class SaltBridgeEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: FoldingOracle,
+        oracle: FoldingOracle | Sequence[FoldingOracle],
         residues: list[list[Residue]],
         residue_types: list[str] | tuple[str, ...] = ('D', 'E', 'K', 'R', 'H'),
         distance_cutoff: float = 4.0,
@@ -1184,7 +1222,7 @@ class SaltBridgeEnergy(EnergyTerm):
 
         Parameters
         ----------
-        oracle: FoldingOracle
+        oracle: FoldingOracle | Sequence[FoldingOracle]
             The oracle to use for the energy term.
         residues: list[list[Residue]]
             Which residues to include in the first and second group. Bridges are counted between the two groups only,
@@ -1230,8 +1268,8 @@ class SaltBridgeEnergy(EnergyTerm):
         self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
         # keyed by the 3-letter name in the structure: the sign of the charge and the atoms that carry it
         self._charged_atoms = {aa_dict[letter]: salt_bridge_residues[letter] for letter in self.residue_types}
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'structure' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('structure' in o.result_class.model_fields for o in self.oracles), (
             'SaltBridgeEnergy requires oracle to return structure in result_class'
         )
 
@@ -1280,7 +1318,7 @@ class RingSymmetryEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: FoldingOracle,
+        oracle: FoldingOracle | Sequence[FoldingOracle],
         symmetry_groups: list[list[Residue]],
         inheritable: bool = True,
         direct_neighbours_only: bool = False,
@@ -1291,7 +1329,7 @@ class RingSymmetryEnergy(EnergyTerm):
 
         Parameters
         ----------
-        oracle: Oracle
+        oracle: Oracle | Sequence[Oracle]
             The oracle to use for the energy term.
         symmetry_groups: list[list[Residue]]
             A list of at least length 2, with each element containing a list of residues corresponding to a symmetry
@@ -1318,8 +1356,8 @@ class RingSymmetryEnergy(EnergyTerm):
         assert (len(symmetry_groups) > 1) and (len(symmetry_groups[0]) >= 1), 'Multiple symmetry groups required.'
         self.residue_groups = [residue_list_to_group(symmetry_group) for symmetry_group in symmetry_groups]
         self.direct_neighbours_only: bool = direct_neighbours_only
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'structure' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('structure' in o.result_class.model_fields for o in self.oracles), (
             'RingSymmetryEnergy requires oracle to return structure in result_class'
         )
 
@@ -1356,7 +1394,7 @@ class SeparationEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: FoldingOracle,
+        oracle: FoldingOracle | Sequence[FoldingOracle],
         residues: tuple[list[Residue], list[Residue]],
         function: Callable[[float], float] | None = None,
         inheritable: bool = True,
@@ -1369,7 +1407,7 @@ class SeparationEnergy(EnergyTerm):
 
         Parameters
         ----------
-        oracle: FoldingOracle
+        oracle: FoldingOracle | Sequence[FoldingOracle]
             The oracle to use for the energy term.
         residues: tuple[list[Residue],list[Residue]]
             A tuple containing two lists of residues, those to include in the first [0] and second [1] group.
@@ -1400,8 +1438,8 @@ class SeparationEnergy(EnergyTerm):
         self.function: Callable[[float], float] | None = function
         if self.function is not None:
             assert callable(self.function), 'Function must be callable and accept a single float argument'
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'structure' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('structure' in o.result_class.model_fields for o in self.oracles), (
             'SeparationEnergy requires oracle to return structure in result_class'
         )
 
@@ -1460,7 +1498,7 @@ class FlexEvoBindEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: FoldingOracle,
+        oracle: FoldingOracle | Sequence[FoldingOracle],
         residues: tuple[list[Residue], list[Residue]],
         plddt_weighted: bool = False,
         symmetrized: bool = True,
@@ -1473,7 +1511,7 @@ class FlexEvoBindEnergy(EnergyTerm):
 
         Parameters
         ----------
-        oracle: FoldingOracle
+        oracle: FoldingOracle | Sequence[FoldingOracle]
             The oracle to use for the energy term.
         residues: tuple[list[Residue],list[Residue]]
             A tuple containing two lists of residues, those to include in the first [0] and second [1] group.
@@ -1502,8 +1540,8 @@ class FlexEvoBindEnergy(EnergyTerm):
         self.symmetrized = symmetrized
         self.plddt_weighted = plddt_weighted
         self.residue_groups = [residue_list_to_group(residues[0]), residue_list_to_group(residues[1])]
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'structure' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('structure' in o.result_class.model_fields for o in self.oracles), (
             'FlexEvoBindEnergy requires oracle to return structure in result_class'
         )
 
@@ -1597,7 +1635,7 @@ class GlobularEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: Oracle,
+        oracle: Oracle | Sequence[Oracle],
         residues: list[Residue] | None = None,
         inheritable: bool = True,
         weight: float = 1.0,
@@ -1608,7 +1646,7 @@ class GlobularEnergy(EnergyTerm):
 
         Parameters
         ----------
-        oracle: Oracle
+        oracle: Oracle | Sequence[Oracle]
             The oracle to use for the energy term.
         residues: list[Residue] or None, default=None
             Which residues to include in the calculation. Considers all residues by default.
@@ -1627,8 +1665,8 @@ class GlobularEnergy(EnergyTerm):
 
         super().__init__(name=name, oracle=oracle, inheritable=inheritable, weight=weight)
         self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'structure' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('structure' in o.result_class.model_fields for o in self.oracles), (
             'GlobularEnergy requires oracle to return structure in result_class'
         )
 
@@ -1656,7 +1694,7 @@ class TemplateMatchEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: Oracle,
+        oracle: Oracle | Sequence[Oracle],
         template_atoms: AtomArray,
         residues: list[Residue],
         backbone_only: bool = False,
@@ -1669,7 +1707,7 @@ class TemplateMatchEnergy(EnergyTerm):
 
         Parameters
         ----------
-        oracle: Oracle
+        oracle: Oracle | Sequence[Oracle]
             The oracle to use for the energy term.
         template_atoms: AtomArray
             An array of atoms that specify the desired positions of the structure.
@@ -1698,8 +1736,8 @@ class TemplateMatchEnergy(EnergyTerm):
         self.template_atoms = template_atoms
         self.backbone_only = backbone_only
         self.distogram_separation = distogram_separation
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'structure' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('structure' in o.result_class.model_fields for o in self.oracles), (
             'TemplateMatchEnergy requires oracle to return structure in result_class'
         )
 
@@ -1744,7 +1782,7 @@ class SecondaryStructureEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: Oracle,
+        oracle: Oracle | Sequence[Oracle],
         residues: list[Residue],
         target_secondary_structure: str,
         inheritable: bool = True,
@@ -1756,7 +1794,7 @@ class SecondaryStructureEnergy(EnergyTerm):
 
         Parameters
         ----------
-        oracle: Oracle
+        oracle: Oracle | Sequence[Oracle]
             The oracle to use for the energy term.
         residues: list[Residue]
             Which residues to include in the calculation.
@@ -1782,8 +1820,8 @@ class SecondaryStructureEnergy(EnergyTerm):
         options = ('alpha-helix', 'beta-sheet', 'coil')
         assert target_secondary_structure in options, f'{target_secondary_structure} not recognised. options: {options}'
         self.target_secondary_structure = target_secondary_structure
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'structure' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('structure' in o.result_class.model_fields for o in self.oracles), (
             'SecondaryStructureEnergy requires oracle to return structure in result_class'
         )
 
@@ -1805,7 +1843,7 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: EmbeddingOracle,
+        oracle: EmbeddingOracle | Sequence[EmbeddingOracle],
         residues: list[Residue],
         reference_embeddings: npt.NDArray[np.float64],
         weight: float = 1.0,
@@ -1816,7 +1854,7 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
 
         Parameters
         ----------
-        oracle: EmbeddingOracle
+        oracle: EmbeddingOracle | Sequence[EmbeddingOracle]
             The oracle that will be used to calculate the embeddings.
         residues: list[Residue]
             Which residues to include in the calculation.
@@ -1844,8 +1882,10 @@ class EmbeddingsSimilarityEnergy(EnergyTerm):
             f'match number of residues to include in energy term ({len(self.residue_groups[0][0])})'
         )
 
-        assert isinstance(self.oracle, EmbeddingOracle), 'Oracle must be an instance of EmbeddingOracle'
-        assert 'embeddings' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, EmbeddingOracle) for o in self.oracles), (
+            'Oracle must be an instance of EmbeddingOracle'
+        )
+        assert all('embeddings' in o.result_class.model_fields for o in self.oracles), (
             'EmbeddingsSimilarityEnergy requires oracle to return embeddings in result_class'
         )
 
@@ -1978,7 +2018,7 @@ class ShapeComplementarityEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: FoldingOracle,
+        oracle: FoldingOracle | Sequence[FoldingOracle],
         residues: tuple[list[Residue], list[Residue]],
         scaling: Literal['extensive', 'intensive'] = 'extensive',
         area_scale: float = 1000.0,
@@ -1997,7 +2037,7 @@ class ShapeComplementarityEnergy(EnergyTerm):
 
         Parameters
         ----------
-        oracle: FoldingOracle
+        oracle: FoldingOracle | Sequence[FoldingOracle]
             The oracle to use for the energy term.
         residues: tuple[list[Residue], list[Residue]]
             A tuple containing two lists of residues, defining the two sides of the interface. These are usually
@@ -2077,8 +2117,8 @@ class ShapeComplementarityEnergy(EnergyTerm):
                 f'{len(overlap)} residue(s) appear in both groups of {name}; a residue cannot be complementary to '
                 'itself, so the resulting energy will be hard to interpret.'
             )
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'structure' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('structure' in o.result_class.model_fields for o in self.oracles), (
             'ShapeComplementarityEnergy requires oracle to return structure in result_class'
         )
 
@@ -2202,7 +2242,7 @@ class SAEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: EmbeddingOracle,
+        oracle: EmbeddingOracle | Sequence[EmbeddingOracle],
         feature_indices: list[int],
         coefficients: list[float] | None = None,
         weight: float = 1.0,
@@ -2215,7 +2255,7 @@ class SAEnergy(EnergyTerm):
 
         Parameters
         ----------
-        oracle: EmbeddingOracle
+        oracle: EmbeddingOracle | Sequence[EmbeddingOracle]
             The SAE oracle whose result exposes a per-protein ``features`` vector.
         feature_indices: list[int]
             Indices of the SAE features to include in the energy. Must be
@@ -2248,11 +2288,14 @@ class SAEnergy(EnergyTerm):
         )
         self.maximize = bool(maximize)
 
-        assert isinstance(self.oracle, EmbeddingOracle), 'Oracle must be an instance of EmbeddingOracle'
-        assert 'features' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, EmbeddingOracle) for o in self.oracles), (
+            'Oracle must be an instance of EmbeddingOracle'
+        )
+        assert all('features' in o.result_class.model_fields for o in self.oracles), (
             'SAEnergy requires the oracle to return a per-protein "features" vector in its result_class'
         )
-        _require_supported_sae_model(self.oracle)
+        for candidate in self.oracles:
+            _require_supported_sae_model(candidate)
 
     def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
         result = oracles_result[self.oracle]
@@ -2305,7 +2348,7 @@ class ResidueSAEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: EmbeddingOracle,
+        oracle: EmbeddingOracle | Sequence[EmbeddingOracle],
         feature_indices: list[int],
         coefficients: list[float] | None = None,
         weight: float = 1.0,
@@ -2320,7 +2363,7 @@ class ResidueSAEnergy(EnergyTerm):
 
         Parameters
         ----------
-        oracle: EmbeddingOracle
+        oracle: EmbeddingOracle | Sequence[EmbeddingOracle]
             The SAE oracle. Must be configured with ``include_per_residue=True`` so
             its result exposes per-residue activations in ``embeddings``.
         feature_indices: list[int]
@@ -2358,15 +2401,18 @@ class ResidueSAEnergy(EnergyTerm):
 
         self.residue_groups = [residue_list_to_group(residues)] if residues is not None else []
 
-        assert isinstance(self.oracle, EmbeddingOracle), 'Oracle must be an instance of EmbeddingOracle'
+        assert all(isinstance(o, EmbeddingOracle) for o in self.oracles), (
+            'Oracle must be an instance of EmbeddingOracle'
+        )
         # Require the SAE-specific "features" field (as SAEnergy does), not just the
         # ubiquitous "embeddings"; otherwise a plain embedding oracle (e.g. ESMC)
         # would pass and its raw hidden states would be scored as SAE activations.
-        assert {'embeddings', 'features'} <= set(self.oracle.result_class.model_fields), (
+        assert all({'embeddings', 'features'} <= set(o.result_class.model_fields) for o in self.oracles), (
             'ResidueSAEnergy requires an SAE oracle exposing per-residue "embeddings" and "features" '
             'in its result_class'
         )
-        _require_supported_sae_model(self.oracle)
+        for candidate in self.oracles:
+            _require_supported_sae_model(candidate)
 
     def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
         result = oracles_result[self.oracle]
@@ -2477,7 +2523,7 @@ class BuriedHistidineEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: FoldingOracle,
+        oracle: FoldingOracle | Sequence[FoldingOracle],
         target_count: int = 6,
         sasa_cutoff: float = 0.15,
         residues: list[Residue] | None = None,
@@ -2492,7 +2538,7 @@ class BuriedHistidineEnergy(EnergyTerm):
         self.sasa_cutoff = float(sasa_cutoff)
         assert self.target_count > 0, 'target_count must be positive'
         assert 0.0 < self.sasa_cutoff <= 1.0, 'sasa_cutoff must lie in (0, 1]'
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be a FoldingOracle'
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be a FoldingOracle'
 
     def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
         structure = oracles_result.get_structure(self.oracle)
@@ -2551,7 +2597,7 @@ class HistidineCarboxylateContactEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: FoldingOracle,
+        oracle: FoldingOracle | Sequence[FoldingOracle],
         distance_cutoff: float = 4.5,
         max_contacts: int = 4,
         inheritable: bool = True,
@@ -2564,7 +2610,7 @@ class HistidineCarboxylateContactEnergy(EnergyTerm):
         self.distance_cutoff = float(distance_cutoff)
         self.max_contacts = int(max_contacts)
         assert self.max_contacts > 0, 'max_contacts must be positive'
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be a FoldingOracle'
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be a FoldingOracle'
 
     def compute(self, oracles_result: OraclesResultDict) -> tuple[float, float]:
         structure = oracles_result.get_structure(self.oracle)
@@ -2964,6 +3010,10 @@ class BinderRMSDEnergy(EnergyTerm):
     The C-alpha atoms of the selected residues are superimposed, using the rotation and translation that minimise the
     RMSD, and the distance between the two positions of each residue is then measured.
 
+    If an oracle gives several structures per prediction (``n_samples > 1``), or this term has several oracles, every
+    structure of this state is compared with every structure of the reference oracle and the value is the mean of the
+    RMSD over all those pairs.
+
     Optionally, the mean over residues is weighted by :math:`w_i = \\mathrm{pLDDT}_i^n`, so that residues the model is
     confident about in the reference state count for more, and those whose isolated structure is a guess for less.
     The pLDDT is always taken from the reference state. The result is
@@ -2984,7 +3034,7 @@ class BinderRMSDEnergy(EnergyTerm):
 
     def __init__(
         self,
-        oracle: FoldingOracle,
+        oracle: FoldingOracle | Sequence[FoldingOracle],
         residues: list[Residue],
         reference_state: State,
         reference_oracle: FoldingOracle | None = None,
@@ -2999,7 +3049,7 @@ class BinderRMSDEnergy(EnergyTerm):
 
         Parameters
         ----------
-        oracle: FoldingOracle
+        oracle: FoldingOracle | Sequence[FoldingOracle]
             The oracle used to fold the state this term belongs to.
         residues: list[Residue]
             The residues to compare. All of them must exist in ``reference_state``.
@@ -3038,8 +3088,8 @@ class BinderRMSDEnergy(EnergyTerm):
         self.plddt_scaled = plddt_scaled
         self.plddt_exponent = plddt_exponent
         self.residue_groups = [residue_list_to_group(residues)]
-        assert isinstance(self.oracle, FoldingOracle), 'Oracle must be an instance of FoldingOracle'
-        assert 'structure' in self.oracle.result_class.model_fields, (
+        assert all(isinstance(o, FoldingOracle) for o in self.oracles), 'Oracle must be an instance of FoldingOracle'
+        assert all('structure' in o.result_class.model_fields for o in self.oracles), (
             'BinderRMSDEnergy requires oracle to return structure in result_class'
         )
         if reference_oracle is not None:
@@ -3068,8 +3118,11 @@ class BinderRMSDEnergy(EnergyTerm):
                     f"{match[0].name} in reference state '{self.reference_state.name}'"
                 )
 
-    def _get_reference_result(self) -> FoldingResult:
-        """Fold the reference state if needed (through its cache) and return the result of the reference oracle."""
+    def _get_reference_results(self) -> list[FoldingResult]:
+        """
+        Fold the reference state if needed (through its cache) and return every result of the reference oracle: one per
+        sample (best first), a single one if the oracle gives one structure per prediction.
+        """
         if self in self.reference_state.energy_terms:
             raise ValueError('reference_state cannot be the state that contains this energy term')
         _ = self.reference_state.energy  # runs the oracles of the reference state, or reuses its cache
@@ -3087,9 +3140,10 @@ class BinderRMSDEnergy(EnergyTerm):
                 f"reference_oracle is not used by any energy term of reference state '{self.reference_state.name}', "
                 'so it is never run'
             )
-        result = self.reference_state._oracles_result[oracle]
-        assert isinstance(result, FoldingResult), 'Result must be a FoldingResult'
-        return result
+        results = self.reference_state._samples_of(oracle)
+        for result in results:
+            assert isinstance(result, FoldingResult), 'Result must be a FoldingResult'
+        return [r for r in results if isinstance(r, FoldingResult)]
 
     @staticmethod
     def _ca_indices(structure: AtomArray, chain_ids: npt.NDArray[np.str_], res_ids: npt.NDArray[np.int_]) -> list[int]:
@@ -3116,11 +3170,27 @@ class BinderRMSDEnergy(EnergyTerm):
             raise ValueError(
                 f"Residues (chain, index) {absent} are not in reference state '{self.reference_state.name}'"
             )
-        reference_result = self._get_reference_result()
+        reference_results = self._get_reference_results()
 
         structure = oracles_result.get_structure(self.oracle)
-        reference = reference_result.structure
         state_ca = structure[self._ca_indices(structure, chain_ids, res_ids)]
+        # every structure of this State is compared with every structure of the reference State: the value is the
+        # mean over all pairs (just the one RMSD when each side has a single structure)
+        values = [
+            self._rmsd_to(state_ca, reference_result, chain_ids, res_ids) for reference_result in reference_results
+        ]
+        value = sum(values) / len(values)
+        return value, value * self.weight
+
+    def _rmsd_to(
+        self,
+        state_ca: AtomArray,
+        reference_result: FoldingResult,
+        chain_ids: npt.NDArray[np.str_],
+        res_ids: npt.NDArray[np.int_],
+    ) -> float:
+        """(pLDDT-weighted) RMSD of the selected C-alphas of ``state_ca`` to one reference structure, after fitting."""
+        reference = reference_result.structure
         reference_ca = reference[self._ca_indices(reference, chain_ids, res_ids)]
 
         reference_ca = superimpose(fixed=state_ca, mobile=reference_ca)[0]  # translation and rotation fit
@@ -3141,5 +3211,4 @@ class BinderRMSDEnergy(EnergyTerm):
             if scaled_weights.sum() > 0:  # otherwise keep the plain RMSD
                 weights = scaled_weights
 
-        value = float(np.sqrt(np.sum(weights * deviations**2) / np.sum(weights)))
-        return value, value * self.weight
+        return float(np.sqrt(np.sum(weights * deviations**2) / np.sum(weights)))

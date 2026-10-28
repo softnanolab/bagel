@@ -26,4 +26,5 @@ class RF3(RankedSamplesFoldingOracle):
         from boileroom.models.rf3.rf3 import RF3 as RF3Boiler
 
         model_config = dict(config or {})
+        self._require_samples(model_config, 'diffusion_batch_size', default=5)
         self.model = RF3Boiler(backend=self.backend, device=self.device, config=model_config)

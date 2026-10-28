@@ -7,7 +7,8 @@ Copyright (c) 2025 Jakub Lála, Ayham Al-Saffar, Stefano Angioletti-Uberti
 """
 
 from .chain import Chain
-from .oracles import Oracle, OraclesResultDict
+from .oracles import Oracle, OracleResult, OraclesResultDict
+from .oracles.folding import FoldingOracle
 from .energies import EnergyTerm
 from typing import Optional
 from pathlib import Path
@@ -61,6 +62,8 @@ class State:
     energy_terms: List[EnergyTerm]
     _energy: float | None = field(default=None, init=False)
     _oracles_result: OraclesResultDict = field(default_factory=lambda: OraclesResultDict(), init=False)
+    _sample_results: dict[Oracle, list[OracleResult]] = field(default_factory=lambda: {}, init=False)
+    _energy_term_stds: dict[str, float] = field(default_factory=lambda: {}, init=False)
     _energy_term_values: dict[str, float] = field(default_factory=lambda: {}, init=False)
     _cache_key: tuple[tuple[str, ...], tuple[tuple[str, float], ...]] | None = field(default=None, init=False)
 
@@ -74,7 +77,42 @@ class State:
 
     @property
     def oracles_list(self) -> list[Oracle]:
-        return list(set([term.oracle for term in self.energy_terms]))
+        """The oracles of all energy terms, each once, in order of appearance (term order, then order in the term)."""
+        ordered: list[Oracle] = []
+        for term in self.energy_terms:
+            for oracle in term.oracles:
+                if oracle not in ordered:
+                    ordered.append(oracle)
+        return ordered
+
+    def _predict(self, oracle: Oracle) -> OracleResult:
+        """
+        Run an oracle on the chains of the State and cache what it returns.
+
+        ``_oracles_result`` holds one result per oracle (for a folding oracle with several samples, the best one, which
+        is what structure outputs and inverse folding use); ``_sample_results`` holds all the samples the energy is
+        averaged over.
+        """
+        if isinstance(oracle, FoldingOracle) and oracle.n_samples > 1:
+            samples: list[OracleResult] = list(oracle.predict_samples(chains=self.chains))
+            if len(samples) != oracle.n_samples:
+                raise ValueError(
+                    f'{type(oracle).__name__} returned {len(samples)} samples; n_samples={oracle.n_samples}'
+                )
+        else:
+            samples = [oracle.predict(chains=self.chains)]
+        self._sample_results[oracle] = samples
+        self._oracles_result[oracle] = samples[0]
+        return samples[0]
+
+    def _samples_of(self, oracle: Oracle) -> list[OracleResult]:
+        """All the cached results (samples, best first) of an oracle that has already been run."""
+        samples = self._sample_results.get(oracle)
+        # the samples are only valid for the best result cached next to them (a result set directly, e.g. by a test
+        # or another cache writer, would otherwise be shadowed by older samples)
+        if samples and samples[0] is self._oracles_result[oracle]:
+            return samples
+        return [self._oracles_result[oracle]]
 
     @property
     def total_sequence(self) -> List[str]:
@@ -96,7 +134,9 @@ class State:
             # Cache is stale - clear it
             self._energy = None
             self._energy_term_values = {}
+            self._energy_term_stds = {}
             self._oracles_result = OraclesResultDict()
+            self._sample_results = {}
             self._cache_key = None
 
     @property
@@ -115,7 +155,7 @@ class State:
             # Check if the output of the oracle is already calculated, otherwise calculate it
             for oracle in self.oracles_list:
                 if oracle not in self._oracles_result:
-                    self._oracles_result[oracle] = oracle.predict(chains=self.chains)
+                    self._predict(oracle)
 
             # Check that all energy term names are unique
             energy_term_names = [term.name for term in self.energy_terms]
@@ -127,11 +167,10 @@ class State:
 
             total_energy = 0.0
             for term in self.energy_terms:
-                unweighted_value, weighted_value = term.compute(oracles_result=self._oracles_result)
-                unweighted_energy = _as_scalar_energy(unweighted_value, term.name, 'unweighted')
-                weighted_energy = _as_scalar_energy(weighted_value, term.name, 'weighted')
+                unweighted_energy, weighted_energy, std = self._evaluate_term(term)
                 total_energy += weighted_energy
                 self._energy_term_values[term.name] = unweighted_energy
+                self._energy_term_stds[term.name] = std
                 logger.debug(f'Energy term {term.name} has value {unweighted_energy}')
 
             self._energy = total_energy
@@ -141,6 +180,47 @@ class State:
             logger.debug(f'**Weighted** energy for state {self.name} is {self._energy}')
 
         return self._energy
+
+    def _evaluate_term(self, term: EnergyTerm) -> tuple[float, float, float]:
+        """
+        Unweighted value, weighted value and standard deviation of one energy term.
+
+        A term is evaluated on every structure of every one of its oracles (``n_samples`` per folding oracle) and its
+        value is the mean over all of them. With a single structure this is just ``term.compute`` on the cached result,
+        so a State without several oracles or samples behaves exactly as before.
+        """
+        structures = [(oracle, result) for oracle in term.oracles for result in self._samples_of(oracle)]
+        if len(structures) == 1:
+            unweighted_value, weighted_value = term.compute(oracles_result=self._oracles_result)
+            return (
+                _as_scalar_energy(unweighted_value, term.name, 'unweighted'),
+                _as_scalar_energy(weighted_value, term.name, 'weighted'),
+                0.0,
+            )
+        unweighted: list[float] = []
+        weighted: list[float] = []
+        for oracle, result in structures:
+            # the term sees this structure for its oracle and the best result of every other oracle
+            view = OraclesResultDict()
+            for other, other_result in self._oracles_result.items():
+                view[other] = other_result
+            view[oracle] = result
+            with term.bound_to(oracle):
+                unweighted_value, weighted_value = term.compute(oracles_result=view)
+            unweighted.append(_as_scalar_energy(unweighted_value, term.name, 'unweighted'))
+            weighted.append(_as_scalar_energy(weighted_value, term.name, 'weighted'))
+        return float(np.mean(unweighted)), float(np.mean(weighted)), float(np.std(unweighted, ddof=1))
+
+    @property
+    def energy_term_stds(self) -> dict[str, float]:
+        """
+        Standard deviation (over the structures, ``ddof=1``) of the unweighted value of each energy term, 0.0 for terms
+        evaluated on a single structure. Only informative with several samples or oracles.
+        """
+        self._invalidate_cache_if_needed()
+        if self._energy is None:
+            _ = self.energy
+        return self._energy_term_stds.copy()
 
     @property
     def energy_term_values(self) -> dict[str, float]:

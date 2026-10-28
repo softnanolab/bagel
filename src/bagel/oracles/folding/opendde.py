@@ -32,5 +32,6 @@ class OpenDDE(RankedSamplesFoldingOracle):
             raise ValueError(
                 f'BAGEL uses exactly one seed per fold (samples are the diffusion draws), got seeds={model_config["seeds"]!r}'
             )
+        self._require_samples(model_config, 'sample', default=5)
         model_config.setdefault('use_msa', bool(self.msas))
         self.model = OpenDDEBoiler(backend=self.backend, device=self.device, config=model_config)
