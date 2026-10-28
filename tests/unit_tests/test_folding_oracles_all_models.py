@@ -193,13 +193,10 @@ def test_missing_msa_file_and_invalid_a3m_fail_at_construction(make_oracle, mono
         make_oracle(bg.oracles.folding.RF3, output, msa={'A': '>only header\n'})
 
 
-@pytest.mark.parametrize(
-    'oracle_class', [bg.oracles.folding.Boltz2, bg.oracles.folding.Chai1, bg.oracles.folding.ESMFold]
-)
-def test_msa_is_refused_by_models_without_user_msa(monkeypatch, oracle_class) -> None:
-    monkeypatch.setattr(oracle_class, '_load', lambda self, config=None: None)
+def test_msa_is_refused_by_models_without_user_msa(monkeypatch) -> None:
+    monkeypatch.setattr(bg.oracles.folding.ESMFold, '_load', lambda self, config=None: None)
     with pytest.raises(ValueError, match='does not support a user-supplied MSA'):
-        oracle_class(msa={'A': '>q\nAAA\n'})
+        bg.oracles.folding.ESMFold(msa={'A': '>q\nAAA\n'})
 
 
 def test_esmfold2_forwards_msa_per_chain(monkeypatch, complex_chains) -> None:
@@ -327,3 +324,80 @@ def test_other_models_allow_asymmetric_msa_for_identical_chains(make_oracle, dim
     oracle, model = make_oracle(bg.oracles.folding.RF3, output, msa={dimer[0].chain_ID: a3m})
     oracle.fold(dimer)
     assert model.calls[0][1]['msa'] == [a3m, None]
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Boltz-2 and Chai-1: a provided alignment is a starting point for its sequence, not a fixed requirement of the chain
+# ---------------------------------------------------------------------------------------------------------------------
+def single_sample_output(chains: list[bg.Chain]) -> SimpleNamespace:
+    n = sum(len(chain.residues) for chain in chains)
+    return SimpleNamespace(
+        atom_array=[fake_atom_array(chains)],
+        plddt=[np.full(n, 0.8)],
+        pae=[np.zeros((n, n))],
+        ptm=[np.array(0.7)],
+    )
+
+
+SERVER_MSA_MODELS = [bg.oracles.folding.Boltz2, bg.oracles.folding.Chai1]
+
+
+@pytest.mark.parametrize('oracle_class', SERVER_MSA_MODELS, ids=lambda c: c.__name__)
+def test_server_models_forward_a_provided_alignment_per_chain(make_oracle, complex_chains, oracle_class) -> None:
+    target = complex_chains[0]
+    oracle, model = make_oracle(oracle_class, single_sample_output(complex_chains), msa={'T': a3m_for(target.sequence)})
+
+    oracle.fold(complex_chains)
+
+    sequences, options = model.calls[0]
+    assert options['msa'] == [a3m_for(target.sequence), None]
+    assert options['include_fields'] == ['plddt', 'pae', 'ptm']
+
+
+@pytest.mark.parametrize('oracle_class', SERVER_MSA_MODELS, ids=lambda c: c.__name__)
+def test_a_mutated_chain_keeps_its_stored_alignment_for_the_model_to_decide(
+    make_oracle, complex_chains, oracle_class
+) -> None:
+    """The model uses the alignment only for the sequence it is the alignment of: no error, and it applies again later."""
+    target = complex_chains[0]
+    original = a3m_for(target.sequence)
+    oracle, model = make_oracle(oracle_class, single_sample_output(complex_chains), msa={'T': original})
+    target.mutate_residue(index=0, amino_acid='W')  # an immutable chain here, as a stand-in for a changed sequence
+
+    oracle.fold(complex_chains)  # does not raise
+
+    assert model.calls[0][1]['msa'] == [original, None]  # passed unchanged; the model sees that it no longer applies
+
+
+def test_other_models_still_refuse_an_alignment_of_a_changed_chain(make_oracle, complex_chains) -> None:
+    """RF3 cannot compute an MSA: an alignment that does not match its chain is an error, as before."""
+    target = complex_chains[0]
+    oracle, _ = make_oracle(
+        bg.oracles.folding.RF3,
+        five_sample_output(RF3Output, complex_chains, best=0),
+        msa={'T': a3m_for(target.sequence)},
+    )
+    target.mutate_residue(index=0, amino_acid='W')
+    with pytest.raises(ValueError, match="MSA of chain 'T' does not match"):
+        oracle.fold(complex_chains)
+
+
+@pytest.mark.parametrize('oracle_class', SERVER_MSA_MODELS, ids=lambda c: c.__name__)
+def test_the_model_config_is_left_to_boileroom_with_an_alignment(monkeypatch, oracle_class) -> None:
+    """BAGEL does not choose whether the server is used: use_msa_server (and the cache) keep boileroom's defaults."""
+    import importlib
+
+    captured: dict = {}
+
+    class FakeBoiler:
+        def __init__(self, backend, device, config):
+            captured['config'] = config
+
+    module = {'Boltz2': 'boileroom.models.boltz.boltz2', 'Chai1': 'boileroom.models.chai.chai1'}[oracle_class.__name__]
+    monkeypatch.setattr(importlib.import_module(module), oracle_class.__name__, FakeBoiler)
+
+    oracle_class(msa={'T': a3m_for('ACDEF')})
+    config = captured['config'] or {}
+    assert 'use_msa_server' not in config and 'msa_cache_enabled' not in config
+    oracle_class(msa={'T': a3m_for('ACDEF')}, config={'use_msa_server': False})
+    assert captured['config']['use_msa_server'] is False

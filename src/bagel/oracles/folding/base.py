@@ -138,6 +138,9 @@ class ConfidenceFoldingOracle(FoldingOracle):
     explicit_empty_msa = False
     #: Whether chains of equal sequence share one MSA in the model, so they must be given the same MSA entry.
     identical_chains_share_msa = False
+    #: Whether an MSA is refused for a chain whose sequence is no longer the one it is the alignment of. False for models
+    #: that compute an MSA themselves for any sequence they have none for: they use the alignment only while it applies.
+    strict_msa_sequence = True
 
     def __init__(
         self,
@@ -198,6 +201,7 @@ class ConfidenceFoldingOracle(FoldingOracle):
             chains,
             keep_empty=self.explicit_empty_msa,
             identical_chains_share=self.identical_chains_share_msa,
+            strict=self.strict_msa_sequence,
         )
         if msa is not None:
             options['msa'] = msa

@@ -74,6 +74,8 @@ def test_multi_sample_oracle_modal_dimer(request, oracle_fixture: str, dimer: li
         pytest.param(bg.oracles.folding.Protenix, marks=PROTENIX_WEIGHTS_UNAVAILABLE),
         bg.oracles.folding.OpenDDE,
         bg.oracles.folding.AlphaFold2Multimer,
+        bg.oracles.folding.Boltz2,
+        bg.oracles.folding.Chai1,
     ],
 )
 def test_oracle_modal_fixed_msa_for_target_chain(request, oracle_class, base_sequence: str) -> None:
@@ -128,3 +130,30 @@ def test_oracle_modal_n_samples_gives_ranked_structures_and_an_averaged_energy(
     assert len(state_per_sample) == 3
     assert state.energy_term_values[term.name] == pytest.approx(np.mean(state_per_sample))
     assert state.energy_term_stds[term.name] == pytest.approx(np.std(state_per_sample, ddof=1))
+
+
+@pytest.mark.parametrize('oracle_class', [bg.oracles.folding.Boltz2, bg.oracles.folding.Chai1])
+def test_server_msa_oracle_modal_alignment_stops_applying_when_the_chain_changes(
+    request, oracle_class, base_sequence: str
+) -> None:
+    """A provided alignment is used for its sequence; a mutated chain gets a new MSA (no error), and the original returns."""
+    if request.config.getoption('--oracles') != 'modal':
+        pytest.skip(reason='needs --oracles modal')
+    target = bg.Chain([bg.Residue(name=aa, chain_ID='T', index=i, mutable=True) for i, aa in enumerate(base_sequence)])
+    binder = bg.Chain(
+        [bg.Residue(name=aa, chain_ID='B', index=i, mutable=True) for i, aa in enumerate(base_sequence[::-1])]
+    )
+    chains = [target, binder]
+    oracle = oracle_class(backend='modal', msa={'T': f'>query\n{target.sequence}\n'})
+    num_residues = sum(len(chain.residues) for chain in chains)
+
+    def check(result) -> None:
+        assert result.local_plddt.shape == (1, num_residues)
+        assert result.ptm.shape == (1, 1)
+
+    check(oracle.fold(chains))  # the alignment applies to the target
+    original = target.residues[0].name
+    target.mutate_residue(index=0, amino_acid='W' if original != 'W' else 'A')
+    check(oracle.fold(chains))  # the target changed: the model computes a new MSA for it instead of raising
+    target.mutate_residue(index=0, amino_acid=original)
+    check(oracle.fold(chains))  # back to the original sequence: the provided alignment applies again
