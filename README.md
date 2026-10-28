@@ -127,6 +127,10 @@ oracle = bg.oracles.RF3(backend='modal', msa=target_msa)
 
 `RF3`, `Protenix`, `OpenDDE` and `AlphaFold2Multimer` return several ranked samples; BAGEL uses the top-ranked one. For `ESMFold2`, `RF3`, `Protenix` and `OpenDDE`, `config={'optimization': 'exact'}` runs boileroom's optimization-kit kernels, which need an A100, H100 or H200 GPU (other GPUs are refused rather than run slowly).
 
+### Boltz-2 and MSAs
+
+`Boltz2` runs with boileroom's MSA cache **off** (`msa_cache_enabled=False`, which you can override in `config`). The cache is keyed by sequence alone and is consulted even in no-MSA mode, so a stale MSA could silently be used when none should be, and a fold that mixes cached and new chains (every step of a design loop) can crash. With it off, `config={'use_msa_server': False}` means no MSA at all; with the default `use_msa_server=True` the MSAs of every chain are fetched from the ColabFold server at every fold. `Boltz2` and `Chai1` do not yet accept a user-supplied alignment (`msa=`), unlike the other folding oracles.
+
 ### Several samples and several oracles
 
 Every folding oracle takes `n_samples` (default `1`): the number of ranked structures that are kept and evaluated per prediction (diffusion samples; for `AlphaFold2Multimer`, models, at most 5). Some models generate more than that by default (`RF3` generates 5); the `n_samples` best of them are kept. The energy of a State is then the **mean over the samples of the energy each one gives**: every energy term is evaluated on each structure and averaged (not computed on an averaged structure, which would be wrong for non-linear terms such as RMSDs or contacts). With one oracle per term and `n_samples=1`, the energy is unchanged: it follows the same code path as before (an energy term with several oracles always uses the averaging path, even with `n_samples=1`).
