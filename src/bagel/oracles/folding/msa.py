@@ -4,8 +4,16 @@ An MSA is supplied once, when the oracle is built, as ``{chain_ID: A3M text or A
 time at construction; every later fold only forwards the stored text. Folding oracles that accept an MSA do not search
 for one by default, so the search cost is paid once (by the user, offline) and not again during a minimization.
 
-An MSA describes a fixed sequence: its first row must equal the chain it is attached to. It is therefore meant for chains
-that are never mutated (e.g. a target); a designed chain simply has no entry and is folded from its sequence alone.
+An MSA describes a fixed sequence: its first row is the sequence it is the alignment of. Two kinds of model use it:
+
+* models that cannot search for an MSA (``strict``): the MSA is only valid for the chain it was made for, so a chain that
+  was mutated since is refused. Give MSAs only to chains that are never mutated (e.g. a target); a designed chain simply
+  has no entry and is folded from its sequence alone;
+* models that can fetch an MSA from a server (Boltz-2, Chai-1): the alignment is the starting point for that sequence. It
+  is used while the chain has that sequence, without a server call. If the chain is mutated the alignment no longer applies
+  and the model computes a new MSA for the new sequence, like for any other (from the server, cached by sequence, if the
+  server is used; otherwise the chain is folded alone). The stored alignment is passed on unchanged and applies again if the
+  sequence returns to the original one.
 """
 
 import logging
@@ -64,6 +72,7 @@ def msas_for_chains(
     chains: list[Chain],
     keep_empty: bool = False,
     identical_chains_share: bool = False,
+    strict: bool = True,
 ) -> list[str | None] | None:
     """
     Return one A3M text (or None) per chain, in chain order, or None when no chain has an MSA.
@@ -74,18 +83,21 @@ def msas_for_chains(
     With ``identical_chains_share`` (models that give chains of equal sequence one common MSA) chains with the same
     sequence must have the same MSA entry, since an entry on only one of them would silently apply to all of them.
 
+    With ``strict=False`` (models that compute an MSA for a sequence they have none for) an MSA whose sequence is no longer
+    the chain's is passed on all the same: the model uses it only for the sequence it is the alignment of.
+
     Raises
     ------
     ValueError
-        If the first row of a chain's MSA is not that chain's current sequence, which means the chain was mutated, or
-        if ``identical_chains_share`` is set and chains of equal sequence have different MSA entries.
+        If ``strict`` and the first row of a chain's MSA is not that chain's current sequence, which means the chain was
+        mutated, or if ``identical_chains_share`` is set and chains of equal sequence have different MSA entries.
     """
     if not msas:
         return None
     entries: list[str | None] = []
     for chain in chains:
         text = msas.get(chain.chain_ID)
-        if text is not None and _query_row(text) != chain.sequence:
+        if strict and text is not None and _query_row(text) != chain.sequence:
             raise ValueError(
                 f'The MSA of chain {chain.chain_ID!r} does not match its sequence. An MSA describes a fixed sequence: '
                 f'only give MSAs for chains that are not mutated.'
