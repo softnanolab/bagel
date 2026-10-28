@@ -18,7 +18,8 @@ dependencies = [
     # Pinned to a boileroom main commit rather than a release: bagel needs APIs that exist only there --
     # the SAE model (softnanolab/boileroom#111), ESM3.inverse_fold (#119) and ESM3.inverse_generate (#131),
     # which InverseFoldingSampling needs for n_mutations > 1. The pin also carries #132, which stops a
-    # non-finite temperature reaching the sampler. Repin to a published version (boileroom>=0.4.5) once
+    # non-finite temperature reaching the sampler, and #133, which fixes the Boltz-2 MSA cache (stale or mixed MSAs)
+    # and lets Boltz-2 and Chai-1 take user-provided alignments. Repin to a published version (boileroom>=0.4.5) once
     # boileroom cuts a release that includes them.
     #
     # The version on main is 0.4.5, but that is the *target* of the next release and has never been tagged
@@ -27,7 +28,7 @@ dependencies = [
     # exist and the pull fails. Importing bagel therefore defaults BOILEROOM_IMAGE_TAG to a published
     # prerelease -- see DEFAULT_BOILEROOM_IMAGE_TAG in bagel/__init__.py, which should be bumped with this
     # pin and deleted when boileroom cuts a release.
-    "boileroom @ git+https://github.com/softnanolab/boileroom.git@6eb5b633bf59fc2d9f3524c121bc1f4456be5c3c",
+    "boileroom @ git+https://github.com/softnanolab/boileroom.git@e343f185710505d43af28e77aadf99d93faa5d1b",
     "numpy>=2.2.0",
     "pandas>=2.2.3",
     "pydantic>=2.10.6",

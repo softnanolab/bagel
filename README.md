@@ -116,9 +116,20 @@ All current oracles expose `modal` and `apptainer` backends. The Modal paths are
 covered by the integration suite; Apptainer support for Boltz2 and Chai1 is
 available through BoilerRoom but has not yet been validated in BAGEL's CI.
 
+### MSAs for Boltz-2 and Chai-1
+
+`Boltz2` and `Chai1` can fetch MSAs from the ColabFold server and accept your own alignments with `msa={chain_ID: A3M text or A3M file}` (files are read once, when the oracle is built). Each chain gets one source, in this order:
+
+1. **Your alignment** for the sequence in its first row. It is used while the chain has that sequence, the server is not called for it, and it is never fetched again or overwritten. If you mutate the chain, the alignment no longer applies (no error) and the new sequence is treated like any other; it applies again if the sequence returns to the original.
+2. **No MSA mode** (`config={'use_msa_server': False}`): the chain is folded from its sequence alone, and no cached MSA is ever used.
+3. **The cache** (server on): the MSA of this sequence from an earlier fold.
+4. **The server**: the MSA of the chain on its own (unpaired) is fetched once and cached by sequence, so it is not asked for again unless the sequence changes. A fixed target next to a designed binder only fetches the binder.
+
+A provided alignment and a fetched one therefore behave the same after the first call. The server is on by default for `Boltz2` (so a chain without an alignment, such as a designed binder, is fetched; pass `use_msa_server=False` to fold it alone) and off by default for `Chai1`. These rules, and the fix of the Boltz-2 cache that used to reuse stale MSAs or crash on a new chain, come from boileroom (softnanolab/boileroom#133). `Chai1` additionally needs a Chai-1 image with a working parquet engine (boileroom pins `pyarrow<21` in it), see the image tag in `bagel/__init__.py`.
+
 ### Fixed MSAs and optimization kernels
 
-`ESMFold2`, `RF3`, `Protenix`, `OpenDDE` and `AlphaFold2Multimer` accept a fixed, user-supplied MSA through `msa={chain_ID: A3M text or A3M file}`. Files are read once, when the oracle is built, and MSA search is disabled by default (`Protenix` and `OpenDDE` can enable it with `config={'use_msa': True}`, `AlphaFold2Multimer` with `config={'use_msa_server': True}`, at the cost of a search at every step). An MSA describes a fixed sequence (its first row must equal the chain), so give MSAs only to chains that are never mutated, e.g. a target; a designed chain is folded from its sequence alone.
+`ESMFold2`, `RF3`, `Protenix`, `OpenDDE` and `AlphaFold2Multimer` accept a fixed, user-supplied MSA through `msa={chain_ID: A3M text or A3M file}`. Files are read once, when the oracle is built, and MSA search is disabled by default (`Protenix` and `OpenDDE` can enable it with `config={'use_msa': True}`, `AlphaFold2Multimer` with `config={'use_msa_server': True}`, at the cost of a search at every step). These models cannot compute an MSA themselves, so an MSA describes a fixed sequence (its first row must equal the chain) and a chain that was mutated since is refused: give MSAs only to chains that are never mutated, e.g. a target; a designed chain is folded from its sequence alone.
 
 ```python
 target_msa = {'target': 'target.a3m'}
