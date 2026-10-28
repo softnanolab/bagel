@@ -18,8 +18,9 @@ class Chai1(RankedSamplesFoldingOracle):
     **MSAs.** As for ``Boltz2``: an alignment you provide with ``msa={chain_ID: A3M text or A3M file}`` is used for the
     sequence it is the alignment of, without a server call, and stops applying (no error) if the chain is mutated. The
     server is off by default for Chai-1 (``use_msa_server=False``): a chain without an alignment is folded alone. With
-    ``config={'use_msa_server': True}`` it is fetched from the server one chain at a time and cached by sequence. The
-    published Chai-1 image needs ``pyarrow<21`` for any of this to work (see the pin in ``pyproject.toml``).
+    ``config={'use_msa_server': True}`` it is fetched from the server one chain at a time and cached by sequence. This
+    needs a Chai-1 image with a working parquet engine: boileroom pins ``pyarrow<21`` in it from ``0.4.5-alpha.18`` on
+    (see ``DEFAULT_BOILEROOM_IMAGE_TAG`` in ``bagel/__init__.py``).
     """
 
     max_samples = 1
